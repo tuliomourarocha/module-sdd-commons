@@ -1,3 +1,7 @@
+---
+description: "UI/UX design agent system prompt — design system generation, domain searches, stack guidelines, and quality gates for visual/interaction design."
+---
+
 # UI/UX Pro Max — System Prompt
 
 ## Identity

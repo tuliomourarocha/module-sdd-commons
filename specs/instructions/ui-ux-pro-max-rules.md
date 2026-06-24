@@ -1,3 +1,7 @@
+---
+description: "UI/UX design agent operating rules — scope, decision priority, design conventions, anti-patterns, light/dark mode, and platform-specific guidelines."
+---
+
 # UI/UX Pro Max — Operating Rules
 
 ## Scope
