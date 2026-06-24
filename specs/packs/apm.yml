@@ -36,27 +36,3 @@ dependencies:
   mcp: []
 includes: auto
 scripts: {}
-marketplace:
-  owner:
-    name: acme-org
-    url: https://github.com/acme-org
-
-  # Default tag pattern used to resolve version ranges for each package.
-  build:
-    tagPattern: "v{version}"
-
-  # Output targets (map form). 'claude' is enabled by default;
-  # uncomment 'codex' below to publish the Codex artifact too.
-  # Each output writes to its profile default path; add 'path:'
-  # under a key to override.
-  outputs:
-    claude: {}
-    # codex: {}
-    #
-    # Note: enabling codex requires every package below to declare
-    # 'category:' (e.g. category: Productivity).
-
-  # CI tip: build one or all formats with a machine-readable manifest:
-  #   apm pack --marketplace=claude,codex --json | jq -r '.marketplace.outputs[].path'
-
-  packages: []
