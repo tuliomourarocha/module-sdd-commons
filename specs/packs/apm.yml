@@ -1,0 +1,62 @@
+name: agentic-squad
+version: 1.0.0
+description: Time de agentes
+author: tuliomourarocha
+targets:
+  - opencode
+dependencies:
+  apm:
+    # Skills
+    - tuliomourarocha/module-sdd-commons/specs/skills/po-assistant
+    - tuliomourarocha/module-sdd-commons/specs/skills/trello-manager
+    - tuliomourarocha/module-sdd-commons/specs/skills/frontend-design
+    - tuliomourarocha/module-sdd-commons/specs/skills/ui-ux-pro-max
+    - tuliomourarocha/module-sdd-commons/specs/skills/react-best-practices
+
+    # Prompts
+    - tuliomourarocha/module-sdd-commons/specs/prompts/po-prompt.prompt.md
+    - tuliomourarocha/module-sdd-commons/specs/prompts/react-frontend-prompt.prompt.md
+    - tuliomourarocha/module-sdd-commons/specs/prompts/ui-ux-pro-max-prompt.prompt.md
+
+    # Instructions
+    - tuliomourarocha/module-sdd-commons/specs/instructions/po-rules.instructions.md
+    - tuliomourarocha/module-sdd-commons/specs/instructions/react-frontend-rules.instructions.md
+    - tuliomourarocha/module-sdd-commons/specs/instructions/ui-ux-pro-max-rules.instructions.md
+
+    # Agents
+    - tuliomourarocha/module-sdd-commons/specs/agents/po-agent.agent.md
+    - tuliomourarocha/module-sdd-commons/specs/agents/react-frontend-agent.agent.md
+    - tuliomourarocha/module-sdd-commons/specs/agents/ui-ux-pro-max-agent.agent.md
+
+    # Hooks
+    - tuliomourarocha/module-sdd-commons/specs/hooks/po-hooks.instructions.md
+    - tuliomourarocha/module-sdd-commons/specs/hooks/react-frontend-hooks.instructions.md
+    - tuliomourarocha/module-sdd-commons/specs/hooks/ui-ux-pro-max-hooks.instructions.md
+
+  mcp: []
+includes: auto
+scripts: {}
+marketplace:
+  owner:
+    name: acme-org
+    url: https://github.com/acme-org
+
+  # Default tag pattern used to resolve version ranges for each package.
+  build:
+    tagPattern: "v{version}"
+
+  # Output targets (map form). 'claude' is enabled by default;
+  # uncomment 'codex' below to publish the Codex artifact too.
+  # Each output writes to its profile default path; add 'path:'
+  # under a key to override.
+  outputs:
+    claude: {}
+    # codex: {}
+    #
+    # Note: enabling codex requires every package below to declare
+    # 'category:' (e.g. category: Productivity).
+
+  # CI tip: build one or all formats with a machine-readable manifest:
+  #   apm pack --marketplace=claude,codex --json | jq -r '.marketplace.outputs[].path'
+
+  packages: []
