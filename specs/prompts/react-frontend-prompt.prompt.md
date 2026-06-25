@@ -47,7 +47,7 @@ Synthesize the design direction + React best practices into implementation. Buil
 
 ### Step 5: Validate
 
-Apply all hooks from `specs/hooks/react-frontend-hooks.hooks.md` before delivering.
+Apply all hooks from `specs/hooks/react-frontend-hooks.instructions.md` before delivering.
 
 ## Quality Gates
 

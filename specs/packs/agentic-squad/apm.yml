@@ -19,9 +19,9 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/specs/prompts/ui-ux-pro-max-prompt.prompt.md
 
     # Rules
-    - tuliomourarocha/module-sdd-commons/specs/rules/po-rules.rules.md
-    - tuliomourarocha/module-sdd-commons/specs/rules/react-frontend-rules.rules.md
-    - tuliomourarocha/module-sdd-commons/specs/rules/ui-ux-pro-max-rules.rules.md
+    - tuliomourarocha/module-sdd-commons/specs/rules/po-rules.instructions.md
+    - tuliomourarocha/module-sdd-commons/specs/rules/react-frontend-rules.instructions.md
+    - tuliomourarocha/module-sdd-commons/specs/rules/ui-ux-pro-max-rules.instructions.md
 
     # Agents
     - tuliomourarocha/module-sdd-commons/specs/agents/po-agent.agent.md
@@ -29,9 +29,9 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/specs/agents/ui-ux-pro-max-agent.agent.md
 
     # Hooks
-    - tuliomourarocha/module-sdd-commons/specs/hooks/po-hooks.hooks.md
-    - tuliomourarocha/module-sdd-commons/specs/hooks/react-frontend-hooks.hooks.md
-    - tuliomourarocha/module-sdd-commons/specs/hooks/ui-ux-pro-max-hooks.hooks.md
+    - tuliomourarocha/module-sdd-commons/specs/hooks/po-hooks.instructions.md
+    - tuliomourarocha/module-sdd-commons/specs/hooks/react-frontend-hooks.instructions.md
+    - tuliomourarocha/module-sdd-commons/specs/hooks/ui-ux-pro-max-hooks.instructions.md
 
   mcp: []
 includes: auto
