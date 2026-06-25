@@ -74,7 +74,7 @@ If the user wants tasks tracked on Trello:
 
 ### Step 6: Validate
 
-Apply all hooks from `specs/hooks/po-hooks.hooks.md` before delivering.
+Apply all hooks from `specs/hooks/po-hooks.instructions.md` before delivering.
 
 ## Quality Gates
 
