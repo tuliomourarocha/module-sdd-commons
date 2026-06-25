@@ -24,7 +24,7 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/specs/prompts/ui-ux-pro-max-rules.prompt.md
 
     # Agents
-    - tuliomourarocha/module-sdd-commons/.opencode/agents/po-agent.md
+    - tuliomourarocha/module-sdd-commons/.opencode/agents/po-agent.agent.md
     - tuliomourarocha/module-sdd-commons/specs/agents/react-frontend-agent.agent.md
     - tuliomourarocha/module-sdd-commons/specs/agents/ui-ux-pro-max-agent.agent.md
 

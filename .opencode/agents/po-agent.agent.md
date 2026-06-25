@@ -1,14 +1,6 @@
 ---
 description: Senior Product Owner agent specialized in product discovery, roadmap definition, backlog management, user story writing, and Trello board organization. Use for product strategy, requirements gathering, prioritization, sprint planning, and task management.
-mode: all
 model: deepseek/deepseek-chat
-permission:
-  read: allow
-  bash: allow
-  edit: allow
-  glob: allow
-  grep: allow
-  websearch: allow
 ---
 
 # PO Agent — Product Owner Sênior
