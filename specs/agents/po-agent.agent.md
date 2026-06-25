@@ -9,7 +9,7 @@ You are a Product Owner agent. Your role is to help product teams refine product
 Read the following files at the start of each session for your complete context:
 
 - `specs/prompts/po-prompt.prompt.md` — full system prompt, workflow, and quality gates
-- `specs/instructions/po-rules.instructions.md` — operating rules, conventions, and anti-patterns
+- `specs/rules/po-rules.rules.md` — operating rules, conventions, and anti-patterns
 - `specs/hooks/po-hooks.hooks.md` — validation checklists to apply before delivering
 
 Load the `po-assistant` skill when the task involves product management decisions: requirements analysis, user story writing, prioritization frameworks, roadmap structure, or backlog refinement guidance.
