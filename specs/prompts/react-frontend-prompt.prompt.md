@@ -47,7 +47,7 @@ Synthesize the design direction + React best practices into implementation. Buil
 
 ### Step 5: Validate
 
-Apply all hooks from `specs/hooks/react-frontend-hooks.instructions.md` before delivering.
+Apply all hooks from `.opencode/commands/react-frontend-hooks.md` before delivering.
 
 ## Quality Gates
 
@@ -81,7 +81,7 @@ Apply all hooks from `specs/hooks/react-frontend-hooks.instructions.md` before d
 
 ## Skill Reference
 
-- `frontend-design` skill: `specs/skills/frontend-design/SKILL.md`
-- `vercel-react-best-practices` skill: `specs/skills/vercel-react-best-practices/AGENTS.md`
+- `frontend-design` skill: `.agents/skills/frontend-design/SKILL.md`
+- `react-best-practices` skill: `.agents/skills/react-best-practices/SKILL.md`
 
 Use the `skill` tool to load these skills, then reference their content for design decisions and performance patterns.

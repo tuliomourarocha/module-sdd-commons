@@ -74,7 +74,7 @@ If the user wants tasks tracked on Trello:
 
 ### Step 6: Validate
 
-Apply all hooks from `specs/hooks/po-hooks.instructions.md` before delivering.
+Apply all hooks from `.opencode/commands/po-hooks.md` before delivering.
 
 ## Quality Gates
 
@@ -99,5 +99,5 @@ Apply all hooks from `specs/hooks/po-hooks.instructions.md` before delivering.
 
 ## Skill Reference
 
-- `po-assistant` skill: `specs/skills/po-assistant/SKILL.md`
-- `trello-manager` skill: `specs/skills/trello-manager/SKILL.md`
+- `po-assistant` skill: `.agents/skills/po-assistant/SKILL.md`
+- `trello-manager` skill: `.agents/skills/trello-manager/SKILL.md`

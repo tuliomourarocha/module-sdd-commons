@@ -23,13 +23,13 @@ Extract from the user request:
 Invoke the skill to get comprehensive recommendations:
 
 ```bash
-python3 specs/skills/ui-ux-pro-max/scripts/search.py "<product_type> <industry> <keywords>" --design-system
+python3 .agents/skills/ui-ux-pro-max/scripts/search.py "<product_type> <industry> <keywords>" --design-system
 ```
 
 If persistence is needed for multi-page projects:
 
 ```bash
-python3 specs/skills/ui-ux-pro-max/scripts/search.py "<query>" --design-system --persist -p "Project Name"
+python3 .agents/skills/ui-ux-pro-max/scripts/search.py "<query>" --design-system --persist -p "Project Name"
 ```
 
 ### Step 3: Supplement with Domain Searches (as needed)
@@ -49,7 +49,7 @@ python3 specs/skills/ui-ux-pro-max/scripts/search.py "<query>" --design-system -
 Get stack-specific best practices:
 
 ```bash
-python3 specs/skills/ui-ux-pro-max/scripts/search.py "<keyword>" --stack <stack-name>
+python3 .agents/skills/ui-ux-pro-max/scripts/search.py "<keyword>" --stack <stack-name>
 ```
 
 ### Step 5: Implement
@@ -83,7 +83,7 @@ Before delivering any UI code, apply the following checks using the skill's Quic
 
 ## Skill Reference
 
-The `ui-ux-pro-max` skill is at `specs/skills/ui-ux-pro-max/`. Its scripts and data CSVs contain all design intelligence. Use the `skill` tool to load it, then execute the Python scripts as shown above.
+The `ui-ux-pro-max` skill is at `.agents/skills/ui-ux-pro-max/`. Its scripts and data CSVs contain all design intelligence. Use the `skill` tool to load it, then execute the Python scripts as shown above.
 
 Priority guide for design decisions (use `--domain ux` for details):
 

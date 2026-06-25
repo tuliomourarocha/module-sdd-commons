@@ -1,3 +1,7 @@
+---
+description: "UI/UX Pro Max agent validation hooks — pre-delivery checklists for visual quality, interaction, light/dark mode, layout, performance, accessibility, and design system persistence."
+---
+
 # UI/UX Pro Max — Validation Hooks
 
 ## Pre-Delivery Checklist
@@ -57,7 +61,7 @@ Run these validation hooks before delivering any UI implementation.
 After generating code, verify using the skill:
 
 ```bash
-python3 specs/skills/ui-ux-pro-max/scripts/search.py "accessibility animation contrast layout" --domain ux
+python3 .agents/skills/ui-ux-pro-max/scripts/search.py "accessibility animation contrast layout" --domain ux
 ```
 
 Run a final validation scan against the Quick Reference priority 1-3 items.

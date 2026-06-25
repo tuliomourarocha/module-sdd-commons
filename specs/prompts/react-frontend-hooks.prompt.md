@@ -1,3 +1,7 @@
+---
+description: "React Frontend agent validation hooks — pre-delivery checklists for performance, React best practices, accessibility, design consistency, and code quality."
+---
+
 # React Frontend Agent — Validation Hooks
 
 ## Pre-Delivery Checklist

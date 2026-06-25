@@ -1,3 +1,7 @@
+---
+description: "Product Owner agent validation hooks — pre-delivery checklists for user stories, backlog refinement, roadmap, prioritization, requirements, and Trello operations."
+---
+
 # Product Owner Agent — Validation Hooks
 
 ## Pre-Delivery Checklist
