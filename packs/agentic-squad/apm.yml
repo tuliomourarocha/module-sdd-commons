@@ -9,9 +9,11 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/commands/po-prompt.prompt.md
     - tuliomourarocha/module-sdd-commons/agents/po-agent.agent.md
     - tuliomourarocha/module-sdd-commons/commands/PRD.prompt.md
+
+    - tuliomourarocha/module-sdd-commons/skills/frontend-design
+    - tuliomourarocha/module-sdd-commons/skills/po-assistant
+    - tuliomourarocha/module-sdd-commons/skills/react-best-practices
+    - tuliomourarocha/module-sdd-commons/skills/trello-manager
   mcp: []
-  skills:
-    - po-assistant
-    - trello-manager
 includes: auto
 scripts: {}

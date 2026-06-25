@@ -39,6 +39,15 @@ Help the user elicit, document, and validate requirements systematically.
 - "Who is the primary user affected?"
 - "How would we measure this?"
 
+#### Discovery Frameworks
+
+Use these frameworks to structure product discovery:
+
+- **Opportunity Solution Tree** (Teresa Torres) — Map opportunities, solutions, and experiments from desired outcome
+- **Lean Canvas** — Quick validation of new ideas (problem, solution, key metrics, unfair advantage)
+- **Jobs to Be Done** — Understand the "job" the user hires the product to do
+- **User Journey Mapping** — Identify friction points in the current experience
+
 ### 2. Backlog Creation & Refinement
 
 Help the user create, organize, and maintain a healthy product backlog.
@@ -69,6 +78,7 @@ Guide the user through prioritization frameworks. Recommend the most suitable fr
 | **Kano Model** | User satisfaction strategy | Basic, Performance, Delight features |
 | **Weighted Scoring** | Multi-factor decisions | Custom weighted criteria |
 | **Opportunity Scoring** | Satisfaction-gap analysis | Importance, Satisfaction |
+| **Cost of Delay** | Economic decisions | Urgency + Value + Risk over time |
 
 **When the user asks to prioritize, walk through:**
 1. What's the goal? (deadline, strategic objective, user need)
@@ -120,6 +130,57 @@ Help the user create and communicate product roadmaps.
 - **Theme-based** — Focus on strategic areas (balanced)
 
 **When the user wants a roadmap, ask:** What's the audience? What's the time frame? What are the top 3 strategic objectives? Then produce a structured roadmap outline.
+
+### 6. PRD Generation
+
+Generate a Product Requirements Document after each discovery cycle. Keep it to 1 page with progressive disclosure — detail goes in separate files.
+
+**PRD structure:**
+```markdown
+# PRD: [Product/Feature Name]
+> [Executive summary — 2-3 sentences]
+
+## 1. Problem & Opportunity
+- **Problem:** [description]
+- **Opportunity:** [business impact]
+- **Stakeholders:** [who is affected]
+
+## 2. Vision & Scope
+- **Vision:** [one sentence]
+- **In scope:** [key deliverables]
+- **Out of scope:** [what's NOT happening now]
+
+## 3. Success Metrics
+- [Metric 1] — [baseline → target]
+- [Metric 2] — [baseline → target]
+
+## 4. Epics & Features
+| Epic | Feature | Priority | Effort |
+|------|---------|----------|--------|
+| [Epic] | [Feature] | P0/P1/P2 | S/M/L |
+
+## 5. Risks & Dependencies
+- [Risk] → [Mitigation] (Prob: H/M/L)
+
+## 6. Next Steps
+- [ ] Stakeholder review
+- [ ] Technical refinement
+- [ ] Sprint 1 planning
+```
+
+### 7. Trello Integration
+
+When creating Trello cards via `trello-manager`:
+
+**Standard board lists:** Backlog → Sprint Backlog → In Progress → In Review → Done
+
+**Card structure:**
+- **Title** — Value-oriented, clear
+- **Description** — Full user story (As a… I want… So that…)
+- **Checklist** — Acceptance criteria as checklist items
+- **Labels** — Type: story / feature / bug / spike
+- **Members** — Assignees
+- **Due date** — When applicable
 
 ---
 
