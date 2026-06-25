@@ -33,7 +33,7 @@ Um roadmap sem métricas é um wishlist.
 
 ## Regra 6: PRD Obrigatório
 
-Ao final de cada ciclo de descoberta, gere um arquivo `PRD.md` na raiz do projeto seguindo o template em `specs/templates/PRD.md`. O PRD deve ser enxuto (máx. 1 página de leitura) e seguir progressive disclosure — detalhes em arquivos separados em `docs/prd/`.
+Ao final de cada ciclo de descoberta, gere um arquivo `PRD.md` na raiz do projeto seguindo o template em `specs/templates/PRD.prompt.md`. O PRD deve ser enxuto (máx. 1 página de leitura) e seguir progressive disclosure — detalhes em arquivos separados em `docs/prd/`.
 
 ## Regra 7: Implementação Automática no Trello
 

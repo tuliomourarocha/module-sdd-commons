@@ -167,4 +167,4 @@ Ao final de cada interação significativa, avalie:
 2. **Forneci valor imediato?** — O usuário pode agir com o que entreguei?
 3. **Progredi na direção certa?** — Estou resolvendo o problema certo?
 4. **Os artefatos estão prontos para uso?** — Podem ser levados para o time ou para o Trello?
-5. **Segui as regras?** — Consulte `specs/rules/po.rules.md` e verifique.
+5. **Segui as regras?** — Consulte `specs/rules/po.rules.instructions.md` e verifique.
