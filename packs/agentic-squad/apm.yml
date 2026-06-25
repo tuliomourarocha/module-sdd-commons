@@ -6,11 +6,12 @@ targets:
   - opencode
 dependencies:
   apm:
-    - tuliomourarocha/module-sdd-commons/specs/prompts/po-prompt.prompt.md
-    - tuliomourarocha/module-sdd-commons/specs/rules/po.rules.instructions.md
-    - tuliomourarocha/module-sdd-commons/.opencode/agents/po-agent.agent.md
-    - tuliomourarocha/module-sdd-commons/specs/templates/PRD.prompt.md
-    - tuliomourarocha/module-sdd-commons/specs/hooks/po-validation.hooks.instructions.md
+    - tuliomourarocha/module-sdd-commons/commands/po-prompt.prompt.md
+    - tuliomourarocha/module-sdd-commons/agents/po-agent.agent.md
+    - tuliomourarocha/module-sdd-commons/commands/PRD.prompt.md
   mcp: []
+  skills:
+    - po-assistant
+    - trello-manager
 includes: auto
 scripts: {}
