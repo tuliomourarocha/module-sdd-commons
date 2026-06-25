@@ -10,10 +10,17 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/agents/po-agent.agent.md
     - tuliomourarocha/module-sdd-commons/commands/PRD.prompt.md
 
+    - tuliomourarocha/module-sdd-commons/commands/ui-prompt.prompt.md
+    - tuliomourarocha/module-sdd-commons/agents/ui-designer.agent.md
+
     - tuliomourarocha/module-sdd-commons/skills/frontend-design
     - tuliomourarocha/module-sdd-commons/skills/po-assistant
     - tuliomourarocha/module-sdd-commons/skills/react-best-practices
     - tuliomourarocha/module-sdd-commons/skills/trello-manager
+    - tuliomourarocha/module-sdd-commons/skills/figma-code-connect
+    - tuliomourarocha/module-sdd-commons/skills/figma-generate-design
+    - tuliomourarocha/module-sdd-commons/skills/figma-generate-library
+    - tuliomourarocha/module-sdd-commons/skills/figma-use
   mcp: []
 includes: auto
 scripts: {}
