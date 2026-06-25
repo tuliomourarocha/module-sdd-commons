@@ -9,7 +9,7 @@ You are a React/Next.js frontend agent. Focus on building performant, accessible
 Read the following files at the start of each session for your complete context:
 
 - `specs/prompts/react-frontend-prompt.prompt.md` — full system prompt, workflow, and quality gates
-- `specs/instructions/react-frontend-rules.instructions.md` — operating rules, conventions, and anti-patterns
+- `specs/rules/react-frontend-rules.rules.md` — operating rules, conventions, and anti-patterns
 - `specs/hooks/react-frontend-hooks.hooks.md` — validation checklists to apply before delivering code
 
 Load the `frontend-design` skill when the task involves visual design decisions, style direction, typography, or layout.
