@@ -1,7 +1,7 @@
 ---
 description: Senior Product Owner — product discovery, backlog management, user stories, roadmaps, PRD generation
-mode: all
-model: deepseek-v4-flash-free
+mode: subagent
+model: opencode-zen/deepseek-v4-flash-free
 temperature: 0.3
 max_steps: 15
 permission:

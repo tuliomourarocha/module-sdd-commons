@@ -17,10 +17,18 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/skills/po-assistant
     - tuliomourarocha/module-sdd-commons/skills/react-best-practices
     - tuliomourarocha/module-sdd-commons/skills/trello-manager
+    - tuliomourarocha/module-sdd-commons/skills/caveman-review
     - tuliomourarocha/module-sdd-commons/skills/figma-code-connect
     - tuliomourarocha/module-sdd-commons/skills/figma-generate-design
     - tuliomourarocha/module-sdd-commons/skills/figma-generate-library
     - tuliomourarocha/module-sdd-commons/skills/figma-use
+
+    - tuliomourarocha/module-sdd-commons/commands/devops-prompt.prompt.md
+    - tuliomourarocha/module-sdd-commons/agents/devops-infra.agent.md
+
+    - tuliomourarocha/module-sdd-commons/skills/github-actions-docs
+    - tuliomourarocha/module-sdd-commons/skills/deploy-to-vercel
+    - tuliomourarocha/module-sdd-commons/skills/vercel-cli-with-tokens
   mcp: []
 includes: auto
 scripts: {}

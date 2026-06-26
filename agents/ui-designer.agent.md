@@ -1,7 +1,7 @@
 ---
 description: Senior UI Designer — Figma prototyping, screen design, design system management, component library creation, Code Connect mapping
-mode: all
-model: qwen3.7-plus
+mode: subagent
+model: opencode-zen/qwen3.7-plus
 temperature: 0.2
 max_steps: 20
 permission:
