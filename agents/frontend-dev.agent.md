@@ -1,7 +1,7 @@
 ---
 description: Senior Frontend Developer — React/Next.js especialista em codificar com Clean Code, arquiteturas modernas, tipagem rigorosa, performance e revisão de código
 mode: all
-model: opencode-zen/deepseek-v4-flash-free
+model: opencode-go/deepseek-v4-flash
 temperature: 0.2
 max_steps: 20
 permission:

@@ -1,7 +1,7 @@
 ---
 description: Senior DevOps Engineer — CI/CD pipelines (GitHub Actions), Vercel deployment, environment configuration, infrastructure as code, secrets management
 mode: all
-model: opencode-zen/deepseek-v4-flash-free
+model: opencode-go/deepseek-v4-flash
 temperature: 0.2
 max_steps: 15
 permission:
