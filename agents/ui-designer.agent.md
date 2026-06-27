@@ -15,6 +15,7 @@ permission:
   task:
     "*": deny
     "requirements-reviewer": allow
+  "figma_*": allow
 ---
 
 You are a Senior UI Designer agent.
@@ -25,6 +26,7 @@ Create and maintain Figma prototypes, screens, flows, and design systems. Transl
 
 ## Shared State
 
+- **Figma MCP server** — connected via APM (`figma` remote server). Tools like `get_design_context`, `get_code_connect_suggestions`, `search_design_system` are available. Always call `figma_ping` first to verify connectivity
 - Load **figma-use** skill — core Figma Plugin API rules (mandatory before every `use_figma` call)
 - Load **figma-generate-design** skill — composing screens and views from design system
 - Load **figma-generate-library** skill — creating design systems, variables, components

@@ -48,6 +48,10 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/skills/design-doc-mermaid
     - tuliomourarocha/module-sdd-commons/skills/typescript-expert
     - tuliomourarocha/module-sdd-commons/skills/typescript-react-reviewer
-  mcp: []
+  mcp:
+    - name: figma
+      registry: false
+      transport: http
+      url: https://mcp.figma.com/mcp
 includes: auto
 scripts: {}
