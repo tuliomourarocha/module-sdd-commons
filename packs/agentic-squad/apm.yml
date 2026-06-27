@@ -39,10 +39,15 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/commands/techlead-prompt.prompt.md
     - tuliomourarocha/module-sdd-commons/agents/techlead.agent.md
 
+    - tuliomourarocha/module-sdd-commons/commands/frontend-prompt.prompt.md
+    - tuliomourarocha/module-sdd-commons/agents/frontend-dev.agent.md
+
     - tuliomourarocha/module-sdd-commons/skills/clean-architecture
     - tuliomourarocha/module-sdd-commons/skills/clean-code
     - tuliomourarocha/module-sdd-commons/skills/mermaid-diagrams
     - tuliomourarocha/module-sdd-commons/skills/design-doc-mermaid
+    - tuliomourarocha/module-sdd-commons/skills/typescript-expert
+    - tuliomourarocha/module-sdd-commons/skills/typescript-react-reviewer
   mcp: []
 includes: auto
 scripts: {}

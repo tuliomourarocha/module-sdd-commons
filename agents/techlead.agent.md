@@ -36,6 +36,8 @@ Orquestrador técnico da squad. Domina design (Figma), frontend (React/Next.js),
 - Load **design-doc-mermaid** skill — design docs com Mermaid, extração e conversão para imagem
 - Load **git-commit** skill — conventional commits, commit message patterns, git workflow best practices
 - Load **github-cli** skill — GitHub CLI (gh): PRs, code review, merge, issues, releases
+- Load **typescript-expert** skill — type-level programming, performance, monorepo, migrations, tooling
+- Load **typescript-react-reviewer** skill — code review React 19, anti-patterns, type safety, state management
 - Use **find-skills** at start to discover domain-relevant skills
 - Read `.workflow/epic-XX/handoff.md` and `PRD.md` before starting, if present
 
