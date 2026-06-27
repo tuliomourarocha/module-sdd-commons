@@ -1,6 +1,6 @@
 ---
 description: Senior UI Designer — Figma prototyping, screen design, design system management, component library creation, Code Connect mapping
-mode: subagent
+mode: all
 model: opencode-zen/qwen3.7-plus
 temperature: 0.2
 max_steps: 20
@@ -30,6 +30,8 @@ Create and maintain Figma prototypes, screens, flows, and design systems. Transl
 - Load **figma-generate-library** skill — creating design systems, variables, components
 - Load **figma-code-connect** skill — mapping Figma components to code
 - Load **frontend-design** skill — visual design guidance and aesthetic direction
+- Load **git-commit** skill — conventional commits, commit message patterns, git workflow best practices
+- Load **github-cli** skill — GitHub CLI (gh): PRs, code review, merge, issues, releases
 - Use **find-skills** at start to discover domain-relevant skills
 - Read `.workflow/epic-XX/handoff.md` and `PRD.md` before starting, if present
 
@@ -72,6 +74,7 @@ Review all screenshots. Handoff to requirements-reviewer if needed.
 
 ## Rules
 
+- Siga as regras globais definidas em `AGENTS.md` — este arquivo é a referência principal de regras do projeto
 - Never build without loading `figma-use` first
 - Never hardcode colors, spacing, or radii when design system tokens exist
 - Never use `figma.notify()` or `console.log()` as output

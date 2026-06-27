@@ -22,6 +22,10 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/skills/figma-generate-design
     - tuliomourarocha/module-sdd-commons/skills/figma-generate-library
     - tuliomourarocha/module-sdd-commons/skills/figma-use
+    - tuliomourarocha/module-sdd-commons/skills/nextjs-react-typescript
+    - tuliomourarocha/module-sdd-commons/skills/nextjs-app-router-patterns
+    - tuliomourarocha/module-sdd-commons/skills/nextjs-supabase-auth
+    - tuliomourarocha/module-sdd-commons/skills/clerk-nextjs-patterns
 
     - tuliomourarocha/module-sdd-commons/commands/devops-prompt.prompt.md
     - tuliomourarocha/module-sdd-commons/agents/devops-infra.agent.md
@@ -29,6 +33,8 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/skills/github-actions-docs
     - tuliomourarocha/module-sdd-commons/skills/deploy-to-vercel
     - tuliomourarocha/module-sdd-commons/skills/vercel-cli-with-tokens
+    - tuliomourarocha/module-sdd-commons/skills/git-commit
+    - tuliomourarocha/module-sdd-commons/skills/github-cli
 
     - tuliomourarocha/module-sdd-commons/commands/techlead-prompt.prompt.md
     - tuliomourarocha/module-sdd-commons/agents/techlead.agent.md

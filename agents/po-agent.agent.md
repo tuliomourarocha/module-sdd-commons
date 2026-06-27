@@ -1,6 +1,6 @@
 ---
 description: Senior Product Owner — product discovery, backlog management, user stories, roadmaps, PRD generation
-mode: subagent
+mode: all
 model: opencode-zen/deepseek-v4-flash-free
 temperature: 0.3
 max_steps: 15
@@ -61,6 +61,7 @@ Run validation hooks. Handoff to requirements-reviewer.
 
 ## Rules
 
+- Siga as regras globais definidas em `AGENTS.md` — este arquivo é a referência principal de regras do projeto
 - Never propose architecture or implementation
 - Focus on product requirements and user value
 - Portuguese default for artifacts
