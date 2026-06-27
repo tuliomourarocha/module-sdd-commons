@@ -29,6 +29,14 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/skills/github-actions-docs
     - tuliomourarocha/module-sdd-commons/skills/deploy-to-vercel
     - tuliomourarocha/module-sdd-commons/skills/vercel-cli-with-tokens
+
+    - tuliomourarocha/module-sdd-commons/commands/techlead-prompt.prompt.md
+    - tuliomourarocha/module-sdd-commons/agents/techlead.agent.md
+
+    - tuliomourarocha/module-sdd-commons/skills/clean-architecture
+    - tuliomourarocha/module-sdd-commons/skills/clean-code
+    - tuliomourarocha/module-sdd-commons/skills/mermaid-diagrams
+    - tuliomourarocha/module-sdd-commons/skills/design-doc-mermaid
   mcp: []
 includes: auto
 scripts: {}
