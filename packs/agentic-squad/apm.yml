@@ -10,18 +10,11 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/agents/po-agent.agent.md
     - tuliomourarocha/module-sdd-commons/commands/PRD.prompt.md
 
-    - tuliomourarocha/module-sdd-commons/commands/ui-prompt.prompt.md
-    - tuliomourarocha/module-sdd-commons/agents/ui-designer.agent.md
-
     - tuliomourarocha/module-sdd-commons/skills/frontend-design
     - tuliomourarocha/module-sdd-commons/skills/po-assistant
     - tuliomourarocha/module-sdd-commons/skills/react-best-practices
     - tuliomourarocha/module-sdd-commons/skills/trello-manager
     - tuliomourarocha/module-sdd-commons/skills/caveman-review
-    - tuliomourarocha/module-sdd-commons/skills/figma-code-connect
-    - tuliomourarocha/module-sdd-commons/skills/figma-generate-design
-    - tuliomourarocha/module-sdd-commons/skills/figma-generate-library
-    - tuliomourarocha/module-sdd-commons/skills/figma-use
     - tuliomourarocha/module-sdd-commons/skills/nextjs-react-typescript
     - tuliomourarocha/module-sdd-commons/skills/nextjs-app-router-patterns
     - tuliomourarocha/module-sdd-commons/skills/nextjs-supabase-auth
@@ -48,10 +41,5 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/skills/design-doc-mermaid
     - tuliomourarocha/module-sdd-commons/skills/typescript-expert
     - tuliomourarocha/module-sdd-commons/skills/typescript-react-reviewer
-  mcp:
-    - name: figma
-      registry: false
-      transport: http
-      url: https://mcp.figma.com/mcp
-includes: auto
+  includes: auto
 scripts: {}

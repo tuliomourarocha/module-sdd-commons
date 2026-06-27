@@ -258,7 +258,7 @@ flowchart LR
 # Technical Refinement — [Epic Name]
 
 **Data:** YYYY-MM-DD
-**Participantes:** Tech Lead, PO, DevOps, UI Designer
+**Participantes:** Tech Lead, PO, DevOps
 
 ## Cards Refinados
 
@@ -319,7 +319,4 @@ flowchart LR
 - [ ] Ambientes mapeados corretamente?
 - [ ] Concurrency groups para cancelar runs duplicadas?
 
-### UI/Design
-- [ ] Tokens do design system usados (não hex hardcoded)?
-- [ ] Componentes com variants para estados corretos?
-- [ ] Code Connect files criados para novos componentes?
+
