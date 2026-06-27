@@ -81,6 +81,14 @@ Auto-revisão aplicando:
 - `typescript-react-reviewer` — anti-patterns, type safety, useEffect abuse
 - `clean-code` — nomes, coesão, complexidade
 
+### 5. Verify
+
+Antes de commitar e fazer push:
+
+1. **Rodar testes unitários** — `npm run test` (ou equivalente) e garantir que todos passam
+2. **Rodar projeto localmente** — `npm run dev` (ou equivalente) e verificar se a aplicação sobe sem erros e a feature implementada funciona corretamente
+3. **Corrigir qualquer quebra** identificada nos passos anteriores antes de prosseguir
+
 ## Validation Hooks
 
 - [ ] Componentes seguem Server por padrão, Client só com interatividade
@@ -90,6 +98,8 @@ Auto-revisão aplicando:
 - [ ] Clean Code: funções < 20 linhas, nomes revelam intenção
 - [ ] Commits seguem conventional commits
 - [ ] Testes unitários para hooks e lógica de negócio
+- [ ] Testes unitários passam (`npm run test`)
+- [ ] Projeto roda localmente sem erros (`npm run dev`)
 
 ## Rules
 
