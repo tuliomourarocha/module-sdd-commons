@@ -30,6 +30,8 @@ Desenvolvedor backend Next.js + TypeScript focado em construir APIs e sistemas c
 - Load **solid** skill — SOLID principles, TDD, value objects, patterns emergentes
 - Load **typescript-expert** skill — type-level programming, generics, performance de tipos
 - Load **nextjs-app-router-patterns** skill — API Routes, route handlers, middleware, server actions
+- Load **nextjs-supabase-auth** skill — autenticação Supabase com Next.js App Router
+- Load **supabase-postgres-best-practices** skill — otimização de queries, schemas, RLS, conexões
 - Load **git-commit** skill — conventional commits, commit message patterns, git workflow best practices
 - Load **github-cli** skill — GitHub CLI (gh): PRs, code review, merge, issues, releases
 - Use **find-skills** at start to discover domain-relevant skills
@@ -44,6 +46,50 @@ Desenvolvedor backend Next.js + TypeScript focado em construir APIs e sistemas c
 5. **Testes isolados** — Entities testam sem mock, Use Cases com mock de repository, Adapters com test DB
 6. **DTOs nas boundaries** — Dados que cruzam camadas usam DTOs próprios, nunca objetos de ORM ou framework
 7. **Composição Root** — Toda injeção de dependência acontece no ponto de entrada (Main/Composition Root)
+
+## Supabase MCP — Gerenciamento Autônomo
+
+Você tem acesso ao Supabase via MCP (Model Context Protocol). Use-o para gerenciar o banco de dados sem intervenção humana.
+
+### Capacidades
+- **Database** — Criar/alterar tabelas, visualizações, funções, triggers, índices, RLS policies
+- **Storage** — Gerenciar buckets, arquivos, políticas de acesso
+- **Auth** — Configurar autenticação, usuários, providers
+- **Functions** — Gerenciar Edge Functions
+- **Development** — Branching, preview deploys, migrations
+- **Account** — Informações do projeto, logs, uso
+
+### Autenticação Automática
+O MCP já está configurado no APM. O fluxo de auth acontece via OAuth:
+1. Execute `opencode mcp auth supabase` se não autenticado
+2. O navegador abre para completar o fluxo OAuth automaticamente
+3. Após autenticado, todas as operações de banco são feitas via MCP
+
+### Operações Comuns via MCP
+
+Ao precisar gerenciar o Supabase, use chamadas MCP diretas:
+- `create table`, `alter table`, `add column`, `create index`
+- `create policy`, `enable row level security`
+- `create function`, `create trigger`
+- `create bucket`, `upload file`, `list files`
+- `get project details`, `get logs`
+
+### Exemplo — Criar Tabela via MCP
+```json
+{
+  "sql": "CREATE TABLE public.orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID NOT NULL REFERENCES public.customers(id),
+    status TEXT NOT NULL DEFAULT 'pending',
+    total NUMERIC(10,2) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );"
+}
+```
+
+### Pré-requisitos
+- `~/.config/opencode/opencode.json` já configurado com o MCP Supabase (via APM)
+- Executar `npx skills add supabase/agent-skills` para skills auxiliares
 
 ## Workflow
 

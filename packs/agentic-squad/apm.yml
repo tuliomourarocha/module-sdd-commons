@@ -18,6 +18,7 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/skills/nextjs-react-typescript
     - tuliomourarocha/module-sdd-commons/skills/nextjs-app-router-patterns
     - tuliomourarocha/module-sdd-commons/skills/nextjs-supabase-auth
+    - tuliomourarocha/module-sdd-commons/skills/supabase-postgres-best-practices
     - tuliomourarocha/module-sdd-commons/skills/clerk-nextjs-patterns
 
     - tuliomourarocha/module-sdd-commons/commands/devops-prompt.prompt.md
@@ -46,4 +47,13 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/skills/typescript-expert
     - tuliomourarocha/module-sdd-commons/skills/typescript-react-reviewer
   includes: auto
-scripts: {}
+mcp:
+  supabase:
+    type: remote
+    url: https://mcp.supabase.com/mcp?project_ref=evrwkvxjjmljvbbgistd&features=database%2Cdevelopment%2Caccount%2Cstorage%2Cfunctions%2Cdocs
+    enabled: true
+scripts:
+  post-install: |
+    echo "=== Supabase MCP Setup ==="
+    echo "1. Autentique via: opencode mcp auth supabase"
+    echo "2. Instale agent skills: npx skills add supabase/agent-skills"
