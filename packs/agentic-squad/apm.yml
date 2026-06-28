@@ -35,6 +35,10 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/commands/frontend-prompt.prompt.md
     - tuliomourarocha/module-sdd-commons/agents/frontend-dev.agent.md
 
+    - tuliomourarocha/module-sdd-commons/commands/backend-prompt.prompt.md
+    - tuliomourarocha/module-sdd-commons/agents/backend-dev.agent.md
+
+    - tuliomourarocha/module-sdd-commons/skills/solid
     - tuliomourarocha/module-sdd-commons/skills/clean-architecture
     - tuliomourarocha/module-sdd-commons/skills/clean-code
     - tuliomourarocha/module-sdd-commons/skills/mermaid-diagrams
