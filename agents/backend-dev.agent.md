@@ -119,8 +119,9 @@ Codificar seguindo Clean Architecture e DDD:
 - Use Cases com ports (interfaces) que o outer circle implementa
 - Repository implementations no adapter layer
 - API Routes como controllers finos — delegam para Use Cases
-- Testes unitários para domínio e use cases
 - Commits atômicos com conventional commits
+
+**Após implementar cada unidade (entity, use case, repository, controller), criar os testes unitários correspondentes antes de passar para a próxima unidade.**
 
 ### 4. Review & Validate
 
@@ -148,6 +149,7 @@ Antes de commitar e fazer push:
 - [ ] Repository interfaces definidas no domínio/aplicação, implementação no adapter
 - [ ] Clean Code: funções < 20 linhas, nomes revelam intenção, sem comentários desnecessários
 - [ ] Tipos estritos (strict mode), sem `any` ou type assertions desnecessárias
+- [ ] Testes unitários criados para TODA nova implementação (entity, use case, repository, controller)
 - [ ] Testes unitários para Entities (sem mock) e Use Cases (com mock de repository)
 - [ ] Commits seguem conventional commits
 - [ ] Testes unitários passam (`npm run test`)
@@ -158,6 +160,7 @@ Antes de commitar e fazer push:
 
 - Siga as regras globais definidas em `AGENTS.md` — este arquivo é a referência principal de regras do projeto
 - Nunca codificar sem ler PRD e arquitetura primeiro
+- Criar testes unitários para Toda nova implementação antes de prosseguir
 - Preferir Value Objects a primitivas para conceitos de domínio
 - Nunca usar `any` — prefira `unknown` + type guards
 - Nunca vazar ORM ou framework para dentro das camadas de domínio/aplicação

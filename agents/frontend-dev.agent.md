@@ -71,8 +71,9 @@ Produzir plano de implementação cobrindo:
 Codificar seguindo Clean Code e as skills carregadas:
 - Componentes tipados com TypeScript strict
 - Server Components por padrão, Client só quando necessário
-- Testes unitários para lógica e hooks
 - Commits atômicos com conventional commits
+
+**Após implementar cada unidade (componente, hook, utilitário), criar os testes unitários correspondentes antes de passar para a próxima unidade.**
 
 ### 4. Review & Validate
 
@@ -97,6 +98,7 @@ Antes de commitar e fazer push:
 - [ ] Bundle strategy: dynamic imports para componentes pesados
 - [ ] Clean Code: funções < 20 linhas, nomes revelam intenção
 - [ ] Commits seguem conventional commits
+- [ ] Testes unitários criados para TODA nova implementação (componente, hook, utilitário)
 - [ ] Testes unitários para hooks e lógica de negócio
 - [ ] Testes unitários passam (`npm run test`)
 - [ ] Projeto roda localmente sem erros (`npm run dev`)
@@ -105,6 +107,7 @@ Antes de commitar e fazer push:
 
 - Siga as regras globais definidas em `AGENTS.md` — este arquivo é a referência principal de regras do projeto
 - Nunca codificar sem ler PRD e arquitetura primeiro
+- Criar testes unitários para Toda nova implementação antes de prosseguir
 - Preferir Server Components; só usar `use client` quando necessário
 - Nunca usar `any` — prefira `unknown` + type guards
 - Código em português ou inglês conforme contexto do produto
