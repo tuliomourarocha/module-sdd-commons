@@ -39,6 +39,9 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/commands/backend-prompt.prompt.md
     - tuliomourarocha/module-sdd-commons/agents/backend-dev.agent.md
 
+    - tuliomourarocha/module-sdd-commons/commands/qa-prompt.prompt.md
+    - tuliomourarocha/module-sdd-commons/agents/qa-engineer.agent.md
+
     - tuliomourarocha/module-sdd-commons/skills/solid
     - tuliomourarocha/module-sdd-commons/skills/clean-architecture
     - tuliomourarocha/module-sdd-commons/skills/clean-code
@@ -46,6 +49,7 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/skills/design-doc-mermaid
     - tuliomourarocha/module-sdd-commons/skills/typescript-expert
     - tuliomourarocha/module-sdd-commons/skills/typescript-react-reviewer
+    - tuliomourarocha/module-sdd-commons/skills/webapp-testing
   includes: auto
 mcp:
   supabase:
