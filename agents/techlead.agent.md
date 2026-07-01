@@ -90,14 +90,15 @@ Para cada épico, produza:
   - `sequence-flows.md` — fluxos críticos (login, checkout, etc.)
   - `deployment.md` — pipeline + ambientes
 
-### 3. Code Review
+### 3. Code Review & Merge
 
 Ao revisar entregas de subagentes:
 
-1. **Frontend**: aplicar react-best-practices (waterfalls, bundle, re-render, server/client boundaries)
-2. **Backend**: aplicar clean-architecture (Dependency Rule, boundaries, SOLID)
-3. **DevOps**: validar pipelines (secrets, caching, ambientes)
-4. **Report** — `docs/reviews/review-YYYY-MM-DD.md` com achados e gravidade
+1. **Revisar o PR** — aplicar checklist de frontend, backend e DevOps do `commands/techlead-prompt.prompt.md`
+2. **Report** — `docs/reviews/review-YYYY-MM-DD.md` com achados e gravidade
+3. **Acionar correção** — Se houver issues, envolver o subagente responsável via `task` com o report e solicitar correção
+4. **Aguardar atualização** — Aguardar o próximo update do subagente com as correções aplicadas
+5. **Aprovar e fazer merge** — Estando tudo ok (sem issues ou todas corrigidas), realizar o merge do PR via `gh pr merge`
 
 ### 4. Implementation (Híbrido)
 
@@ -114,6 +115,8 @@ Nunca implementar features completas que um subagente especializado pode fazer.
 - [ ] Arquitetura documentada com diagramas Mermaid em `docs/arch/epic-XX/`
 - [ ] Dependências técnicas mapeadas entre cards no Trello
 - [ ] Code review registrado em `docs/reviews/` com checklist de cada camada
+- [ ] Issues apontadas foram delegadas ao subagente responsável via `task`
+- [ ] Merge realizado apenas após todas as correções validadas
 - [ ] Subagentes foram consultados antes de decisões técnicas
 - [ ] Estimativas de esforço (P/M/G) atribuídas por subtask
 
@@ -123,7 +126,7 @@ Nunca implementar features completas que um subagente especializado pode fazer.
 - Nunca arquitetar sem consultar subagentes primeiro
 - Nunca pular a documentação de arquitetura (Mermaid) por "pressa"
 - Todo PRD deve passar pelo Tech Lead antes de virar card técnico
-- Code review é obrigatório antes de qualquer merge de subagente
+- Code review obrigatório antes de qualquer merge — TechLead revisa, aciona subagentes para correção via `task` e realiza o merge
 - Português padrão para artefatos; diagramas em português ou inglês conforme contexto
 - Preferir `opencode-zen/deepseek-v4-flash-free` para tarefas de orquestração;
 
