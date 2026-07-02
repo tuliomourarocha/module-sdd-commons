@@ -9,6 +9,8 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/commands/po-prompt.prompt.md
     - tuliomourarocha/module-sdd-commons/agents/po-agent.agent.md
     - tuliomourarocha/module-sdd-commons/commands/PRD.prompt.md
+    - tuliomourarocha/module-sdd-commons/agents/requirements-reviewer.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/prd-writer.agent.md
 
     - tuliomourarocha/module-sdd-commons/skills/frontend-design
     - tuliomourarocha/module-sdd-commons/skills/po-assistant
@@ -23,6 +25,9 @@ dependencies:
 
     - tuliomourarocha/module-sdd-commons/commands/devops-prompt.prompt.md
     - tuliomourarocha/module-sdd-commons/agents/devops-infra.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/ci-cd-specialist.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/vercel-infra.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/code-reviewer-infra.agent.md
 
     - tuliomourarocha/module-sdd-commons/skills/github-actions-docs
     - tuliomourarocha/module-sdd-commons/skills/deploy-to-vercel
@@ -32,15 +37,27 @@ dependencies:
 
     - tuliomourarocha/module-sdd-commons/commands/techlead-prompt.prompt.md
     - tuliomourarocha/module-sdd-commons/agents/techlead.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/architecture-reviewer.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/code-reviewer-general.agent.md
 
     - tuliomourarocha/module-sdd-commons/commands/frontend-prompt.prompt.md
     - tuliomourarocha/module-sdd-commons/agents/frontend-dev.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/react-expert.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/nextjs-expert.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/code-reviewer-frontend.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/ui-reviewer.agent.md
 
     - tuliomourarocha/module-sdd-commons/commands/backend-prompt.prompt.md
     - tuliomourarocha/module-sdd-commons/agents/backend-dev.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/supabase-specialist.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/code-reviewer-backend.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/vercel-deploy.agent.md
 
     - tuliomourarocha/module-sdd-commons/commands/qa-prompt.prompt.md
     - tuliomourarocha/module-sdd-commons/agents/qa-engineer.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/e2e-tester.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/api-tester.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/bug-reporter.agent.md
 
     - tuliomourarocha/module-sdd-commons/skills/solid
     - tuliomourarocha/module-sdd-commons/skills/clean-architecture

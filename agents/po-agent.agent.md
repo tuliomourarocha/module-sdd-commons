@@ -1,6 +1,6 @@
 ---
 description: Senior Product Owner — product discovery, backlog management, user stories, roadmaps, PRD generation
-mode: all
+mode: primary
 model: opencode-go/deepseek-v4-flash
 temperature: 0.3
 max_steps: 15
@@ -13,6 +13,7 @@ permission:
   task:
     "*": deny
     "requirements-reviewer": allow
+    "prd-writer": allow
 ---
 
 You are a Senior Product Owner agent.
@@ -69,5 +70,5 @@ Run validation hooks. Handoff to requirements-reviewer.
 
 ## Subagent Authorization
 
-- requirements-reviewer — after draft complete
-- planner — after RR approval
+- requirements-reviewer — validar PRDs e user stories
+- prd-writer — escrita e refinamento de PRDs
