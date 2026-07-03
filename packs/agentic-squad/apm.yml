@@ -1,11 +1,13 @@
 name: agentic-squad
-version: 1.0.0
-description: Time de agentes
+version: 1.0.1
+description: Time de agentes com orquestrador Harness Gate
 author: tuliomourarocha
 targets:
   - opencode
 dependencies:
   apm:
+    - tuliomourarocha/module-sdd-commons/commands/harness-gate.prompt.md
+    - tuliomourarocha/module-sdd-commons/agents/harness-orchestrator.agent.md
     - tuliomourarocha/module-sdd-commons/commands/po-prompt.prompt.md
     - tuliomourarocha/module-sdd-commons/agents/po-agent.agent.md
     - tuliomourarocha/module-sdd-commons/commands/PRD.prompt.md
