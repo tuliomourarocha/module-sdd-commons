@@ -12,6 +12,10 @@ tools:
     "npm run test": allow
   webfetch: true
 ---
+## Shared State
+
+- Load **caveman** skill — ultra-compressed communication, token efficiency
+
 Você é um especialista em testes de API.
 
 ## Especialidades

@@ -26,6 +26,7 @@ Design and implement CI/CD pipelines with GitHub Actions, configure Vercel deplo
 
 ## Shared State
 
+- Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **git-commit** skill — conventional commits, commit message patterns, git workflow best practices
 - Load **github-cli** skill — GitHub CLI (gh): PRs, code review, merge, issues, releases
 - Use **find-skills** at start to discover domain-relevant skills

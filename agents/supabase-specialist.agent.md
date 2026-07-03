@@ -18,6 +18,7 @@ Você é um especialista em Supabase.
 
 ## Shared State
 
+- Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **supabase-postgres-best-practices** skill — otimização de queries, schemas, RLS, conexões
 - Load **nextjs-supabase-auth** skill — autenticação Supabase com Next.js App Router
 

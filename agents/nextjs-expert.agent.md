@@ -15,6 +15,7 @@ Você é um especialista em Next.js App Router.
 
 ## Shared State
 
+- Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **nextjs-app-router-patterns** skill — App Router, layouts, loading/error, intercepting routes, Route Handlers
 - Load **nextjs-react-typescript** skill — React + Next.js + TypeScript patterns, boas práticas de tipagem
 

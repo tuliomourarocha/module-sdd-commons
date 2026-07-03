@@ -10,6 +10,7 @@ tools:
 ---
 ## Shared State
 
+- Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **frontend-design** skill — direção estética e sistema de design
 
 Você é um revisor de interface e experiência do usuário.

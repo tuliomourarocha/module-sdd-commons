@@ -24,6 +24,7 @@ Drive product discovery, manage backlog, write user stories with acceptance crit
 
 ## Shared State
 
+- Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **po-assistant** skill — contains all detailed frameworks, templates, and workflows
 - Load **trello-manager** skill — for Trello board and card operations
 - Read `.workflow/epic-XX/handoff.md` before starting, if present

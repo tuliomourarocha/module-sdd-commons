@@ -8,6 +8,10 @@ tools:
   edit: false
   webfetch: false
 ---
+## Shared State
+
+- Load **caveman** skill — ultra-compressed communication, token efficiency
+
 Você é um validador de requisitos. Analise PRDs e user stories antes de implementar.
 
 ## Checklist de Validação

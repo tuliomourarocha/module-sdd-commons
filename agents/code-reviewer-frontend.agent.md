@@ -17,6 +17,7 @@ You are a Frontend Code Reviewer.
 
 ## Shared State
 
+- Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **typescript-react-reviewer** skill — code review React 19, anti-patterns, type safety, estado
 
 ## Review Checklist

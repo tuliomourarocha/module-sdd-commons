@@ -14,6 +14,7 @@ tools:
 ---
 ## Shared State
 
+- Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **github-actions-docs** skill — official GitHub Actions workflow syntax, triggers, matrices, caching, security, OIDC, reusable workflows
 
 Você é um especialista em CI/CD com GitHub Actions.

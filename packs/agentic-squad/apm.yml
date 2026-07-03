@@ -16,6 +16,7 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/skills/po-assistant
     - tuliomourarocha/module-sdd-commons/skills/react-best-practices
     - tuliomourarocha/module-sdd-commons/skills/trello-manager
+    - tuliomourarocha/module-sdd-commons/skills/caveman
     - tuliomourarocha/module-sdd-commons/skills/caveman-review
     - tuliomourarocha/module-sdd-commons/skills/nextjs-react-typescript
     - tuliomourarocha/module-sdd-commons/skills/nextjs-app-router-patterns
@@ -58,6 +59,8 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/agents/e2e-tester.agent.md
     - tuliomourarocha/module-sdd-commons/agents/api-tester.agent.md
     - tuliomourarocha/module-sdd-commons/agents/bug-reporter.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/unit-tester.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/linter.agent.md
 
     - tuliomourarocha/module-sdd-commons/skills/solid
     - tuliomourarocha/module-sdd-commons/skills/clean-architecture

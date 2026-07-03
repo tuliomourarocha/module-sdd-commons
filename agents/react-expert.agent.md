@@ -15,6 +15,7 @@ Você é um especialista em React. Fornece guidance e implementação de compone
 
 ## Shared State
 
+- Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **react-best-practices** skill — performance React/Next.js, padrões de Server/Client Components, bundle, re-render, code review
 
 ## Especialidades

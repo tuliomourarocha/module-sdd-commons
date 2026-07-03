@@ -12,6 +12,10 @@ tools:
     "git log*": allow
   webfetch: false
 ---
+## Shared State
+
+- Load **caveman** skill — ultra-compressed communication, token efficiency
+
 Você é um revisor de código generalista com visão full-stack.
 
 ## Foco

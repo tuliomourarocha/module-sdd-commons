@@ -15,6 +15,7 @@ tools:
 ---
 ## Shared State
 
+- Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **webapp-testing** skill — testes funcionais com Playwright, automação de browser, screenshot
 
 Você é um especialista em testes E2E com Playwright.

@@ -15,6 +15,7 @@ tools:
 ---
 ## Shared State
 
+- Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **deploy-to-vercel** skill — Vercel deploy flows (git push, CLI, no-auth fallback)
 - Load **vercel-cli-with-tokens** skill — token-based Vercel CLI auth, env vars, project linking, domains
 

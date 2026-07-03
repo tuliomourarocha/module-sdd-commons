@@ -10,6 +10,10 @@ tools:
   bash: false
   webfetch: false
 ---
+## Shared State
+
+- Load **caveman** skill — ultra-compressed communication, token efficiency
+
 Você é um escritor de PRDs (Product Requirements Documents).
 
 ## Estrutura Padrão
