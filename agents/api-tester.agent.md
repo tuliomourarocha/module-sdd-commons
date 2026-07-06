@@ -3,14 +3,14 @@ description: Testes de API — contratos, status codes, validação, schemas, au
 mode: subagent
 model: opencode-go/deepseek-v4-flash
 temperature: 0.0
-tools:
+permission:
   edit:
     "**/*.test.ts": allow
     "**/__tests__/**": allow
   bash:
     "npm run test:api": allow
     "npm run test": allow
-  webfetch: true
+  webfetch: allow
 ---
 ## Shared State
 

@@ -3,12 +3,12 @@ description: Especialista em React — hooks, componentes, performance, padrões
 mode: subagent
 model: opencode-go/deepseek-v4-flash
 temperature: 0.05
-tools:
+permission:
   edit:
     "**/*.tsx": allow
     "**/*.ts": allow
-  bash: false
-  webfetch: false
+  bash: deny
+  webfetch: deny
 ---
 
 Você é um especialista em React. Fornece guidance e implementação de componentes.

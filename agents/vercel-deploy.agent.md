@@ -3,14 +3,14 @@ description: Especialista em deploy Vercel — CLI, configuração, previews e p
 mode: subagent
 model: opencode-go/deepseek-v4-flash
 temperature: 0.05
-tools:
+permission:
   edit:
     "vercel.json": allow
     ".github/workflows/deploy.yml": allow
   bash:
     "vercel *": allow
     "npx vercel *": allow
-  webfetch: false
+  webfetch: deny
 ---
 ## Shared State
 

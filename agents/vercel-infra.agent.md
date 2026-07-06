@@ -3,7 +3,7 @@ description: Especialista em infraestrutura Vercel — projetos, domínios, env 
 mode: subagent
 model: opencode-go/deepseek-v4-flash
 temperature: 0.05
-tools:
+permission:
   edit:
     "vercel.json": allow
     ".env.example": allow
@@ -11,7 +11,7 @@ tools:
   bash:
     "vercel *": allow
     "npx vercel *": allow
-  webfetch: false
+  webfetch: deny
 ---
 ## Shared State
 

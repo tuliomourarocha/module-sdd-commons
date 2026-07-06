@@ -3,10 +3,9 @@ description: Revisor de UI/UX — design, consistência visual, responsividade, 
 mode: subagent
 model: opencode-go/deepseek-v4-flash
 temperature: 0.1
-tools:
-  write: false
-  edit: false
-  webfetch: true
+permission:
+  edit: deny
+  webfetch: allow
 ---
 ## Shared State
 

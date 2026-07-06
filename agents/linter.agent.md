@@ -3,7 +3,7 @@ description: Linter multi-camada — ESLint, Biome, Prettier, type-check em back
 mode: subagent
 model: opencode-go/deepseek-v4-flash
 temperature: 0.0
-tools:
+permission:
   edit:
     "**/*.ts": allow
     "**/*.tsx": allow
@@ -20,7 +20,7 @@ tools:
     "npx eslint *": allow
     "npx biome *": allow
     "npx prettier *": allow
-  webfetch: false
+  webfetch: deny
 ---
 ## Shared State
 

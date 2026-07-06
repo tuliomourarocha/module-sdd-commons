@@ -5,13 +5,12 @@ hidden: true
 model: opencode-go/deepseek-v4-flash
 temperature: 0.05
 max_steps: 10
-tools:
-  write: false
-  edit: false
+permission:
+  edit: deny
   bash:
     "git diff*": allow
     "git log*": allow
-  webfetch: false
+  webfetch: deny
 ---
 
 You are a Software Architecture Expert and Reviewer.

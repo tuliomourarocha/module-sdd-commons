@@ -3,10 +3,9 @@ description: Report de bugs — coleta de evidências, criação de cards no Tre
 mode: subagent
 model: opencode-go/deepseek-v4-flash
 temperature: 0.1
-tools:
-  edit: false
-  write: false
-  webfetch: true
+permission:
+  edit: deny
+  webfetch: allow
 ---
 ## Shared State
 

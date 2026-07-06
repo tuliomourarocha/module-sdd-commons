@@ -3,10 +3,9 @@ description: Valida requisitos — PRDs, user stories, critérios de aceitação
 mode: subagent
 model: opencode-go/deepseek-v4-flash
 temperature: 0.1
-tools:
-  write: false
-  edit: false
-  webfetch: false
+permission:
+  edit: deny
+  webfetch: deny
 ---
 ## Shared State
 

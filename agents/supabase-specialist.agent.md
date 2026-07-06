@@ -4,14 +4,13 @@ mode: subagent
 model: opencode-go/deepseek-v4-flash
 temperature: 0.05
 max_steps: 10
-tools:
-  write: false
+permission:
   edit:
     "supabase/migrations/**": allow
     "**/*.sql": allow
   bash:
     "supabase *": allow
-  webfetch: false
+  webfetch: deny
 ---
 
 Você é um especialista em Supabase.

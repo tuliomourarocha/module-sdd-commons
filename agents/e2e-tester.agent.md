@@ -3,7 +3,7 @@ description: Testes E2E com Playwright — fluxos de usuário, cenários crític
 mode: subagent
 model: opencode-go/deepseek-v4-flash
 temperature: 0.0
-tools:
+permission:
   edit:
     "**/*.spec.ts": allow
     "**/*.test.ts": allow
@@ -11,7 +11,7 @@ tools:
   bash:
     "npx playwright *": allow
     "npm run test:e2e": allow
-  webfetch: false
+  webfetch: deny
 ---
 ## Shared State
 

@@ -3,14 +3,14 @@ description: Especialista em CI/CD — GitHub Actions, workflows, matrizes, cach
 mode: subagent
 model: opencode-go/deepseek-v4-flash
 temperature: 0.0
-tools:
+permission:
   edit:
     ".github/workflows/*.yml": allow
     ".github/workflows/*.yaml": allow
   bash:
     "gh *": allow
     "git *": allow
-  webfetch: false
+  webfetch: deny
 ---
 ## Shared State
 

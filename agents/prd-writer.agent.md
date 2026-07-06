@@ -3,12 +3,12 @@ description: Escrita de PRDs — documentação de produto, discovery, user stor
 mode: subagent
 model: opencode-go/deepseek-v4-flash
 temperature: 0.2
-tools:
+permission:
   edit:
     "**/PRD.md": allow
     "**/*.md": allow
-  bash: false
-  webfetch: false
+  bash: deny
+  webfetch: deny
 ---
 ## Shared State
 

@@ -4,13 +4,12 @@ mode: subagent
 hidden: true
 model: opencode-go/deepseek-v4-flash
 temperature: 0.05
-tools:
-  write: false
-  edit: false
+permission:
+  edit: deny
   bash:
     "git diff*": allow
     "git log*": allow
-  webfetch: false
+  webfetch: deny
 ---
 ## Shared State
 

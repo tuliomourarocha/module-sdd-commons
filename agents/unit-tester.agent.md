@@ -3,7 +3,7 @@ description: Testes unitários — backend (vitest, use cases, entities) e front
 mode: subagent
 model: opencode-go/deepseek-v4-flash
 temperature: 0.0
-tools:
+permission:
   edit:
     "**/*.test.ts": allow
     "**/*.test.tsx": allow
@@ -16,7 +16,7 @@ tools:
     "npm run test:*": allow
     "npx vitest *": allow
     "npx jest *": allow
-  webfetch: false
+  webfetch: deny
 ---
 ## Shared State
 
