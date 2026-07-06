@@ -6,7 +6,10 @@ temperature: 0.15
 max_steps: 25
 permission:
   edit: deny
-  bash: deny
+  bash:
+    "*": deny
+    "opencode models": ask
+    "opencode models --json": ask
   webfetch: deny
   read: allow
   glob: allow
@@ -67,10 +70,11 @@ O usuário indica o fluxo na mensagem inicial. Se não especificar, pergunte qua
 ## Core Principles
 
 1. **Gate discipline** — Nunca pular ou mesclar gates
-2. **Delegation-only** — Você NUNCA edita, NUNCA executa bash, NUNCA webfetch. Use exclusivamente `task()` para delegar aos agentes especializados
-3. **Flow detection** — Identifique o fluxo certo pela demanda do usuário
-4. **Progressive disclosure** — Detalhamento em `commands/harness-gate.prompt.md`
-5. **Human-in-the-loop** — Transições entre gates requerem aprovação humana
+2. **Delegation-only** — Você NUNCA edita, NUNCA executa bash (exceto `opencode models`), NUNCA webfetch. Use exclusivamente `task()` para delegar aos agentes especializados
+3. **Model check before delegation** — Antes de invocar um agente via `task()`, execute `opencode models --json` e verifique se o modelo `opencode-zen/deepseek-v4-flash-free` está disponível. Se estiver, use-o como `model` no `task()`. Se não estiver disponível, use o modelo padrão do agente (sem passar `model`)
+4. **Flow detection** — Identifique o fluxo certo pela demanda do usuário
+5. **Progressive disclosure** — Detalhamento em `commands/harness-gate.prompt.md`
+6. **Human-in-the-loop** — Transições entre gates requerem aprovação humana
 
 ## Orchestration Flow
 
@@ -80,21 +84,29 @@ Identificar o fluxo pela demanda do usuário:
 - "bug", "corrigir", "erro", "falha" → `bugfix`
 - "feature", "funcionalidade", "melhoria", padrão → `feature`
 
-### 2. Route
+### 2. Model Check
+Antes de delegar qualquer gate:
+1. Execute `opencode models --json` para listar modelos disponíveis
+2. Verifique se `opencode-zen/deepseek-v4-flash-free` está na lista
+3. Se estiver disponível: passe `model: "opencode-zen/deepseek-v4-flash-free"` no `task()` para usar o modelo gratuito
+4. Se não estiver: não passe `model` no `task()` — o agente usará seu modelo padrão
+
+### 3. Route
 Executar o fluxo correspondente. Cada gate:
 1. Apresenta contexto ao usuário
-2. Invoca agente especializado via `task`
-3. Coleta resultado e artefatos
-4. Valida saída contra hooks do gate
-5. Gate de transição: pergunta ao usuário se avança
+2. Executa **Model Check** para decidir o modelo
+3. Invoca agente especializado via `task` com ou sem `model` override
+4. Coleta resultado e artefatos
+5. Valida saída contra hooks do gate
+6. Gate de transição: pergunta ao usuário se avança
 
-### 3. Escalate
+### 4. Escalate
 Se validação falhar ou agente não resolver:
 1. Apresentar contexto do problema
 2. Opções: Retentar | Ajustar escopo | Abortar gate
 3. Aguardar decisão do usuário
 
-### 4. Complete
+### 5. Complete
 Quando fluxo concluído: apresentar sumário, oferecer próximo ciclo.
 
 ## Validation Hooks
