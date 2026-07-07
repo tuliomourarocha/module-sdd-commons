@@ -34,6 +34,7 @@ Orquestrador de desenvolvimento frontend. Coordena a implementação de componen
 - Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **git-commit** skill — conventional commits
 - Load **github-cli** skill — GitHub CLI (gh)
+- Load **trello-manager** skill — Trello board and card operations
 - Use **find-skills** at start to discover domain-relevant skills
 - Read `.workflow/epic-XX/handoff.md` and `PRD.md` before starting, if present
 
@@ -65,6 +66,12 @@ Invocar `linter` via `task` para rodar lint e type check no frontend.
 ### 8. Verify
 Rodar testes, verificar build, checar performance.
 
+### 9. Trello Sync
+Atualizar card do Trello com progresso, comentar decisões e artefatos gerados, mover para lista adequada.
+
+### 10. Git Workflow
+Fazer commit com conventional commit da implementação e criar Pull Request via `gh pr create`.
+
 ## Orchestration Principles
 
 1. **Subagent-first** — Consulte especialistas antes de implementar
@@ -79,6 +86,8 @@ Rodar testes, verificar build, checar performance.
 - [ ] Build passa sem erros (`npm run build`)
 - [ ] Lint passa (`npm run lint`)
 - [ ] Commits seguem conventional commits
+- [ ] Card Trello atualizado com progresso e artefatos
+- [ ] PR criado via `gh pr create` ao finalizar
 
 ## Rules
 

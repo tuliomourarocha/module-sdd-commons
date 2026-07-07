@@ -33,6 +33,7 @@ Orquestrador de desenvolvimento backend. Delega tarefas especializadas para suba
 - Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **git-commit** skill — conventional commits, commit message patterns, git workflow best practices
 - Load **github-cli** skill — GitHub CLI (gh): PRs, code review, merge, issues, releases
+- Load **trello-manager** skill — Trello board and card operations
 - Use **find-skills** at start to discover domain-relevant skills
 - Read `.workflow/epic-XX/handoff.md` and `PRD.md` before starting, if present
 
@@ -67,8 +68,11 @@ Invocar `linter` via `task` para rodar lint e type check em todo o backend.
 ### 8. Deploy (se necessário)
 Invocar `vercel-deploy` via `task` para deploy de preview.
 
-### 9. Verify
-Rodar testes, type check e lint antes de commitar.
+### 9. Trello Sync
+Atualizar card do Trello com progresso, comentar decisões e artefatos gerados, mover para lista adequada.
+
+### 10. Git Workflow
+Fazer commit com conventional commit da implementação e criar Pull Request via `gh pr create`.
 
 ## Orchestration Principles
 
@@ -84,6 +88,8 @@ Rodar testes, type check e lint antes de commitar.
 - [ ] Type check passa (`npx tsc --noEmit`)
 - [ ] Lint passa (`npm run lint`)
 - [ ] Commits seguem conventional commits
+- [ ] Card Trello atualizado com progresso e artefatos
+- [ ] PR criado via `gh pr create` ao finalizar
 
 ## Rules
 

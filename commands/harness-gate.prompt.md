@@ -97,9 +97,9 @@ Para adicionar funcionalidades em projeto existente. Ciclo completo de 4 gates.
 
 **Artefatos:** Código implementado, commits, `SUMMARY.md`
 
-### Gate 4 — Validate
+### Gate 4 — Validate → Done
 
-**Objetivo:** Garantir qualidade através de testes, code review e lint.
+**Objetivo:** Garantir qualidade através de testes, code review e lint, e finalizar o ciclo com commit+PR.
 
 **Pré-condições:** Gate 3 concluído + transição aprovada.
 
@@ -118,12 +118,20 @@ Para adicionar funcionalidades em projeto existente. Ciclo completo de 4 gates.
    └── ui-reviewer → revisão de UI/UX
 3. Coletar resultados (aprovado / blocker / warning / info)
 4. Se blockers: loop de correção (max 3 iterações, depois escalar)
-5. Transição 4→Done:
-   "Validação concluída. {N} issues (0 blocker). Finalizar?"
+5. Git Workflow — Após validação aprovada:
+   a. Fazer commit de todo o código com mensagem conventional commit
+   b. Criar Pull Request via `gh pr create` com descrição clara
+   c. Solicitar code review se aplicável
+6. Trello Sync — Atualizar card final:
+   a. Comentar resultado da validação
+   b. Marcar checklists como concluídos
+   c. Mover card para "Concluído"
+7. Transição → Done:
+   "Validação concluída. PR #{número} criado. {N} issues (0 blocker). Finalizar?"
    Opções: Finalizar | Revisar correções | Abortar ciclo
 ```
 
-**Artefatos:** Relatórios de review, `VALIDATION.md`
+**Artefatos:** Relatórios de review, `VALIDATION.md`, commits, Pull Request
 
 ---
 
@@ -184,6 +192,7 @@ Para cada feature, executar o **Fluxo 1 (feature)** completo:
 Discuss → Plan → Execute → Validate
 
 A cada ciclo:
+- **Trello Sync** — Comentar progresso, mover card da feature para "Concluído"
 - Atualizar o planejamento com o progresso
 - Perguntar ao final: "Feature N concluída. Próxima feature ou finalizar?"
 - Opções: Próxima feature | Revisar | Finalizar projeto
@@ -255,9 +264,9 @@ Para correção de bugs. Fluxo leve de 3 gates.
 
 **Artefatos:** Código corrigido, commits, `SUMMARY.md`
 
-### Gate 3 — Verify
+### Gate 3 — Verify → Done
 
-**Objetivo:** Verificar correção sem regressões.
+**Objetivo:** Verificar correção sem regressões e finalizar com commit+PR.
 
 ```
 1. Invocar (paralelo quando possível):
@@ -269,12 +278,14 @@ Para correção de bugs. Fluxo leve de 3 gates.
    └── qa-engineer → re-executar teste que reproduzia o bug
 2. Coletar resultados
 3. Se blocker: loop correção (max 2 iterações, depois escalar)
-4. Transição → Done:
-   "Bug corrigido e verificado. Finalizar?"
+4. Git Workflow — commit com conventional commit + PR via `gh pr create`
+5. Trello Sync — Comentar resultado, mover card para "Concluído"
+6. Transição → Done:
+   "Bug corrigido e verificado. PR #{número} criado. Finalizar?"
    Opções: Finalizar | Revisar | Abortar
 ```
 
-**Artefatos:** Bug fechado, testes verdes, `VALIDATION.md`
+**Artefatos:** Bug fechado, testes verdes, `VALIDATION.md`, commits, Pull Request
 
 ---
 
@@ -284,8 +295,12 @@ Toda transição entre gates segue:
 
 ```
 1. Verificar pré-condições do gate de destino
-2. Apresentar: o que foi feito + artefatos produzidos
-3. Oferecer escolha:
+2. Trello Sync — Atualizar card:
+   a. Comentar o progresso e artefatos produzidos no gate
+   b. Mover card para lista do próximo gate
+   c. Atualizar checklists com itens concluídos
+3. Apresentar: o que foi feito + artefatos produzidos
+4. Oferecer escolha:
    - Avançar → registrar, iniciar próximo gate
    - Revisar → loop no gate atual (max 3 iterações, max 2 no bugfix)
    - Abortar → registrar estado, salvar checkpoint

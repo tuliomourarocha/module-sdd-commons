@@ -98,7 +98,8 @@ Executar o fluxo correspondente. Cada gate:
 3. Invoca agente especializado via `task` com ou sem `model` override
 4. Coleta resultado e artefatos
 5. Valida saída contra hooks do gate
-6. Gate de transição: pergunta ao usuário se avança
+6. **Trello sync** — instruir subagentes a carregar `trello-manager` e atualizar o card do Trello a cada passo (comentar progresso, mover entre listas, atualizar checklists)
+7. Gate de transição: pergunta ao usuário se avança
 
 ### 4. Escalate
 Se validação falhar ou agente não resolver:
@@ -107,7 +108,10 @@ Se validação falhar ou agente não resolver:
 3. Aguardar decisão do usuário
 
 ### 5. Complete
-Quando fluxo concluído: apresentar sumário, oferecer próximo ciclo.
+Quando fluxo concluído:
+1. **Git Workflow** — Garantir que o agente executor fez commit com conventional commit e abriu PR via `gh pr create`
+2. **Trello sync** — Mover card para "Concluído" ou lista final no Trello
+3. Apresentar sumário, oferecer próximo ciclo
 
 ## Validation Hooks
 
@@ -116,6 +120,8 @@ Quando fluxo concluído: apresentar sumário, oferecer próximo ciclo.
 - [ ] Gate 2→3: PLAN.md aprovado, arquitetura revisada
 - [ ] Gate 3→4: Código implementado, SUMMARY.md presente
 - [ ] Gate 4→Done: Testes verdes, code reviews aprovados, lint limpo
+- [ ] Gate 4→Done: Commit feito com conventional commit + PR criado via `gh pr create`
+- [ ] Gate 4→Done: Card Trello atualizado e movido para "Concluído"
 
 ### Project Flow
 - [ ] Init→Scaffold: PRD.md aprovado

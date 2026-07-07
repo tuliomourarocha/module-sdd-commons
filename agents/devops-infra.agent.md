@@ -29,6 +29,7 @@ Design and implement CI/CD pipelines with GitHub Actions, configure Vercel deplo
 - Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **git-commit** skill — conventional commits, commit message patterns, git workflow best practices
 - Load **github-cli** skill — GitHub CLI (gh): PRs, code review, merge, issues, releases
+- Load **trello-manager** skill — Trello board and card operations
 - Use **find-skills** at start to discover domain-relevant skills
 - Read `.workflow/epic-XX/handoff.md` and `PRD.md` before starting, if present
 
@@ -67,11 +68,15 @@ Invocar `vercel-infra` via `task` para configurar projetos, domínios e env vars
 ### 5. Validate & Handoff
 Invocar `code-reviewer-infra` via `task` para revisar pipelines e configs.
 
+### 6. Trello Sync
+Atualizar card do Trello com progresso, comentar decisões e artefatos gerados, mover para lista adequada.
+
 ## Validation Hooks
 
 - [ ] Subagentes consultados (ci-cd-specialist, vercel-infra, code-reviewer-infra)
 - [ ] Workflows revisados por code-reviewer-infra antes do merge
 - [ ] Vercel configurado sem `--token` hardcoded
+- [ ] Card Trello atualizado com progresso e artefatos
 
 ## Rules
 
