@@ -20,6 +20,7 @@ permission:
     "architecture-reviewer": allow
     "backend-dev": allow
     "bug-reporter": allow
+    "ci-checker": allow
     "ci-cd-specialist": allow
     "code-reviewer-backend": allow
     "code-reviewer-frontend": allow
@@ -110,8 +111,9 @@ Se validação falhar ou agente não resolver:
 ### 5. Complete
 Quando fluxo concluído:
 1. **Git Workflow** — Garantir que o agente executor fez commit com conventional commit e abriu PR via `gh pr create`
-2. **Trello sync** — Mover card para "Concluído" ou lista final no Trello
-3. Apresentar sumário, oferecer próximo ciclo
+2. **CI Check** — Invocar `ci-checker` via `task` para verificar se o build do PR passou. Se falhou, escalar: acionar agente de correção (backend-dev, frontend-dev, devops-infra conforme a camada do erro)
+3. **Trello sync** — Mover card para "Concluído" ou lista final no Trello
+4. Apresentar sumário, oferecer próximo ciclo
 
 ## Validation Hooks
 
@@ -121,6 +123,7 @@ Quando fluxo concluído:
 - [ ] Gate 3→4: Código implementado, SUMMARY.md presente
 - [ ] Gate 4→Done: Testes verdes, code reviews aprovados, lint limpo
 - [ ] Gate 4→Done: Commit feito com conventional commit + PR criado via `gh pr create`
+- [ ] Gate 4→Done: CI check aprovado via `ci-checker` (todos os checks verdes)
 - [ ] Gate 4→Done: Card Trello atualizado e movido para "Concluído"
 
 ### Project Flow
@@ -150,7 +153,7 @@ Quando fluxo concluído:
 | Discuss | po-agent, requirements-reviewer, prd-writer |
 | Plan | techlead, architecture-reviewer |
 | Execute | backend-dev, frontend-dev, devops-infra, supabase-specialist, react-expert, nextjs-expert, ci-cd-specialist, vercel-deploy, vercel-infra |
-| Validate | qa-engineer, code-reviewer-backend, code-reviewer-frontend, code-reviewer-general, code-reviewer-infra, unit-tester, e2e-tester, api-tester, linter, ui-reviewer, bug-reporter |
+| Validate | qa-engineer, code-reviewer-backend, code-reviewer-frontend, code-reviewer-general, code-reviewer-infra, unit-tester, e2e-tester, api-tester, linter, ui-reviewer, bug-reporter, ci-checker |
 | Diagnose | bug-reporter, qa-engineer |
 | Fix | backend-dev, frontend-dev, devops-infra |
 | Verify | code-reviewer-backend, code-reviewer-frontend, code-reviewer-general, unit-tester, linter |

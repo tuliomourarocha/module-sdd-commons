@@ -122,16 +122,20 @@ Para adicionar funcionalidades em projeto existente. Ciclo completo de 4 gates.
    a. Fazer commit de todo o código com mensagem conventional commit
    b. Criar Pull Request via `gh pr create` com descrição clara
    c. Solicitar code review se aplicável
-6. Trello Sync — Atualizar card final:
-   a. Comentar resultado da validação
+6. CI Check — Invocar `ci-checker` via `task` passando o número do PR:
+   a. Se CI passar ✅ → prosseguir
+   b. Se CI falhar ❌ → identificar job com erro e escalar para o agente da camada (backend-dev, frontend-dev, devops-infra)
+   c. Loop correção → novo commit → novo CI check (max 2 iterações, depois escalar para decisão humana)
+7. Trello Sync — Atualizar card final:
+   a. Comentar resultado da validação e CI
    b. Marcar checklists como concluídos
    c. Mover card para "Concluído"
-7. Transição → Done:
-   "Validação concluída. PR #{número} criado. {N} issues (0 blocker). Finalizar?"
+8. Transição → Done:
+   "Validação concluída. PR #{número} criado. CI {status}. {N} issues (0 blocker). Finalizar?"
    Opções: Finalizar | Revisar correções | Abortar ciclo
 ```
 
-**Artefatos:** Relatórios de review, `VALIDATION.md`, commits, Pull Request
+**Artefatos:** Relatórios de review, `VALIDATION.md`, commits, Pull Request, CI report
 
 ---
 
@@ -208,12 +212,13 @@ A cada ciclo:
 2. Invocar devops-infra para:
    - Deploy de produção
    - Monitoramento e alertas
-3. Gerar documentação final
-4. Transição → Done:
-   "Projeto finalizado. Deploy realizado."
+3. Invocar ci-checker para verificar CI dos PRs finais
+4. Gerar documentação final
+5. Transição → Done:
+   "Projeto finalizado. Deploy realizado. CI ok."
 ```
 
-**Artefatos:** Deploy produzido, testes passando, docs finais
+**Artefatos:** Deploy produzido, testes passando, docs finais, CI report
 
 ---
 
@@ -279,13 +284,16 @@ Para correção de bugs. Fluxo leve de 3 gates.
 2. Coletar resultados
 3. Se blocker: loop correção (max 2 iterações, depois escalar)
 4. Git Workflow — commit com conventional commit + PR via `gh pr create`
-5. Trello Sync — Comentar resultado, mover card para "Concluído"
-6. Transição → Done:
-   "Bug corrigido e verificado. PR #{número} criado. Finalizar?"
+5. CI Check — Invocar `ci-checker` via `task`:
+   a. Se CI passar ✅ → prosseguir
+   b. Se CI falhar ❌ → escalar para agente da camada para correção
+6. Trello Sync — Comentar resultado, mover card para "Concluído"
+7. Transição → Done:
+   "Bug corrigido e verificado. PR #{número} criado. CI {status}. Finalizar?"
    Opções: Finalizar | Revisar | Abortar
 ```
 
-**Artefatos:** Bug fechado, testes verdes, `VALIDATION.md`, commits, Pull Request
+**Artefatos:** Bug fechado, testes verdes, `VALIDATION.md`, commits, Pull Request, CI report
 
 ---
 
