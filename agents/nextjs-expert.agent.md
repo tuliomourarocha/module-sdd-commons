@@ -7,7 +7,15 @@ permission:
   edit:
     "**/*.tsx": allow
     "**/*.ts": allow
-  bash: deny
+  bash:
+    "npm install": allow
+    "npm install *": allow
+    "npm ci": allow
+    "npm run build": allow
+    "npm run lint": allow
+    "npm run typecheck": allow
+    "npx tsc *": allow
+    "npx eslint *": allow
   webfetch: deny
 ---
 
