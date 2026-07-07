@@ -61,6 +61,7 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/agents/e2e-tester.agent.md
     - tuliomourarocha/module-sdd-commons/agents/api-tester.agent.md
     - tuliomourarocha/module-sdd-commons/agents/bug-reporter.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/ci-checker.agent.md
     - tuliomourarocha/module-sdd-commons/agents/unit-tester.agent.md
     - tuliomourarocha/module-sdd-commons/agents/linter.agent.md
 
