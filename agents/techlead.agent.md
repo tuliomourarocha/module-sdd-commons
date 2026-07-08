@@ -98,7 +98,18 @@ Invocar `unit-tester` via `task` para garantir cobertura de testes unitários no
 ### 5. Lint & Type Check
 Invocar `linter` via `task` para rodar lint e type check como gate de qualidade antes do merge.
 
-### 6. Code Review & Merge
+### 6. Trello Sync (OBRIGATÓRIO)
+Carregar `trello-manager` e:
+1. Verificar se `~/.trello_config.json` existe com api_key e token
+2. Se não existir, autenticar via `python <skill-path>/scripts/trello_api.py auth`
+3. Atualizar card do Trello com progresso do refinamento técnico
+4. Garantir que subtasks, labels de camada e estimativas estão no card
+5. Comentar decisões arquiteturais e artefatos gerados
+6. Mover card para lista adequada (próximo gate)
+7. Confirmar no output: "Trello sync concluído: [detalhes]"
+8. Se Trello não configurado, logar warning e continuar
+
+### 7. Code Review & Merge
 
 1. **Delegar code review** — invocar `code-reviewer-general` via `task` para revisão multi-camada
 2. **Report** — `docs/reviews/review-YYYY-MM-DD.md` com achados e severidade
@@ -123,6 +134,7 @@ Nunca implementar features completas que um subagente especializado pode fazer.
 - [ ] Merge realizado apenas após code review aprovado
 - [ ] Subagentes foram consultados antes de decisões técnicas
 - [ ] Estimativas de esforço (P/M/G) atribuídas por subtask
+- [ ] Trello sync executado — card atualizado com progresso, artefatos e checklists
 
 ## Rules
 

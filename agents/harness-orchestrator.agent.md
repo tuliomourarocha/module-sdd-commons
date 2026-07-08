@@ -76,6 +76,7 @@ O usuário indica o fluxo na mensagem inicial. Se não especificar, pergunte qua
 4. **Flow detection** — Identifique o fluxo certo pela demanda do usuário
 5. **Progressive disclosure** — Detalhamento em `commands/harness-gate.prompt.md`
 6. **Human-in-the-loop** — Transições entre gates requerem aprovação humana
+7. **Trello sync em toda task** — Toda task delegada DEVE incluir instrução explícita de Trello sync ao finalizar
 
 ## Orchestration Flow
 
@@ -96,11 +97,30 @@ Antes de delegar qualquer gate:
 Executar o fluxo correspondente. Cada gate:
 1. Apresenta contexto ao usuário
 2. Executa **Model Check** para decidir o modelo
-3. Invoca agente especializado via `task` com ou sem `model` override
+3. Invoca agente especializado via `task` com ou sem `model` override — **sempre incluir a instrução de Trello sync** no prompt da task (ver template abaixo)
 4. Coleta resultado e artefatos
 5. Valida saída contra hooks do gate
-6. **Trello sync** — instruir subagentes a carregar `trello-manager` e atualizar o card do Trello a cada passo (comentar progresso, mover entre listas, atualizar checklists)
+6. **Valida Trello sync** — verificar se o subagente confirmou que atualizou o card do Trello. Se não confirmou, escalar: "O card do Trello foi atualizado? Por favor, confirme."
 7. Gate de transição: pergunta ao usuário se avança
+
+### Task Template (use em TODAS as tasks delegadas)
+
+Toda chamada `task()` DEVE incluir no final do prompt:
+
+```
+## Ao finalizar
+
+1. **Trello Sync (OBRIGATÓRIO)** — Carregue a skill `trello-manager` e:
+   a. Verifique se `~/.trello_config.json` existe com api_key e token
+   b. Se não existir, faça a autenticação rodando `python <skill-path>/scripts/trello_api.py auth`
+   c. Atualize o card do Trello com o progresso realizado
+   d. Comente as decisões e artefatos gerados
+   e. Mova o card para a lista adequada (próximo gate ou "Em Andamento")
+   f. Confirme no output: "Trello sync concluído: card movido para [lista]"
+2. **Se Trello não configurado** — logar warning e continuar (não bloquear)
+```
+
+Sempre substitua `<skill-path>` pelo caminho real da skill trello-manager.
 
 ### 4. Escalate
 Se validação falhar ou agente não resolver:
@@ -109,33 +129,45 @@ Se validação falhar ou agente não resolver:
 3. Aguardar decisão do usuário
 
 ### 5. Complete
+
 Quando fluxo concluído:
 1. **Git Workflow** — Garantir que o agente executor fez commit com conventional commit e abriu PR via `gh pr create`
 2. **CI Check** — Invocar `ci-checker` via `task` para verificar se o build do PR passou. Se falhou, escalar: acionar agente de correção (backend-dev, frontend-dev, devops-infra conforme a camada do erro)
-3. **Trello sync** — Mover card para "Concluído" ou lista final no Trello
-4. Apresentar sumário, oferecer próximo ciclo
+3. **Trello sync** — Carregar `trello-manager` e mover card para "Concluído" ou lista final no Trello. Comentar resultado final: validação, CI status, PR link
+4. **Validar Trello sync** — Confirmar que o card foi movido para a lista final. Se falhou, escalar com alerta
+5. Apresentar sumário, oferecer próximo ciclo
 
 ## Validation Hooks
 
 ### Feature Flow
 - [ ] Gate 1→2: PRD.md aprovado, requisitos validados
+- [ ] Gate 1→2: Subagente confirmou Trello sync (card atualizado com progresso)
 - [ ] Gate 2→3: PLAN.md aprovado, arquitetura revisada
+- [ ] Gate 2→3: Subagente confirmou Trello sync (card movido para Plan)
 - [ ] Gate 3→4: Código implementado, SUMMARY.md presente
+- [ ] Gate 3→4: Subagente confirmou Trello sync (card movido para Execute)
 - [ ] Gate 4→Done: Testes verdes, code reviews aprovados, lint limpo
 - [ ] Gate 4→Done: Commit feito com conventional commit + PR criado via `gh pr create`
 - [ ] Gate 4→Done: CI check aprovado via `ci-checker` (todos os checks verdes)
 - [ ] Gate 4→Done: Card Trello atualizado e movido para "Concluído"
+- [ ] Gate 4→Done: Trello sync validado — card na lista final
 
 ### Project Flow
 - [ ] Init→Scaffold: PRD.md aprovado
+- [ ] Init→Scaffold: Trello sync — card do projeto criado/atualizado
 - [ ] Scaffold→Feature 1: Projeto rodando, CI/CD configurado
-- [ ] Feature Gate: mesmos hooks do feature flow
+- [ ] Scaffold→Feature 1: Trello sync — card movido para Feature cycle
+- [ ] Feature Gate: mesmos hooks do feature flow (incluindo Trello sync)
 - [ ] Finalize: Tudo deployado, documentado
+- [ ] Finalize: Card Trello movido para "Concluído"
 
 ### Bugfix Flow
 - [ ] Gate 1→2: Bug reproduzido, causa identificada
+- [ ] Gate 1→2: Card do bug criado/atualizado no Trello
 - [ ] Gate 2→3: Código corrigido, SUMMARY.md presente
+- [ ] Gate 2→3: Trello sync — card movido para Fix
 - [ ] Gate 3→Done: Testes verdes, code review aprovado
+- [ ] Gate 3→Done: Card Trello movido para "Concluído"
 
 ## Rules
 

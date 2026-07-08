@@ -53,6 +53,20 @@ User stories with Gherkin AC. `PRD.md` with in/out scope, metrics, risks.
 ### 4. Validate & Handoff
 Run validation hooks. Handoff to requirements-reviewer.
 
+### 5. Trello Sync (OBRIGATÓRIO)
+
+Carregar `trello-manager` e:
+1. Verificar se `~/.trello_config.json` existe com api_key e token
+2. Se não existir, autenticar via `python <skill-path>/scripts/trello_api.py auth`
+3. Criar/atualizar cards no Trello com:
+   - Labels de prioridade e camada
+   - Checklists com critérios de aceitação
+   - Estimativas e dependências
+4. Comentar decisões do discovery e artefatos gerados (PRD, backlog)
+5. Mover card para lista adequada (próximo gate)
+6. Confirmar no output: "Trello sync concluído: [detalhes]"
+7. Se Trello não configurado, logar warning e continuar
+
 ## Validation Hooks
 
 - [ ] User stories: INVEST + Gherkin, ≥2 scenarios
@@ -60,6 +74,7 @@ Run validation hooks. Handoff to requirements-reviewer.
 - [ ] PRD: metrics quantifiable, in/out scope clear, risks mapped
 - [ ] Prioritization: framework named + justified
 - [ ] Trello: labels, checklists, lists correct
+- [ ] Trello sync executado — cards criados/atualizados com labels, checklists e listas corretos
 
 ## Rules
 

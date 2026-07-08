@@ -68,8 +68,15 @@ Invocar `linter` via `task` para rodar lint e type check em todo o backend.
 ### 8. Deploy (se necessário)
 Invocar `vercel-deploy` via `task` para deploy de preview.
 
-### 9. Trello Sync
-Atualizar card do Trello com progresso, comentar decisões e artefatos gerados, mover para lista adequada.
+### 9. Trello Sync (OBRIGATÓRIO)
+
+Carregar `trello-manager` e:
+1. Verificar se `~/.trello_config.json` existe com api_key e token
+2. Se não existir, autenticar via `python <skill-path>/scripts/trello_api.py auth`
+3. Atualizar card do Trello com progresso, comentar decisões e artefatos gerados
+4. Mover para lista adequada (próximo gate)
+5. Confirmar no output: "Trello sync concluído: [detalhes]"
+6. Se Trello não configurado, logar warning e continuar
 
 ### 10. Git Workflow
 Fazer commit com conventional commit da implementação e criar Pull Request via `gh pr create`.

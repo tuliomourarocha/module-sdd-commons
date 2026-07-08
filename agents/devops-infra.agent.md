@@ -68,8 +68,15 @@ Invocar `vercel-infra` via `task` para configurar projetos, domínios e env vars
 ### 5. Validate & Handoff
 Invocar `code-reviewer-infra` via `task` para revisar pipelines e configs.
 
-### 6. Trello Sync
-Atualizar card do Trello com progresso, comentar decisões e artefatos gerados, mover para lista adequada.
+### 6. Trello Sync (OBRIGATÓRIO)
+
+Carregar `trello-manager` e:
+1. Verificar se `~/.trello_config.json` existe com api_key e token
+2. Se não existir, autenticar via `python <skill-path>/scripts/trello_api.py auth`
+3. Atualizar card do Trello com progresso, comentar decisões e artefatos gerados
+4. Mover para lista adequada (próximo gate)
+5. Confirmar no output: "Trello sync concluído: [detalhes]"
+6. Se Trello não configurado, logar warning e continuar
 
 ## Validation Hooks
 

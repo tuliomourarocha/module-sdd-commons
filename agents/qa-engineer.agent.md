@@ -106,6 +106,19 @@ Após correção reportada:
 3. Se resolvido: marcar card como concluído no Trello
 4. Se não: reabrir com novas evidências
 
+### 6. Trello Sync (OBRIGATÓRIO)
+
+Carregar `trello-manager` e:
+1. Verificar se `~/.trello_config.json` existe com api_key e token
+2. Se não existir, autenticar via `python <skill-path>/scripts/trello_api.py auth`
+3. Atualizar card do Trello com:
+   - Resultado dos testes (passou/falhou, cobertura)
+   - Links para artefatos gerados (relatórios, screenshots)
+   - Bugs encontrados e status
+4. Mover card para lista adequada (próximo gate ou "Concluído")
+5. Confirmar no output: "Trello sync concluído: [detalhes]"
+6. Se Trello não configurado, logar warning e continuar
+
 ## Validation Hooks
 
 - [ ] Todo bug tem steps to reproduce, screenshot/log, ambiente e label de camada
@@ -115,6 +128,7 @@ Após correção reportada:
 - [ ] Agentes notificados via `task` para cada bug reportado
 - [ ] Skills solicitadas ao solicitante quando necessário
 - [ ] Dúvidas esclarecidas antes de iniciar implementação
+- [ ] Trello sync executado — card atualizado com resultados dos testes e artefatos
 
 ## Rules
 

@@ -2,6 +2,8 @@
 
 > Comportamento detalhado do Harness Orchestrator. Lido via progressive disclosure.
 
+> **IMPORTANTE:** Toda chamada `task()` neste documento DEVE incluir a instrução de Trello sync ao final do prompt. Use o template definido no `harness-orchestrator.agent.md` — seção "Task Template". O texto "(+ Trello sync)" marca cada task que deve recebê-la.
+
 ---
 
 ## Sumário dos Fluxos
@@ -30,11 +32,11 @@ Para adicionar funcionalidades em projeto existente. Ciclo completo de 4 gates.
 
 ```
 1. Apresentar: "Gate 1 — Discuss. Vamos entender a demanda."
-2. Invocar po-agent via task para:
+2. Invocar po-agent via task (+ Trello sync) para:
    - Discovery interview (problema, stakeholders, métricas)
    - Estruturar backlog (Epic → Feature → User Story)
    - Produzir PRD.md com in/out scope, métricas, riscos
-3. Invocar requirements-reviewer via task para:
+3. Invocar requirements-reviewer via task (+ Trello sync) para:
    - Validar INVEST nas user stories
    - Validar Gherkin scenarios (mínimo 2 por história)
    - Verificar métricas quantificáveis
@@ -55,12 +57,12 @@ Para adicionar funcionalidades em projeto existente. Ciclo completo de 4 gates.
 
 ```
 1. Apresentar: "Gate 2 — Plan. Vamos arquitetar a solução."
-2. Invocar techlead via task para:
+2. Invocar techlead via task (+ Trello sync) para:
    - Arquitetura frontend (component tree, data flow, rotas)
    - Arquitetura backend (Clean Architecture, DTOs, boundaries)
    - Diagramas Mermaid em docs/arch/
    - Subtasks técnicas com estimativas (P/M/G)
-3. Invocar architecture-reviewer via task para:
+3. Invocar architecture-reviewer via task (+ Trello sync) para:
    - Validar Dependency Rule, SOLID, boundaries
    - Revisar diagramas
 4. Se issues: loop de revisão techlead → architecture-reviewer (max 3 iterações)
@@ -85,7 +87,7 @@ Para adicionar funcionalidades em projeto existente. Ciclo completo de 4 gates.
    a. Infra + Banco → devops-infra, supabase-specialist
    b. Backend → backend-dev (gerencia subagentes internos)
    c. Frontend → frontend-dev (gerencia subagentes internos)
-3. Invocar agentes sequencialmente (respeitando dependências):
+3. Invocar agentes sequencialmente (respeitando dependências) — cada task (+ Trello sync):
    a. devops-infra → CI/CD, ambientes, secrets
    b. backend-dev → API, use cases, entidades, testes
    c. frontend-dev → componentes, páginas, testes
@@ -105,7 +107,7 @@ Para adicionar funcionalidades em projeto existente. Ciclo completo de 4 gates.
 
 ```
 1. Apresentar: "Gate 4 — Validate. Vamos garantir a qualidade."
-2. Disparar validações (paralelo quando possível):
+2. Disparar validações (paralelo quando possível) — cada task (+ Trello sync):
    ├── qa-engineer → orquestra testes
    │   ├── unit-tester → testes unitários
    │   ├── e2e-tester → testes funcionais
@@ -122,7 +124,7 @@ Para adicionar funcionalidades em projeto existente. Ciclo completo de 4 gates.
    a. Fazer commit de todo o código com mensagem conventional commit
    b. Criar Pull Request via `gh pr create` com descrição clara
    c. Solicitar code review se aplicável
-6. CI Check — Invocar `ci-checker` via `task` passando o número do PR:
+6. CI Check — Invocar `ci-checker` via `task` (+ Trello sync) passando o número do PR:
    a. Se CI passar ✅ → prosseguir
    b. Se CI falhar ❌ → identificar job com erro e escalar para o agente da camada (backend-dev, frontend-dev, devops-infra)
    c. Loop correção → novo commit → novo CI check (max 2 iterações, depois escalar para decisão humana)
@@ -155,11 +157,11 @@ Para projetos novos do zero. Bootstrap + múltiplas features.
 
 ```
 1. Apresentar: "Gate 1 — Discover. Vamos definir o produto."
-2. Invocar po-agent via task para:
+2. Invocar po-agent via task (+ Trello sync) para:
    - Discovery completo (problema, personas, concorrência)
    - PRD.md do projeto (visão, escopo, métricas, riscos)
    - Roadmap de funcionalidades prioritárias
-3. Invocar requirements-reviewer via task para validar PRD
+3. Invocar requirements-reviewer via task (+ Trello sync) para validar PRD
 4. Consolidar visão do projeto
 5. Transição 1→2:
    "PRD do projeto validado. Avançar para o Gate 2 (Scaffold)?"
@@ -173,16 +175,16 @@ Para projetos novos do zero. Bootstrap + múltiplas features.
 **Objetivo:** Montar estrutura do projeto, CI/CD, arquitetura base.
 
 ```
-1. Invocar techlead via task para:
+1. Invocar techlead via task (+ Trello sync) para:
    - Estrutura de diretórios (front + back)
    - Arquitetura base (Clean Architecture, componente tree)
    - Configuração de frameworks e dependências
-2. Invocar devops-infra via task para:
+2. Invocar devops-infra via task (+ Trello sync) para:
    - CI/CD (GitHub Actions)
    - Deploy (Vercel)
    - Variáveis de ambiente e secrets
-3. Invocar architecture-reviewer via task para revisar
-4. Se necessário: invocar supabase-specialist para schema inicial
+3. Invocar architecture-reviewer via task (+ Trello sync) para revisar
+4. Se necessário: invocar supabase-specialist (+ Trello sync) para schema inicial
 5. Transição 2→3:
    "Projeto scaffoldado. Iniciar primeira feature?"
    Opções: Iniciar Feature 1 | Revisar scaffold | Abortar
@@ -206,13 +208,13 @@ A cada ciclo:
 **Objetivo:** Finalizar projeto, deploy produção, documentação.
 
 ```
-1. Invocar qa-engineer para:
+1. Invocar qa-engineer via task (+ Trello sync) para:
    - Suite completa de testes
    - Validação de fluxos ponta a ponta
-2. Invocar devops-infra para:
+2. Invocar devops-infra via task (+ Trello sync) para:
    - Deploy de produção
    - Monitoramento e alertas
-3. Invocar ci-checker para verificar CI dos PRs finais
+3. Invocar ci-checker via task (+ Trello sync) para verificar CI dos PRs finais
 4. Gerar documentação final
 5. Transição → Done:
    "Projeto finalizado. Deploy realizado. CI ok."
@@ -236,11 +238,11 @@ Para correção de bugs. Fluxo leve de 3 gates.
 
 ```
 1. Apresentar: "Gate 1 — Diagnose. Vamos entender o bug."
-2. Invocar bug-reporter via task para:
+2. Invocar bug-reporter via task (+ Trello sync) para:
    - Coletar evidências (logs, screenshots, steps)
    - Identificar ambiente e camada afetada
    - Abrir card no Trello (se configurado)
-3. Invocar qa-engineer via task para:
+3. Invocar qa-engineer via task (+ Trello sync) para:
    - Criar teste que reproduz o bug
    - Confirmar falha
 4. Analisar causa raiz com os dados coletados
@@ -256,7 +258,7 @@ Para correção de bugs. Fluxo leve de 3 gates.
 **Objetivo:** Corrigir o bug.
 
 ```
-1. Invocar agente da camada afetada via task:
+1. Invocar agente da camada afetada via task (+ Trello sync):
    - backend-dev → se bug de API/lógica
    - frontend-dev → se bug de UI/UX
    - devops-infra → se bug de infra/deploy
@@ -274,7 +276,7 @@ Para correção de bugs. Fluxo leve de 3 gates.
 **Objetivo:** Verificar correção sem regressões e finalizar com commit+PR.
 
 ```
-1. Invocar (paralelo quando possível):
+1. Invocar (paralelo quando possível) — cada task (+ Trello sync):
    ├── code-reviewer-backend → revisão (se backend)
    ├── code-reviewer-frontend → revisão (se frontend)
    ├── code-reviewer-general → revisão multi-camada
@@ -284,10 +286,10 @@ Para correção de bugs. Fluxo leve de 3 gates.
 2. Coletar resultados
 3. Se blocker: loop correção (max 2 iterações, depois escalar)
 4. Git Workflow — commit com conventional commit + PR via `gh pr create`
-5. CI Check — Invocar `ci-checker` via `task`:
+5. CI Check — Invocar `ci-checker` via `task` (+ Trello sync):
    a. Se CI passar ✅ → prosseguir
    b. Se CI falhar ❌ → escalar para agente da camada para correção
-6. Trello Sync — Comentar resultado, mover card para "Concluído"
+6. Trello Sync — Carregar `trello-manager`, comentar resultado, mover card para "Concluído"
 7. Transição → Done:
    "Bug corrigido e verificado. PR #{número} criado. CI {status}. Finalizar?"
    Opções: Finalizar | Revisar | Abortar
