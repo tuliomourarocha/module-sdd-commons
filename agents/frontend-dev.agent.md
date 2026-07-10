@@ -10,6 +10,7 @@ permission:
     "**/*.tsx": allow
     "**/*.css": allow
     "**/*.scss": allow
+    ".planning/**": allow
     "*": ask
   bash: allow
   webfetch: allow
@@ -31,17 +32,19 @@ Orquestrador de desenvolvimento frontend. Coordena a implementação de componen
 
 ## Shared State
 
+- Load **state-manager** skill — state protocol (STATE.md, HANDOFF.md)
 - Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **git-commit** skill — conventional commits
 - Load **github-cli** skill — GitHub CLI (gh)
 - Load **trello-manager** skill — Trello board and card operations
 - Use **find-skills** at start to discover domain-relevant skills
-- Read `.workflow/epic-XX/handoff.md` and `PRD.md` before starting, if present
+- Read `.planning/STATE.md` and `.planning/HANDOFF.md` before starting, if present
+- Read `.planning/PRD.md` and `.planning/PLAN.md` for context
 
 ## Orchestration Workflow
 
 ### 1. Discovery
-Ler PRD, handoff e arquitetura. Identificar escopo do trabalho.
+Ler `.planning/STATE.md`, `.planning/HANDOFF.md`, `.planning/PRD.md` e `.planning/PLAN.md`. Identificar escopo do trabalho.
 
 ### 2. Consult React/Next.js Expert
 Invocar `react-expert` ou `nextjs-expert` via `task` para:
@@ -66,9 +69,15 @@ Invocar `linter` via `task` para rodar lint e type check no frontend.
 ### 8. Verify
 Rodar testes, verificar build, checar performance.
 
-### 9. Trello Sync (OBRIGATÓRIO)
+### 9. State Protocol + Trello Sync (OBRIGATÓRIO)
 
-Carregar `trello-manager` e:
+**State Protocol:** Carregar `state-manager` e:
+1. Escrever `.planning/HANDOFF.md` (sobrescrever) com:
+   - O que foi feito, arquivos alterados, decisões, pendências
+   - Usar template HANDOFF.md da skill state-manager
+2. Atualizar `.planning/STATE.md` se instruído pelo harness
+
+**Trello Sync:** Carregar `trello-manager` e:
 1. Verificar se `~/.trello_config.json` existe com api_key e token
 2. Se não existir, autenticar via `python <skill-path>/scripts/trello_api.py auth`
 3. Atualizar card do Trello com progresso, comentar decisões e artefatos gerados
@@ -92,6 +101,7 @@ Fazer commit com conventional commit da implementação e criar Pull Request via
 - [ ] Testes unitários passam (`npm run test`)
 - [ ] Build passa sem erros (`npm run build`)
 - [ ] Lint passa (`npm run lint`)
+- [ ] `.planning/HANDOFF.md` escrito com resultado do trabalho
 - [ ] Commits seguem conventional commits
 - [ ] Card Trello atualizado com progresso e artefatos
 - [ ] PR criado via `gh pr create` ao finalizar

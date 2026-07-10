@@ -4,7 +4,7 @@
 
 ## Templates de Arquitetura
 
-### Frontend Architecture (`docs/arch/epic-XX/frontend-arch.md`)
+### Frontend Architecture (`.planning/arch/epic-XX/frontend-arch.md`)
 
 ````markdown
 # Frontend Architecture — [Epic Name]
@@ -73,7 +73,7 @@ flowchart LR
 - TTI: <3.5s
 ````
 
-### Backend Architecture (`docs/arch/epic-XX/backend-arch.md`)
+### Backend Architecture (`.planning/arch/epic-XX/backend-arch.md`)
 
 ````markdown
 # Backend Architecture — [Epic Name]
@@ -180,7 +180,7 @@ class PrismaOrderRepository implements OrderRepository {
 | API Routes | E2E | Test container |
 ````
 
-### Sequence Flows (`docs/arch/epic-XX/sequence-flows.md`)
+### Sequence Flows (`.planning/arch/epic-XX/sequence-flows.md`)
 
 ````markdown
 # Sequence Flows — [Epic Name]
@@ -207,7 +207,7 @@ sequenceDiagram
 ```
 ````
 
-### CI/CD & Deployment (`docs/arch/epic-XX/deployment.md`)
+### CI/CD & Deployment (`.planning/arch/epic-XX/deployment.md`)
 
 ````markdown
 # CI/CD & Deployment — [Epic Name]
@@ -252,7 +252,7 @@ flowchart LR
 | DATABASE_URL | API Runtime | Neon/PlanetScale |
 ````
 
-## Template: Technical Refinement (`docs/arch/epic-XX/technical-refinement.md`)
+## Template: Technical Refinement (`.planning/arch/epic-XX/technical-refinement.md`)
 
 ```markdown
 # Technical Refinement — [Epic Name]

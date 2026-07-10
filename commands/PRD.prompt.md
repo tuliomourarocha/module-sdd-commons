@@ -36,7 +36,7 @@
 
 ## 4. Épicos & Features
 
-> Cada épico possui detalhamento próprio em `docs/prd/epics/[slug-do-epico].md`
+> Cada épico possui detalhamento próprio em `.planning/arch/epic-XX/`
 
 | Prioridade | Épico | Features-Chave | Esforço |
 |:----------:|-------|----------------|:-------:|
@@ -62,5 +62,5 @@
 
 ---
 
-> Para detalhamento de épicos, veja `docs/prd/epics/`.
+> Para detalhamento de épicos, veja `.planning/arch/epic-XX/`.
 > Para user stories completas, veja o board no Trello.

@@ -62,9 +62,11 @@ O usuário indica o fluxo na mensagem inicial. Se não especificar, pergunte qua
 
 ## Shared State
 
+- Load **state-manager** skill — state protocol (STATE.md, HANDOFF.md)
 - Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **find-skills** skill — discover domain-relevant skills
-- Read `.planning/STATE.md` and `.planning/ROADMAP.md` before starting, if present
+- Read `.planning/STATE.md` and `.planning/HANDOFF.md` before starting, if present
+- Read `.planning/ROADMAP.md` if present
 - Read agent artifacts from `agents/` and `commands/` to understand available capabilities
 - Read `.planning/codebase/*.md` for codebase context when onboarding
 
@@ -110,14 +112,21 @@ Toda chamada `task()` DEVE incluir no final do prompt:
 ```
 ## Ao finalizar
 
-1. **Trello Sync (OBRIGATÓRIO)** — Carregue a skill `trello-manager` e:
+1. **State Protocol (OBRIGATÓRIO)** — Carregue a skill `state-manager` e:
+   a. Escreva `.planning/HANDOFF.md` (sobrescrever) com o resultado do trabalho:
+      - O que foi feito, arquivos alterados, decisões, pendências
+      - Use o template HANDOFF.md da skill
+   b. Atualize `.planning/STATE.md` com o novo estado:
+      - Gate atual, artefatos produzidos, próximo passo
+      - Use o template STATE.md da skill
+2. **Trello Sync (OBRIGATÓRIO)** — Carregue a skill `trello-manager` e:
    a. Verifique se `~/.trello_config.json` existe com api_key e token
    b. Se não existir, faça a autenticação rodando `python <skill-path>/scripts/trello_api.py auth`
    c. Atualize o card do Trello com o progresso realizado
    d. Comente as decisões e artefatos gerados
    e. Mova o card para a lista adequada (próximo gate ou "Em Andamento")
    f. Confirme no output: "Trello sync concluído: card movido para [lista]"
-2. **Se Trello não configurado** — logar warning e continuar (não bloquear)
+3. **Se Trello não configurado** — logar warning e continuar (não bloquear)
 ```
 
 Sempre substitua `<skill-path>` pelo caminho real da skill trello-manager.
@@ -140,11 +149,14 @@ Quando fluxo concluído:
 ## Validation Hooks
 
 ### Feature Flow
-- [ ] Gate 1→2: PRD.md aprovado, requisitos validados
+- [ ] Gate 1→2: `.planning/PRD.md` aprovado, requisitos validados
+- [ ] Gate 1→2: HANDOFF.md escrito + STATE.md atualizado pelo subagente
 - [ ] Gate 1→2: Subagente confirmou Trello sync (card atualizado com progresso)
-- [ ] Gate 2→3: PLAN.md aprovado, arquitetura revisada
+- [ ] Gate 2→3: `.planning/PLAN.md` aprovado, arquitetura revisada
+- [ ] Gate 2→3: HANDOFF.md escrito + STATE.md atualizado pelo subagente
 - [ ] Gate 2→3: Subagente confirmou Trello sync (card movido para Plan)
-- [ ] Gate 3→4: Código implementado, SUMMARY.md presente
+- [ ] Gate 3→4: Código implementado, `.planning/SUMMARY.md` presente
+- [ ] Gate 3→4: HANDOFF.md escrito + STATE.md atualizado pelo subagente
 - [ ] Gate 3→4: Subagente confirmou Trello sync (card movido para Execute)
 - [ ] Gate 4→Done: Testes verdes, code reviews aprovados, lint limpo
 - [ ] Gate 4→Done: Commit feito com conventional commit + PR criado via `gh pr create`
@@ -153,18 +165,21 @@ Quando fluxo concluído:
 - [ ] Gate 4→Done: Trello sync validado — card na lista final
 
 ### Project Flow
-- [ ] Init→Scaffold: PRD.md aprovado
+- [ ] Init→Scaffold: `.planning/PRD.md` aprovado
+- [ ] Init→Scaffold: HANDOFF.md escrito + STATE.md atualizado
 - [ ] Init→Scaffold: Trello sync — card do projeto criado/atualizado
 - [ ] Scaffold→Feature 1: Projeto rodando, CI/CD configurado
 - [ ] Scaffold→Feature 1: Trello sync — card movido para Feature cycle
-- [ ] Feature Gate: mesmos hooks do feature flow (incluindo Trello sync)
+- [ ] Feature Gate: mesmos hooks do feature flow (incluindo Trello sync, HANDOFF.md, STATE.md)
 - [ ] Finalize: Tudo deployado, documentado
 - [ ] Finalize: Card Trello movido para "Concluído"
 
 ### Bugfix Flow
 - [ ] Gate 1→2: Bug reproduzido, causa identificada
+- [ ] Gate 1→2: HANDOFF.md escrito + STATE.md atualizado
 - [ ] Gate 1→2: Card do bug criado/atualizado no Trello
-- [ ] Gate 2→3: Código corrigido, SUMMARY.md presente
+- [ ] Gate 2→3: Código corrigido, `.planning/SUMMARY.md` presente
+- [ ] Gate 2→3: HANDOFF.md escrito + STATE.md atualizado
 - [ ] Gate 2→3: Trello sync — card movido para Fix
 - [ ] Gate 3→Done: Testes verdes, code review aprovado
 - [ ] Gate 3→Done: Card Trello movido para "Concluído"

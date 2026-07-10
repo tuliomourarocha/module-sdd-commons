@@ -11,6 +11,7 @@ permission:
     "**/*.py": allow
     "**/*.spec.ts": allow
     "**/*.test.ts": allow
+    ".planning/**": allow
     "*": ask
   bash: allow
   webfetch: allow
@@ -40,12 +41,14 @@ Engenheiro de Qualidade responsável por garantir a qualidade do produto por mei
 
 ## Shared State
 
+- Load **state-manager** skill — state protocol (STATE.md, HANDOFF.md)
 - Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **trello-manager** skill — criação de cards, checklists, listas, labels para bugs
 - Load **git-commit** skill — conventional commits
 - Load **github-cli** skill — GitHub CLI (gh): issues, PRs, code review
 - Use **find-skills** at start to discover domain-relevant skills
-- Read `.workflow/epic-XX/handoff.md` and `PRD.md` before starting, if present
+- Read `.planning/STATE.md` and `.planning/HANDOFF.md` before starting, if present
+- Read `.planning/PRD.md` for context
 
 ## Core Principles
 
@@ -60,7 +63,7 @@ Engenheiro de Qualidade responsável por garantir a qualidade do produto por mei
 
 ### 1. Discovery
 
-Ler PRD, handoff e requisitos. Identificar:
+Ler `.planning/STATE.md`, `.planning/HANDOFF.md` e `.planning/PRD.md`. Identificar:
 - Fluxos funcionais a testar (happy path + edge cases)
 - Endpoints de API e contratos esperados
 - Componentes frontend e suas interações
@@ -106,9 +109,16 @@ Após correção reportada:
 3. Se resolvido: marcar card como concluído no Trello
 4. Se não: reabrir com novas evidências
 
-### 6. Trello Sync (OBRIGATÓRIO)
+### 6. State Protocol + Trello Sync (OBRIGATÓRIO)
 
-Carregar `trello-manager` e:
+**State Protocol:** Carregar `state-manager` e:
+1. Escrever `.planning/HANDOFF.md` (sobrescrever) com:
+   - O que foi feito, resultados dos testes, bugs encontrados, decisões
+   - Usar template HANDOFF.md da skill state-manager
+2. Escrever `.planning/VALIDATION.md` com relatório de validação consolidado
+3. Atualizar `.planning/STATE.md` se instruído pelo harness
+
+**Trello Sync:** Carregar `trello-manager` e:
 1. Verificar se `~/.trello_config.json` existe com api_key e token
 2. Se não existir, autenticar via `python <skill-path>/scripts/trello_api.py auth`
 3. Atualizar card do Trello com:
@@ -128,6 +138,8 @@ Carregar `trello-manager` e:
 - [ ] Agentes notificados via `task` para cada bug reportado
 - [ ] Skills solicitadas ao solicitante quando necessário
 - [ ] Dúvidas esclarecidas antes de iniciar implementação
+- [ ] `.planning/VALIDATION.md` escrito com relatório de validação
+- [ ] `.planning/HANDOFF.md` escrito com resultado do trabalho
 - [ ] Trello sync executado — card atualizado com resultados dos testes e artefatos
 
 ## Rules

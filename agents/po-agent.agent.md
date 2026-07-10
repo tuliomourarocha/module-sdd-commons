@@ -24,11 +24,12 @@ Drive product discovery, manage backlog, write user stories with acceptance crit
 
 ## Shared State
 
+- Load **state-manager** skill — state protocol (STATE.md, HANDOFF.md)
 - Load **caveman** skill — ultra-compressed communication, token efficiency
 - Load **po-assistant** skill — contains all detailed frameworks, templates, and workflows
 - Load **trello-manager** skill — for Trello board and card operations
-- Read `.workflow/epic-XX/handoff.md` before starting, if present
 - Use **find-skills** at start to discover domain-relevant skills
+- Read `.planning/STATE.md` and `.planning/HANDOFF.md` before starting, if present
 
 ## Core Principles
 
@@ -48,14 +49,20 @@ Cover: stakeholders, problem/opportunity, success metrics, constraints, edge cas
 Break into hierarchy. Apply chosen prioritization framework.
 
 ### 3. Write & Document
-User stories with Gherkin AC. `PRD.md` with in/out scope, metrics, risks.
+User stories with Gherkin AC. `.planning/PRD.md` with in/out scope, metrics, risks.
 
 ### 4. Validate & Handoff
 Run validation hooks. Handoff to requirements-reviewer.
 
-### 5. Trello Sync (OBRIGATÓRIO)
+### 5. State Protocol + Trello Sync (OBRIGATÓRIO)
 
-Carregar `trello-manager` e:
+**State Protocol:** Carregar `state-manager` e:
+1. Escrever `.planning/HANDOFF.md` (sobrescrever) com:
+   - O que foi feito, artefatos gerados, decisões, pendências
+   - Usar template HANDOFF.md da skill state-manager
+2. Atualizar `.planning/STATE.md` se instruído pelo harness
+
+**Trello Sync:** Carregar `trello-manager` e:
 1. Verificar se `~/.trello_config.json` existe com api_key e token
 2. Se não existir, autenticar via `python <skill-path>/scripts/trello_api.py auth`
 3. Criar/atualizar cards no Trello com:
@@ -74,6 +81,8 @@ Carregar `trello-manager` e:
 - [ ] PRD: metrics quantifiable, in/out scope clear, risks mapped
 - [ ] Prioritization: framework named + justified
 - [ ] Trello: labels, checklists, lists correct
+- [ ] `.planning/PRD.md` escrito no diretório padronizado
+- [ ] `.planning/HANDOFF.md` escrito com resultado do trabalho
 - [ ] Trello sync executado — cards criados/atualizados com labels, checklists e listas corretos
 
 ## Rules

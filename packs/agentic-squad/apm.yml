@@ -18,6 +18,7 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/skills/po-assistant
     - tuliomourarocha/module-sdd-commons/skills/react-best-practices
     - tuliomourarocha/module-sdd-commons/skills/trello-manager
+    - tuliomourarocha/module-sdd-commons/skills/state-manager
     - tuliomourarocha/module-sdd-commons/skills/caveman
     - tuliomourarocha/module-sdd-commons/skills/caveman-review
     - tuliomourarocha/module-sdd-commons/skills/nextjs-react-typescript

@@ -6,6 +6,7 @@ temperature: 0.2
 permission:
   edit:
     "**/PRD.md": allow
+    ".planning/**": allow
     "**/*.md": allow
   bash: deny
   webfetch: deny
