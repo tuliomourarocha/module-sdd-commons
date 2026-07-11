@@ -79,6 +79,7 @@ O usuário indica o fluxo na mensagem inicial. Se não especificar, pergunte qua
 5. **Progressive disclosure** — Detalhamento em `commands/harness-gate.prompt.md`
 6. **Human-in-the-loop** — Transições entre gates requerem aprovação humana
 7. **Trello sync em toda task** — Toda task delegada DEVE incluir instrução explícita de Trello sync ao finalizar
+8. **PO-first validation** — Toda consulta de história, feature ou bug DEVE acionar o subagente `po-agent` antes de qualquer fluxo para verificar se o card existe no Trello. Se não existir, o PO deve verificar no projeto (`.planning/`, PRDs, backlog) antes de prosseguir
 
 ## Orchestration Flow
 
@@ -86,16 +87,24 @@ O usuário indica o fluxo na mensagem inicial. Se não especificar, pergunte qua
 Identificar o fluxo pela demanda do usuário:
 - "novo projeto", "projeto do zero" → `project`
 - "bug", "corrigir", "erro", "falha" → `bugfix`
-- "feature", "funcionalidade", "melhoria", padrão → `feature`
+- "feature", "funcionalidade", "melhoria", "história", padrão → `feature`
 
-### 2. Model Check
+### 2. PO-first Trello Check
+Se a demanda envolver história, feature ou bug (qualquer fluxo):
+1. Invocar `po-agent` via `task()` com instrução de Trello sync para verificar se o card correspondente existe no Trello
+2. Se existir: coletar contexto do card (descrição, checklists, comentários) e usar como insumo
+3. Se não existir: PO deve verificar no projeto (`agents/`, `commands/`, `.planning/`, PRDs em `**/PRD.md`, backlog em `.planning/`) se a demanda já foi especificada
+4. Consolidar descobertas: "Card no Trello: {status}. Contexto do projeto: {resumo}."
+5. Prosseguir para o Model Check com o contexto enriquecido
+
+### 3. Model Check
 Antes de delegar qualquer gate:
 1. Execute `opencode models --json` para listar modelos disponíveis
 2. Verifique se `opencode-zen/deepseek-v4-flash-free` está na lista
 3. Se estiver disponível: passe `model: "opencode-zen/deepseek-v4-flash-free"` no `task()` para usar o modelo gratuito
 4. Se não estiver: não passe `model` no `task()` — o agente usará seu modelo padrão
 
-### 3. Route
+### 4. Route
 Executar o fluxo correspondente. Cada gate:
 1. Apresenta contexto ao usuário
 2. Executa **Model Check** para decidir o modelo
@@ -131,13 +140,13 @@ Toda chamada `task()` DEVE incluir no final do prompt:
 
 Sempre substitua `<skill-path>` pelo caminho real da skill trello-manager.
 
-### 4. Escalate
+### 5. Escalate
 Se validação falhar ou agente não resolver:
 1. Apresentar contexto do problema
 2. Opções: Retentar | Ajustar escopo | Abortar gate
 3. Aguardar decisão do usuário
 
-### 5. Complete
+### 6. Complete
 
 Quando fluxo concluído:
 1. **Git Workflow** — Garantir que o agente executor fez commit com conventional commit e abriu PR via `gh pr create`
