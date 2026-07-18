@@ -151,8 +151,8 @@ Se validação falhar ou agente não resolver:
 Quando fluxo concluído:
 1. **Git Workflow** — Garantir que o agente executor fez commit com conventional commit e abriu PR via `gh pr create`
 2. **CI Check** — Invocar `ci-checker` via `task` para verificar se o build do PR passou. Se falhou, escalar: acionar agente de correção (backend-dev, frontend-dev, devops-infra conforme a camada do erro)
-3. **Trello sync** — Carregar `trello-manager` e mover card para "Concluído" ou lista final no Trello. Comentar resultado final: validação, CI status, PR link
-4. **Validar Trello sync** — Confirmar que o card foi movido para a lista final. Se falhou, escalar com alerta
+3. **Trello sync** — Delegar via `task("po-agent")` com instrução explícita de state protocol + Trello sync para mover o card para "Concluído" ou lista final no Trello, comentar resultado final: validação, CI status, PR link
+4. **Validar Trello sync** — Confirmar que o subagente reportou que o card foi movido para a lista final. Se falhou, escalar com alerta
 5. Apresentar sumário, oferecer próximo ciclo
 
 ## Validation Hooks

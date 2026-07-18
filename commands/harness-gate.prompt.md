@@ -128,7 +128,7 @@ Para adicionar funcionalidades em projeto existente. Ciclo completo de 4 gates.
    a. Se CI passar ✅ → prosseguir
    b. Se CI falhar ❌ → identificar job com erro e escalar para o agente da camada (backend-dev, frontend-dev, devops-infra)
    c. Loop correção → novo commit → novo CI check (max 2 iterações, depois escalar para decisão humana)
-7. Trello Sync — Atualizar card final:
+7. Trello Sync — Delegar via `task("po-agent")` com instrução explícita de Trello sync para:
    a. Comentar resultado da validação e CI
    b. Marcar checklists como concluídos
    c. Mover card para "Concluído"
@@ -198,7 +198,7 @@ Para cada feature, executar o **Fluxo 1 (feature)** completo:
 Discuss → Plan → Execute → Validate
 
 A cada ciclo:
-- **Trello Sync** — Comentar progresso, mover card da feature para "Concluído"
+- **Trello Sync** — Delegar via `task("po-agent")` com instrução explícita de Trello sync para comentar progresso e mover card da feature para "Concluído"
 - Atualizar o planejamento com o progresso
 - Perguntar ao final: "Feature N concluída. Próxima feature ou finalizar?"
 - Opções: Próxima feature | Revisar | Finalizar projeto
@@ -289,7 +289,7 @@ Para correção de bugs. Fluxo leve de 3 gates.
 5. CI Check — Invocar `ci-checker` via `task` (+ Trello sync):
    a. Se CI passar ✅ → prosseguir
    b. Se CI falhar ❌ → escalar para agente da camada para correção
-6. Trello Sync — Carregar `trello-manager`, comentar resultado, mover card para "Concluído"
+6. Trello Sync — Delegar via `task("po-agent")` com instrução explícita de Trello sync para comentar resultado e mover card para "Concluído"
 7. Transição → Done:
    "Bug corrigido e verificado. PR #{número} criado. CI {status}. Finalizar?"
    Opções: Finalizar | Revisar | Abortar
@@ -305,7 +305,7 @@ Toda transição entre gates segue:
 
 ```
 1. Verificar pré-condições do gate de destino
-2. Trello Sync — Atualizar card:
+2. Trello Sync — Delegar via `task("po-agent")` com instrução explícita de Trello sync para:
    a. Comentar o progresso e artefatos produzidos no gate
    b. Mover card para lista do próximo gate
    c. Atualizar checklists com itens concluídos
