@@ -1,7 +1,7 @@
 ---
 description: Harness Orchestrator — APENAS orquestra e delega. NUNCA edita, NUNCA executa comandos, NUNCA faz nada além de task(). 3 fluxos: feature, project, bugfix
 mode: primary
-model: opencode/deepseek-v4-flash
+model: opencode-go/deepseek-v4-flash
 temperature: 0.15
 steps: 25
 permission:

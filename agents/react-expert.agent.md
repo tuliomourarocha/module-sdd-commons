@@ -1,7 +1,7 @@
 ---
 description: Especialista em React — hooks, componentes, performance, padrões e testes
 mode: subagent
-model: opencode/minimax-m3
+model: opencode-go/deepseek-v4-flash
 temperature: 0.05
 permission:
   edit:

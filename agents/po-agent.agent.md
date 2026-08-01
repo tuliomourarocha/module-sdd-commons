@@ -1,7 +1,7 @@
 ---
 description: Senior Product Owner — product discovery, backlog management, user stories, roadmaps, PRD generation
 mode: all
-model: opencode/minimax-m3
+model: opencode-go/qwen3.7-plus
 temperature: 0.3
 steps: 15
 permission:

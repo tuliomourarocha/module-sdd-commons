@@ -1,7 +1,7 @@
 ---
 description: Escrita de PRDs — documentação de produto, discovery, user stories, roadmaps
 mode: subagent
-model: opencode/minimax-m3
+model: opencode-go/qwen3.7-plus
 temperature: 0.2
 permission:
   edit:

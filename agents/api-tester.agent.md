@@ -1,7 +1,7 @@
 ---
 description: Testes de API — contratos, status codes, validação, schemas, autenticação, edge cases
 mode: subagent
-model: opencode/gpt-5.6-luna
+model: opencode-go/deepseek-v4-flash
 temperature: 0.0
 permission:
   edit:

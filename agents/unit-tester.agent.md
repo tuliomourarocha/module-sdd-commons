@@ -1,7 +1,7 @@
 ---
 description: Testes unitários — backend (vitest, use cases, entities) e frontend (vitest, Testing Library, componentes, hooks)
 mode: subagent
-model: opencode/minimax-m3
+model: opencode-go/deepseek-v4-flash
 temperature: 0.0
 permission:
   edit:

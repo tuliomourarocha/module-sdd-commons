@@ -2,7 +2,7 @@
 description: Code review especializado em backend — Clean Architecture, DDD, SOLID, TypeScript, testes
 mode: subagent
 hidden: true
-model: opencode/minimax-m3
+model: opencode-go/qwen3.7-plus
 temperature: 0.05
 permission:
   edit: deny

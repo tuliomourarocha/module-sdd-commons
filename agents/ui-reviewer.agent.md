@@ -1,7 +1,7 @@
 ---
 description: Revisor de UI/UX — design, consistência visual, responsividade, acessibilidade
 mode: subagent
-model: opencode/minimax-m3
+model: opencode-go/qwen3.7-plus
 temperature: 0.1
 permission:
   edit: deny

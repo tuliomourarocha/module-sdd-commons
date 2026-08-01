@@ -1,7 +1,7 @@
 ---
 description: Especialista em infraestrutura Vercel — projetos, domínios, env vars, times, equipes
 mode: subagent
-model: opencode/gpt-5.6-luna
+model: opencode-go/gpt-5.6-luna
 temperature: 0.05
 permission:
   edit:

@@ -1,7 +1,7 @@
 ---
 description: Report de bugs — coleta de evidências, criação de cards no Trello, notificação
 mode: subagent
-model: opencode/minimax-m3
+model: opencode-go/qwen3.7-plus
 temperature: 0.1
 permission:
   edit: deny

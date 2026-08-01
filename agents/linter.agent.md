@@ -1,7 +1,7 @@
 ---
 description: Linter multi-camada — ESLint, Biome, Prettier, type-check em backend e frontend
 mode: subagent
-model: opencode/minimax-m3
+model: opencode-go/deepseek-v4-flash
 temperature: 0.0
 permission:
   edit:

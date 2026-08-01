@@ -1,7 +1,7 @@
 ---
 description: Valida requisitos — PRDs, user stories, critérios de aceitação, clareza e completude
 mode: subagent
-model: opencode/minimax-m3
+model: opencode-go/qwen3.7-plus
 temperature: 0.1
 permission:
   edit: deny
