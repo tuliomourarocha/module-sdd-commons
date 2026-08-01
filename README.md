@@ -53,8 +53,8 @@ Para adicionar funcionalidades em projeto existente:
 ```
 
 O orquestrador executa:
-1. **Discuss** → `po-agent` descobre requisitos, produz PRD
-2. **Plan** → `techlead` + `architecture-reviewer` desenham arquitetura
+1. **Discuss** → `po-agent` descobre requisitos e produz `.planning/PRD.md` (refinamento de negócio — sem subtasks técnicas nem PRDs paralelos)
+2. **Plan** → `techlead` + `architecture-reviewer` desenham arquitetura, quebram tarefas e produzem `.planning/PLAN.md`
 3. **Execute** → `backend-dev` + `frontend-dev` + `devops-infra` implementam
 4. **Validate** → `qa-engineer` + `code-reviewer-*` + `linter` validam
 

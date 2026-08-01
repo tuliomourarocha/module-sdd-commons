@@ -16,6 +16,8 @@ dependencies:
 
     - tuliomourarocha/module-sdd-commons/skills/frontend-design
     - tuliomourarocha/module-sdd-commons/skills/po-assistant
+    - tuliomourarocha/module-sdd-commons/skills/grill-me
+    - tuliomourarocha/module-sdd-commons/commands/grilling.prompt.md
     - tuliomourarocha/module-sdd-commons/skills/react-best-practices
     - tuliomourarocha/module-sdd-commons/skills/trello-manager
     - tuliomourarocha/module-sdd-commons/skills/state-manager

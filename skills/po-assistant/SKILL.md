@@ -56,7 +56,7 @@ Help the user create, organize, and maintain a healthy product backlog.
 - **Epics** — Large bodies of work (theme-level)
 - **Features** — Meaningful functionality within an epic
 - **User Stories** — Small, deliverable increments
-- **Tasks / Subtasks** — Technical breakdown (optional)
+- **Tasks / Subtasks** — Technical breakdown (NOT a PO responsibility — belongs to techlead/frontend-dev at the Plan gate)
 
 **Refinement guidelines:**
 - Ensure items are **DEEP**: Detailed appropriately, Estimated, Emergent, Prioritized
@@ -177,7 +177,7 @@ When creating Trello cards via `trello-manager`:
 **Card structure:**
 - **Title** — Value-oriented, clear
 - **Description** — Full user story (As a… I want… So that…)
-- **Checklist** — Acceptance criteria as checklist items
+- **Checklist** — Acceptance criteria as checklist items ONLY (business AC / Gherkin — never technical subtasks)
 - **Labels** — Type: story / feature / bug / spike
 - **Members** — Assignees
 - **Due date** — When applicable
