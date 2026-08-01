@@ -121,8 +121,13 @@ install_agents() {
   local count=0
   for f in "$src"/*.agent.md; do
     [ -f "$f" ] || continue
-    cp "$f" "$dst/$(basename "$f")"
-    convert_tools_to_permission "$dst/$(basename "$f")"
+    # opencode registers agents by filename (minus extension), so strip the
+    # ".agent" suffix: "po-agent.agent.md" must install as "po-agent.md"
+    local base
+    base="$(basename "$f")"
+    local target="${base%.agent.md}.md"
+    cp "$f" "$dst/$target"
+    convert_tools_to_permission "$dst/$target"
     count=$((count + 1))
   done
   ok "agents ($count arquivos de $src → $dst)"

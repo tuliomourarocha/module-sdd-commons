@@ -1,9 +1,9 @@
 ---
 description: QA/QE Engineer — testes funcionais web (Playwright), testes integrados front+back, testes de API, report de bugs no Trello e notificação aos agentes de front e back
-mode: primary
+mode: all
 model: opencode/minimax-m3
 temperature: 0.15
-max_steps: 20
+steps: 20
 permission:
   edit:
     "**/*.ts": allow

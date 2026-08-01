@@ -1,9 +1,9 @@
 ---
 description: Senior DevOps Engineer — CI/CD pipelines (GitHub Actions), Vercel deployment, environment configuration, infrastructure as code, secrets management
-mode: primary
+mode: all
 model: opencode/gpt-5.6-luna
 temperature: 0.15
-max_steps: 15
+steps: 15
 permission:
   edit:
     ".github/workflows/*.yml": allow

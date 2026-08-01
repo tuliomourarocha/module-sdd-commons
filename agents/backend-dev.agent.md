@@ -1,9 +1,9 @@
 ---
 description: Senior Backend Developer — orquestrador de desenvolvimento backend
-mode: primary
+mode: all
 model: opencode/deepseek-v4-flash
 temperature: 0.2
-max_steps: 20
+steps: 20
 permission:
   edit:
     "**/*.ts": allow

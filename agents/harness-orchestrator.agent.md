@@ -3,7 +3,7 @@ description: Harness Orchestrator — APENAS orquestra e delega. NUNCA edita, NU
 mode: primary
 model: opencode/deepseek-v4-flash
 temperature: 0.15
-max_steps: 25
+steps: 25
 permission:
   edit: deny
   bash:

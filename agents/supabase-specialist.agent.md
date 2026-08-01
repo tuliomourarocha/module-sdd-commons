@@ -3,7 +3,7 @@ description: Especialista em Supabase — banco, auth, storage, RLS, Edge Functi
 mode: subagent
 model: opencode/minimax-m3
 temperature: 0.05
-max_steps: 10
+steps: 10
 permission:
   edit:
     "supabase/migrations/**": allow
