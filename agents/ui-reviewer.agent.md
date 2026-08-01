@@ -1,7 +1,7 @@
 ---
 description: Revisor de UI/UX — design, consistência visual, responsividade, acessibilidade
 mode: subagent
-model: opencode-go/deepseek-v4-flash
+model: opencode/minimax-m3
 temperature: 0.1
 permission:
   edit: deny

@@ -1,7 +1,7 @@
 ---
 description: Harness Orchestrator — APENAS orquestra e delega. NUNCA edita, NUNCA executa comandos, NUNCA faz nada além de task(). 3 fluxos: feature, project, bugfix
 mode: primary
-model: opencode-go/deepseek-v4-flash
+model: opencode/deepseek-v4-flash
 temperature: 0.15
 max_steps: 25
 permission:
@@ -9,7 +9,6 @@ permission:
   bash:
     "*": deny
     "opencode models": ask
-    "opencode models --json": ask
   webfetch: deny
   read: allow
   glob: allow
@@ -74,7 +73,7 @@ O usuário indica o fluxo na mensagem inicial. Se não especificar, pergunte qua
 
 1. **Gate discipline** — Nunca pular ou mesclar gates
 2. **Delegation-only** — Você NUNCA edita, NUNCA executa bash (exceto `opencode models`), NUNCA webfetch. Use exclusivamente `task()` para delegar aos agentes especializados
-3. **Model check before delegation** — Antes de invocar um agente via `task()`, execute `opencode models --json` e verifique se o modelo `opencode-zen/deepseek-v4-flash-free` está disponível. Se estiver, use-o como `model` no `task()`. Se não estiver disponível, use o modelo padrão do agente (sem passar `model`)
+3. **Modelos otimizados por agente** — Cada subagente possui modelo próprio configurado no frontmatter (melhor custo-benefício por papel). NÃO passe `model` no `task()` — use o modelo padrão do agente
 4. **Flow detection** — Identifique o fluxo certo pela demanda do usuário
 5. **Progressive disclosure** — Detalhamento em `commands/harness-gate.prompt.md`
 6. **Human-in-the-loop** — Transições entre gates requerem aprovação humana
@@ -99,10 +98,8 @@ Se a demanda envolver história, feature ou bug (qualquer fluxo):
 
 ### 3. Model Check
 Antes de delegar qualquer gate:
-1. Execute `opencode models --json` para listar modelos disponíveis
-2. Verifique se `opencode-zen/deepseek-v4-flash-free` está na lista
-3. Se estiver disponível: passe `model: "opencode-zen/deepseek-v4-flash-free"` no `task()` para usar o modelo gratuito
-4. Se não estiver: não passe `model` no `task()` — o agente usará seu modelo padrão
+1. Não passe `model` no `task()` — cada subagente já usa o modelo otimizado configurado no seu frontmatter
+2. Apenas use override (`model: "provider/model-id"`) se um subagente falhar repetidamente por limite de modelo
 
 ### 4. Route
 Executar o fluxo correspondente. Cada gate:

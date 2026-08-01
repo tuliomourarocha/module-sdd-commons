@@ -200,7 +200,7 @@ command -v python3 >/dev/null 2>&1 || { error "python3 é necessário para conve
 **Files:** All 25 `agents/*.agent.md` files
 
 **Why fragile:** Agent definitions embed YAML frontmatter that defines `permission` blocks, model selection, and subagent authorization. There is no schema validation:
-- Model names (`opencode-go/qwen3.7-plus`, `opencode-go/deepseek-v4-flash`) could be misspelled
+- Model names (`opencode/deepseek-v4-flash`, `opencode/minimax-m3`, etc.) could be misspelled
 - Permission keys (`allow` vs `deny`) are validated only at opencode runtime
 - Cross-reference agent names in `task:` blocks could reference non-existent agents
 
@@ -210,7 +210,7 @@ command -v python3 >/dev/null 2>&1 || { error "python3 é necessário para conve
 
 ### `techlead.agent.md` Model Recommendation Contradiction
 
-**Issue:** `techlead.agent.md` line 135 states: *"Preferir `opencode-go/deepseek-v4-flash` para tarefas de orquestração simples"* — yet the agent itself uses `opencode-go/qwen3.7-plus` (line 4). The recommendation contradicts the agent's own configuration. A subagent told to use the cheaper model while the orchestrator uses the premium model could lead to quality inconsistency in delegated tasks.
+**Issue:** Resolvido em 31/07/2026 — modelos por papel: `opencode/deepseek-v4-flash` (orquestração/implementação), `opencode/minimax-m3` (open-weight, demais papéis) e `opencode/gpt-5.6-luna` (terminal/infra, melhor Terminal-Bench).
 
 **Files:** `agents/techlead.agent.md` (lines 4, 135)
 

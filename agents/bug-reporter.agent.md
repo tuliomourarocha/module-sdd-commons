@@ -1,7 +1,7 @@
 ---
 description: Report de bugs — coleta de evidências, criação de cards no Trello, notificação
 mode: subagent
-model: opencode-go/deepseek-v4-flash
+model: opencode/minimax-m3
 temperature: 0.1
 permission:
   edit: deny

@@ -208,7 +208,7 @@ module-sdd-commons/
 **Frontmatter Fields:**
 - Agent mode: `primary` or `subagent`
 - Agent visibility: `hidden: true` for subagents not meant for direct user invocation
-- Models: `opencode-go/qwen3.7-plus` (orchestrators), `opencode-go/deepseek-v4-flash` (subagents/lighter tasks)
+- Models (estratégia por papel, custo-benefício): `opencode/deepseek-v4-flash` (orquestração/arquitetura/implementação, $0, 79% SWE-V), `opencode/minimax-m3` (reviews/docs/testes, $0/$1, 80.5% SWE-V, open-weight), `opencode/gpt-5.6-luna` (terminal/infra/CI, $0/$1, 84.7% Terminal-Bench 2.1)
 - Temperature: `0.15` (tech lead/architecture), `0.2` (developers), `0.3` (PO), `0.05` (reviewers), `0.0` (linter)
 
 ## Where to Add New Code

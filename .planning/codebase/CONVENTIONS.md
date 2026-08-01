@@ -264,7 +264,7 @@ Every agent file follows a strict YAML front-matter + Markdown body structure:
 ---
 description: <role description>
 mode: primary | subagent
-model: opencode-go/<model-name>
+model: opencode/<model-name>
 temperature: <0.0-1.0>
 max_steps: <number>        # primary agents only
 hidden: true | false       # subagents only

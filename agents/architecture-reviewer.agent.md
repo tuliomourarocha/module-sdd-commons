@@ -2,7 +2,7 @@
 description: Especialista em arquitetura de software — Clean Architecture, DDD, SOLID, Clean Code, TypeScript. Revisa e fornece guidance arquitetural com diagramas Mermaid.
 mode: subagent
 hidden: true
-model: opencode-go/deepseek-v4-flash
+model: opencode/deepseek-v4-flash
 temperature: 0.05
 max_steps: 10
 permission:

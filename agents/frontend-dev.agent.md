@@ -1,7 +1,7 @@
 ---
 description: Senior Frontend Developer — orquestrador de desenvolvimento frontend
 mode: primary
-model: opencode-go/qwen3.7-plus
+model: opencode/deepseek-v4-flash
 temperature: 0.2
 max_steps: 20
 permission:

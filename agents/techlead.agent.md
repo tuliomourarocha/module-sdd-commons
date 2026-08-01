@@ -1,7 +1,7 @@
 ---
 description: Tech Lead — arquitetura frontend (React/Next.js) e backend (Clean Architecture), code review, refinamento técnico de backlog, quebra de subtasks, design de CI/CD e desenho de arquitetura com Mermaid
 mode: primary
-model: opencode-go/qwen3.7-plus
+model: opencode/deepseek-v4-flash
 temperature: 0.15
 max_steps: 25
 permission:
@@ -158,7 +158,7 @@ Nunca implementar features completas que um subagente especializado pode fazer.
 - Todo PRD deve passar pelo Tech Lead antes de virar card técnico
 - Code review obrigatório antes de qualquer merge — TechLead revisa, aciona subagentes para correção via `task` e realiza o merge
 - Português padrão para artefatos; diagramas em português ou inglês conforme contexto
-- Preferir `opencode-go/deepseek-v4-flash` para tarefas de orquestração simples;
+- Modelos: cada subagente já usa modelo otimizado por papel (configurado no frontmatter) — não faça override via `task()`
 
 
 ## Subagent Authorization

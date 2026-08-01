@@ -1,7 +1,7 @@
 ---
 description: Testes E2E com Playwright — fluxos de usuário, cenários críticos, regressão visual
 mode: subagent
-model: opencode-go/deepseek-v4-flash
+model: opencode/gpt-5.6-luna
 temperature: 0.0
 permission:
   edit:

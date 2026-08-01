@@ -1,7 +1,7 @@
 ---
 description: Valida requisitos — PRDs, user stories, critérios de aceitação, clareza e completude
 mode: subagent
-model: opencode-go/deepseek-v4-flash
+model: opencode/minimax-m3
 temperature: 0.1
 permission:
   edit: deny

@@ -1,7 +1,7 @@
 ---
 description: Especialista em Next.js — App Router, Server/Client Components, SSR, ISR, middleware, data fetching
 mode: subagent
-model: opencode-go/deepseek-v4-flash
+model: opencode/minimax-m3
 temperature: 0.05
 permission:
   edit:

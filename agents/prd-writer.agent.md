@@ -1,7 +1,7 @@
 ---
 description: Escrita de PRDs — documentação de produto, discovery, user stories, roadmaps
 mode: subagent
-model: opencode-go/deepseek-v4-flash
+model: opencode/minimax-m3
 temperature: 0.2
 permission:
   edit:
