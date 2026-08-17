@@ -1,7 +1,7 @@
 ---
 description: Valida requisitos — PRDs, user stories, critérios de aceitação, clareza e completude
 mode: subagent
-model: opencode/nemotron-3-ultra-free
+model: opencode/nemotron-3.5-lightning-free
 temperature: 0.1
 permission:
   edit: deny
