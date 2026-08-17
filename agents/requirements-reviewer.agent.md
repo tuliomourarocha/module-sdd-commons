@@ -1,7 +1,7 @@
 ---
 description: Valida requisitos — PRDs, user stories, critérios de aceitação, clareza e completude
 mode: subagent
-model: opencode/deepseek-v4-flash
+model: opencode/nemotron-3-ultra-free
 temperature: 0.1
 permission:
   edit: deny
