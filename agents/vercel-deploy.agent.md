@@ -1,7 +1,7 @@
 ---
 description: Especialista em deploy Vercel — CLI, configuração, previews e produção
 mode: subagent
-model: opencode-go/gpt-5.6-luna
+model: opencode-go/hy3
 temperature: 0.05
 permission:
   edit:

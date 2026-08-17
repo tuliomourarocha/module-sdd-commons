@@ -1,7 +1,7 @@
 ---
 description: Valida requisitos — PRDs, user stories, critérios de aceitação, clareza e completude
 mode: subagent
-model: opencode-go/qwen3.7-plus
+model: opencode-go/deepseek-v4-flash
 temperature: 0.1
 permission:
   edit: deny

@@ -1,7 +1,7 @@
 ---
 description: QA/QE Engineer — testes funcionais web (Playwright), testes integrados front+back, testes de API, report de bugs no Trello e notificação aos agentes de front e back
 mode: all
-model: opencode-go/gpt-5.6-luna
+model: opencode-go/mimo-v2.5
 temperature: 0.15
 steps: 20
 permission:

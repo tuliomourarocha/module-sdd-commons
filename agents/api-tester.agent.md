@@ -1,7 +1,7 @@
 ---
 description: Testes de API — contratos, status codes, validação, schemas, autenticação, edge cases
 mode: subagent
-model: opencode-go/deepseek-v4-flash
+model: opencode-go/mimo-v2.5
 temperature: 0.0
 permission:
   edit:

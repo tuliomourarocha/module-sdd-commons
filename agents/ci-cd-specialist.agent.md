@@ -1,7 +1,7 @@
 ---
 description: Especialista em CI/CD — GitHub Actions, workflows, matrizes, caching, segurança
 mode: subagent
-model: opencode-go/gpt-5.6-luna
+model: opencode-go/hy3
 temperature: 0.0
 permission:
   edit:

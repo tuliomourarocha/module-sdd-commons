@@ -2,7 +2,7 @@
 description: Code review especializado em infraestrutura — CI/CD, YAML, secrets, caching, Vercel config
 mode: subagent
 hidden: true
-model: opencode-go/qwen3.7-plus
+model: opencode-go/hy3
 temperature: 0.05
 permission:
   edit: deny

@@ -1,7 +1,7 @@
 ---
 description: Revisor de UI/UX — design, consistência visual, responsividade, acessibilidade
 mode: subagent
-model: opencode-go/qwen3.7-plus
+model: opencode-go/mimo-v2.5
 temperature: 0.1
 permission:
   edit: deny

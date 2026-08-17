@@ -2,7 +2,7 @@
 description: Code review especializado em frontend — React/Next.js, performance, acessibilidade, tipagem
 mode: subagent
 hidden: true
-model: opencode-go/qwen3.7-plus
+model: opencode-go/deepseek-v4-flash
 temperature: 0.05
 permission:
   edit: deny

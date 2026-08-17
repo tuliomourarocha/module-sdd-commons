@@ -1,7 +1,7 @@
 ---
 description: Escrita de PRDs — documentação de produto, discovery, user stories, roadmaps
 mode: subagent
-model: opencode-go/qwen3.7-plus
+model: opencode-go/gpt-5.6-luna
 temperature: 0.2
 permission:
   edit:
