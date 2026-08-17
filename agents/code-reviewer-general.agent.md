@@ -2,7 +2,7 @@
 description: Code review generalista multi-camada — integração front+back, contratos, fluxos completos
 mode: subagent
 hidden: true
-model: opencode-go/deepseek-v4-flash
+model: opencode/deepseek-v4-flash
 temperature: 0.05
 permission:
   edit: deny

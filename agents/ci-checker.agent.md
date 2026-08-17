@@ -1,7 +1,7 @@
 ---
 description: CI Checker — verifica status de CI/build de Pull Requests abertos via gh CLI. Reporta sucesso ou falha com detalhes dos checks.
 mode: subagent
-model: opencode-go/deepseek-v4-flash
+model: opencode/deepseek-v4-flash
 temperature: 0.0
 permission:
   edit: deny
