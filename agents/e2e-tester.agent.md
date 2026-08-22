@@ -1,7 +1,7 @@
 ---
 description: Testes E2E com Playwright — fluxos de usuário, cenários críticos, regressão visual
 mode: subagent
-model: opencode-go/mimo-v2.5
+model: opencode/deepseek-v4-flash-free
 temperature: 0.0
 permission:
   edit:

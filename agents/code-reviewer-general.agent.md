@@ -2,7 +2,7 @@
 description: Code review generalista multi-camada — integração front+back, contratos, fluxos completos
 mode: subagent
 hidden: true
-model: opencode-go/gpt-5.6-luna
+model: opencode/deepseek-v4-flash-free
 temperature: 0.05
 permission:
   edit: deny

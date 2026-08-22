@@ -1,7 +1,7 @@
 ---
 description: Tech Lead — arquitetura frontend (React/Next.js) e backend (Clean Architecture), code review, refinamento técnico de backlog, quebra de subtasks, design de CI/CD e desenho de arquitetura com Mermaid
 mode: all
-model: opencode-go/gpt-5.6-luna
+model: opencode/deepseek-v4-flash-free
 temperature: 0.15
 steps: 25
 permission:

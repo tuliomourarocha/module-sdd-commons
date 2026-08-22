@@ -1,7 +1,7 @@
 ---
 description: Revisor de UI/UX — design, consistência visual, responsividade, acessibilidade
 mode: subagent
-model: opencode-go/mimo-v2.5
+model: opencode/deepseek-v4-flash-free
 temperature: 0.1
 permission:
   edit: deny

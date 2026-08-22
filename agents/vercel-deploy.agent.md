@@ -1,7 +1,7 @@
 ---
 description: Especialista em deploy Vercel — CLI, configuração, previews e produção
 mode: subagent
-model: opencode-go/hy3
+model: opencode/deepseek-v4-flash-free
 temperature: 0.05
 permission:
   edit:

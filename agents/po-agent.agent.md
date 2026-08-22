@@ -1,7 +1,7 @@
 ---
 description: Senior Product Owner — product discovery, backlog management, user stories, roadmaps, PRD generation
 mode: all
-model: opencode-go/gpt-5.6-luna
+model: opencode/deepseek-v4-flash-free
 temperature: 0.3
 steps: 15
 permission:

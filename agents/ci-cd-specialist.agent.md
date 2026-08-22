@@ -1,7 +1,7 @@
 ---
 description: Especialista em CI/CD — GitHub Actions, workflows, matrizes, caching, segurança
 mode: subagent
-model: opencode-go/hy3
+model: opencode/deepseek-v4-flash-free
 temperature: 0.0
 permission:
   edit:

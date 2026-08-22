@@ -2,7 +2,7 @@
 description: Code review especializado em infraestrutura — CI/CD, YAML, secrets, caching, Vercel config
 mode: subagent
 hidden: true
-model: opencode-go/hy3
+model: opencode/deepseek-v4-flash-free
 temperature: 0.05
 permission:
   edit: deny
