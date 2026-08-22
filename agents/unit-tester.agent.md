@@ -1,7 +1,7 @@
 ---
 description: Testes unitários — backend (vitest, use cases, entities) e frontend (vitest, Testing Library, componentes, hooks)
 mode: subagent
-model: opencode/big-pickle
+model: opencode-go/ox-alpha-free
 temperature: 0.0
 permission:
   edit:

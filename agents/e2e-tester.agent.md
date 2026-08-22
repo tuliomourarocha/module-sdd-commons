@@ -1,7 +1,7 @@
 ---
 description: Testes E2E com Playwright — fluxos de usuário, cenários críticos, regressão visual
 mode: subagent
-model: opencode-go/gpt-5.6-luna
+model: opencode/mimo-v2.5-free
 temperature: 0.0
 permission:
   edit:

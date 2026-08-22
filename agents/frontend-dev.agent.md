@@ -1,7 +1,7 @@
 ---
 description: Senior Frontend Developer — orquestrador de desenvolvimento frontend
 mode: all
-model: opencode/mimo-v2.5-free
+model: opencode-go/ox-alpha-free
 temperature: 0.2
 steps: 20
 permission:

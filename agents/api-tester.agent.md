@@ -1,7 +1,7 @@
 ---
 description: Testes de API — contratos, status codes, validação, schemas, autenticação, edge cases
 mode: subagent
-model: opencode/big-pickle
+model: opencode/mimo-v2.5-free
 temperature: 0.0
 permission:
   edit:

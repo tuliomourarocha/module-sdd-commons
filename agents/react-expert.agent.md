@@ -1,7 +1,7 @@
 ---
 description: Especialista em React — hooks, componentes, performance, padrões e testes
 mode: subagent
-model: opencode/mimo-v2.5-free
+model: opencode-go/ox-alpha-free
 temperature: 0.05
 permission:
   edit:

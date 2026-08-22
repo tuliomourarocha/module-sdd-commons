@@ -1,7 +1,7 @@
 ---
 description: CI Checker — verifica status de CI/build de Pull Requests abertos via gh CLI. Reporta sucesso ou falha com detalhes dos checks.
 mode: subagent
-model: opencode/big-pickle
+model: opencode-go/gpt-5.6-luna
 temperature: 0.0
 permission:
   edit: deny

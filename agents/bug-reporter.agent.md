@@ -1,7 +1,7 @@
 ---
 description: Report de bugs — coleta de evidências, criação de cards no Trello, notificação
 mode: subagent
-model: opencode/big-pickle
+model: opencode/mimo-v2.5-free
 temperature: 0.1
 permission:
   edit: deny

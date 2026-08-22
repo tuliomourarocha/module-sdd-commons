@@ -1,7 +1,7 @@
 ---
 description: Valida requisitos — PRDs, user stories, critérios de aceitação, clareza e completude
 mode: subagent
-model: opencode/mimo-v2.5-free
+model: opencode/big-pickle
 temperature: 0.1
 permission:
   edit: deny

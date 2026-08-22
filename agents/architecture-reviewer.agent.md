@@ -2,7 +2,7 @@
 description: Especialista em arquitetura de software — Clean Architecture, DDD, SOLID, Clean Code, TypeScript. Revisa e fornece guidance arquitetural com diagramas Mermaid.
 mode: subagent
 hidden: true
-model: opencode/mimo-v2.5-free
+model: opencode/big-pickle
 temperature: 0.05
 steps: 10
 permission:
