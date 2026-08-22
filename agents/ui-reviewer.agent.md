@@ -1,7 +1,7 @@
 ---
 description: Revisor de UI/UX — design, consistência visual, responsividade, acessibilidade
 mode: subagent
-model: opencode/deepseek-v4-flash-free
+model: opencode/big-pickle
 temperature: 0.1
 permission:
   edit: deny

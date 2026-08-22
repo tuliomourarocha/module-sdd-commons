@@ -1,7 +1,7 @@
 ---
 description: Especialista em Supabase — banco, auth, storage, RLS, Edge Functions e migrações
 mode: subagent
-model: opencode/deepseek-v4-flash-free
+model: opencode-go/gpt-5.6-luna
 temperature: 0.05
 steps: 10
 permission:

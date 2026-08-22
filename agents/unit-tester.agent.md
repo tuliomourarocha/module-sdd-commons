@@ -1,7 +1,7 @@
 ---
 description: Testes unitários — backend (vitest, use cases, entities) e frontend (vitest, Testing Library, componentes, hooks)
 mode: subagent
-model: opencode/deepseek-v4-flash-free
+model: opencode/big-pickle
 temperature: 0.0
 permission:
   edit:

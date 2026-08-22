@@ -2,7 +2,7 @@
 description: Code review especializado em backend — Clean Architecture, DDD, SOLID, TypeScript, testes
 mode: subagent
 hidden: true
-model: opencode/deepseek-v4-flash-free
+model: opencode/mimo-v2.5-free
 temperature: 0.05
 permission:
   edit: deny

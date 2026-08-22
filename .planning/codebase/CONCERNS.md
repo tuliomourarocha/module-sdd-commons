@@ -200,7 +200,7 @@ command -v python3 >/dev/null 2>&1 || { error "python3 é necessário para conve
 **Files:** All 25 `agents/*.agent.md` files
 
 **Why fragile:** Agent definitions embed YAML frontmatter that defines `permission` blocks, model selection, and subagent authorization. There is no schema validation:
-- Model names (`opencode/deepseek-v4-flash`, `opencode/minimax-m3`, etc.) could be misspelled
+- Model names (`opencode/mimo-v2.5-free`, `opencode/big-pickle`, `opencode-go/gpt-5.6-luna`) could be misspelled
 - Permission keys (`allow` vs `deny`) are validated only at opencode runtime
 - Cross-reference agent names in `task:` blocks could reference non-existent agents
 
@@ -210,7 +210,7 @@ command -v python3 >/dev/null 2>&1 || { error "python3 é necessário para conve
 
 ### `techlead.agent.md` Model Recommendation Contradiction
 
-**Issue:** Resolvido em 31/07/2026 — modelos por papel: `opencode/deepseek-v4-flash` (orquestração/implementação), `opencode/minimax-m3` (open-weight, demais papéis) e `opencode/gpt-5.6-luna` (terminal/infra, melhor Terminal-Bench).
+**Issue:** Resolvido em 21/08/2026 — modelos por papel: `opencode/mimo-v2.5-free` (orquestração/implementação/review, Free Zen), `opencode/big-pickle` (review frontend/general/testing, Free Zen), `opencode-go/gpt-5.6-luna` (terminal/infra/CI, $0.20/1M Go).
 
 **Files:** `agents/techlead.agent.md` (lines 4, 135)
 

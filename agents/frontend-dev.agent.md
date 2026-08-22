@@ -1,7 +1,7 @@
 ---
 description: Senior Frontend Developer — orquestrador de desenvolvimento frontend
 mode: all
-model: opencode/deepseek-v4-flash-free
+model: opencode/mimo-v2.5-free
 temperature: 0.2
 steps: 20
 permission:

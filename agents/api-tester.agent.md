@@ -1,7 +1,7 @@
 ---
 description: Testes de API — contratos, status codes, validação, schemas, autenticação, edge cases
 mode: subagent
-model: opencode/deepseek-v4-flash-free
+model: opencode/big-pickle
 temperature: 0.0
 permission:
   edit:

@@ -2,7 +2,7 @@
 description: Code review especializado em frontend — React/Next.js, performance, acessibilidade, tipagem
 mode: subagent
 hidden: true
-model: opencode/deepseek-v4-flash-free
+model: opencode/big-pickle
 temperature: 0.05
 permission:
   edit: deny
