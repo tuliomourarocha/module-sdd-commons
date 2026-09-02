@@ -35,9 +35,22 @@ O APM baixa os artefatos no formato `.agents/`, `.claude/` ou `.github/`. Em seg
 3. **Converte** o frontmatter `tools:` (formato Claude Code) para `permission:` (formato opencode) nos arquivos `.agent.md`
 4. **Remove** o campo `allowed-tools:` dos `SKILL.md` (incompatível com opencode)
 
-## Uso do Harness Orchestrator
+## Uso do Harness V2
 
-O `harness-orchestrator` orquestra 3 fluxos de desenvolvimento delegando cada gate ao agente especializado.
+O `harness` (V2) orquestra 3 fluxos com 5 macros (planner, builder, checker, reviewer, shipper).
+
+### Arquitetura
+
+| Agente | Papel | Skills principais |
+|--------|-------|-------------------|
+| `harness` | Orquestra `feature/project/bugfix` via `task()` | — |
+| `planner` | Planeja — PRD, PLAN, arquitetura | `po-assistant`, `grill-me`, `mermaid-diagrams`, `clean-architecture` |
+| `builder` | Implementa — full-stack + infra mínima | `clean-architecture`, `nextjs-app-router-patterns`, `supabase-postgres-best-practices` |
+| `checker` | Valida — testes unit/API/e2e | `webapp-testing`, `typescript-expert` |
+| `reviewer` | Revisa — lint, typecheck, code review | `clean-code`, `solid`, `typescript-react-reviewer` |
+| `shipper` | Finaliza — commit, PR, CI, Trello close | `git-commit`, `github-cli`, `trello-manager`, `state-manager` |
+
+Fluxo `feature`: `planner → builder → [checker ∥ reviewer] → shipper` (2 gates humanos, 5 tasks, 1 Trello sync).
 
 ### Pré-requisitos
 
@@ -49,51 +62,54 @@ O `harness-orchestrator` orquestra 3 fluxos de desenvolvimento delegando cada ga
 Para adicionar funcionalidades em projeto existente:
 
 ```
-@harness-orchestrator Implementar cadastro de usuários com autenticação two-factor
+@harness Implementar cadastro de usuários com autenticação two-factor
 ```
 
 O orquestrador executa:
-1. **Discuss** → `po-agent` descobre requisitos e produz `.planning/PRD.md` (refinamento de negócio — sem subtasks técnicas nem PRDs paralelos)
-2. **Plan** → `techlead` + `architecture-reviewer` desenham arquitetura, quebram tarefas e produzem `.planning/PLAN.md`
-3. **Execute** → `backend-dev` + `frontend-dev` + `devops-infra` implementam
-4. **Validate** → `qa-engineer` + `code-reviewer-*` + `linter` validam
+1. **Planner** → discovery + `.planning/PRD.md` + `.planning/PLAN.md` + `arch/`
+2. **Builder** → implementa + `.planning/SUMMARY.md`
+3. **Checker ∥ Reviewer** → `.planning/VALIDATION.md` + `.planning/REVIEW.md` (paralelo)
+4. **Shipper** → commit + PR + CI check + `.planning/STATE.md`/`HANDOFF.md` + Trello close
 
 ### Fluxo 2: Novo Projeto (`project`)
 
 Para projetos novos do zero:
 
 ```
-@harness-orchestrator Criar um e-commerce com Next.js, Supabase e Vercel
+@harness Criar um e-commerce com Next.js, Supabase e Vercel
 ```
 
 O orquestrador executa:
-1. **Discover** → `po-agent` define visão do produto e roadmap
-2. **Scaffold** → `techlead` + `devops-infra` montam estrutura + CI/CD
+1. **Planner (discover)** → visão, roadmap, PRD do projeto
+2. **Builder (scaffold)** → estrutura + CI/CD + arch base
 3. **Feature Cycle** → repete o fluxo `feature` para cada funcionalidade
-4. **Finalize** → `qa-engineer` + `devops-infra` validam e fazem deploy
+4. **Shipper (finalize)** → deploy preview + docs
 
 ### Fluxo 3: Correção de Bug (`bugfix`)
 
 Para corrigir bugs de forma rápida:
 
 ```
-@harness-orchestrator Corrigir erro 500 ao finalizar compra no checkout
+@harness Corrigir erro 500 ao finalizar compra no checkout
 ```
 
 O orquestrador executa:
-1. **Diagnose** → `bug-reporter` + `qa-engineer` reproduzem e identificam causa
-2. **Fix** → `backend-dev` ou `frontend-dev` corrigem o código
-3. **Verify** → `code-reviewer-*` + `unit-tester` + `linter` verificam
+1. **Planner (triage)** → reproduz, causa, escopo do fix
+2. **Builder (fix)** → corrige código
+3. **Checker ∥ Reviewer** → testes + review
+4. **Shipper** → PR + CI + close
 
 ### Avançado
 
 O orquestrador detecta o fluxo automaticamente pela descrição da tarefa. Para forçar um fluxo específico, inicie com:
 
 ```
-@harness-orchestrator [feature] Adicionar busca por texto nos produtos
-@harness-orchestrator [project] Landing page corporativa
-@harness-orchestrator [bugfix] Botão de login não funciona no Safari
+@harness [feature] Adicionar busca por texto nos produtos
+@harness [project] Landing page corporativa
+@harness [bugfix] Botão de login não funciona no Safari
 ```
+
+Compatibilidade: `@harness-orchestrator` continua como alias para `@harness`.
 
 ### Mapeamento de diretórios
 

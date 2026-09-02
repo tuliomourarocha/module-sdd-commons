@@ -1,81 +1,51 @@
 name: agentic-squad
-version: 1.0.1
-description: Time de agentes com orquestrador Harness Gate
+version: 2.0.0
+description: Harness V2 — 5 macros (planner/builder/checker/reviewer/shipper) + harness orchestrator
 author: tuliomourarocha
 targets:
   - opencode
 dependencies:
   apm:
-    - tuliomourarocha/module-sdd-commons/commands/harness-gate.prompt.md
-    - tuliomourarocha/module-sdd-commons/agents/harness-orchestrator.agent.md
-    - tuliomourarocha/module-sdd-commons/commands/po-prompt.prompt.md
-    - tuliomourarocha/module-sdd-commons/agents/po-agent.agent.md
-    - tuliomourarocha/module-sdd-commons/commands/PRD.prompt.md
-    - tuliomourarocha/module-sdd-commons/agents/requirements-reviewer.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/prd-writer.agent.md
+    # Harness V2 — orquestrador + 5 macros
+    - tuliomourarocha/module-sdd-commons/agents/harness.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/planner.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/builder.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/checker.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/reviewer.agent.md
+    - tuliomourarocha/module-sdd-commons/agents/shipper.agent.md
+    - tuliomourarocha/module-sdd-commons/commands/harness.prompt.md
 
-    - tuliomourarocha/module-sdd-commons/skills/frontend-design
+    # Skills — compartilhadas pelos macros
     - tuliomourarocha/module-sdd-commons/skills/po-assistant
     - tuliomourarocha/module-sdd-commons/skills/grill-me
-    - tuliomourarocha/module-sdd-commons/commands/grilling.prompt.md
-    - tuliomourarocha/module-sdd-commons/skills/react-best-practices
-    - tuliomourarocha/module-sdd-commons/skills/trello-manager
-    - tuliomourarocha/module-sdd-commons/skills/state-manager
-    - tuliomourarocha/module-sdd-commons/skills/caveman
-    - tuliomourarocha/module-sdd-commons/skills/caveman-review
-    - tuliomourarocha/module-sdd-commons/skills/nextjs-react-typescript
+    - tuliomourarocha/module-sdd-commons/skills/mermaid-diagrams
+    - tuliomourarocha/module-sdd-commons/skills/design-doc-mermaid
+    - tuliomourarocha/module-sdd-commons/skills/clean-architecture
+    - tuliomourarocha/module-sdd-commons/skills/clean-code
+    - tuliomourarocha/module-sdd-commons/skills/solid
+    - tuliomourarocha/module-sdd-commons/skills/typescript-expert
+    - tuliomourarocha/module-sdd-commons/skills/typescript-react-reviewer
+
     - tuliomourarocha/module-sdd-commons/skills/nextjs-app-router-patterns
+    - tuliomourarocha/module-sdd-commons/skills/nextjs-react-typescript
     - tuliomourarocha/module-sdd-commons/skills/nextjs-supabase-auth
     - tuliomourarocha/module-sdd-commons/skills/supabase-postgres-best-practices
+    - tuliomourarocha/module-sdd-commons/skills/react-best-practices
+    - tuliomourarocha/module-sdd-commons/skills/frontend-design
     - tuliomourarocha/module-sdd-commons/skills/clerk-nextjs-patterns
 
-    - tuliomourarocha/module-sdd-commons/commands/devops-prompt.prompt.md
-    - tuliomourarocha/module-sdd-commons/agents/devops-infra.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/ci-cd-specialist.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/vercel-infra.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/code-reviewer-infra.agent.md
+    - tuliomourarocha/module-sdd-commons/skills/webapp-testing
 
+    - tuliomourarocha/module-sdd-commons/skills/git-commit
+    - tuliomourarocha/module-sdd-commons/skills/github-cli
     - tuliomourarocha/module-sdd-commons/skills/github-actions-docs
     - tuliomourarocha/module-sdd-commons/skills/deploy-to-vercel
     - tuliomourarocha/module-sdd-commons/skills/vercel-cli-with-tokens
-    - tuliomourarocha/module-sdd-commons/skills/git-commit
-    - tuliomourarocha/module-sdd-commons/skills/github-cli
 
-    - tuliomourarocha/module-sdd-commons/commands/techlead-prompt.prompt.md
-    - tuliomourarocha/module-sdd-commons/agents/techlead.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/architecture-reviewer.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/code-reviewer-general.agent.md
-
-    - tuliomourarocha/module-sdd-commons/commands/frontend-prompt.prompt.md
-    - tuliomourarocha/module-sdd-commons/agents/frontend-dev.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/react-expert.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/nextjs-expert.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/code-reviewer-frontend.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/ui-reviewer.agent.md
-
-    - tuliomourarocha/module-sdd-commons/commands/backend-prompt.prompt.md
-    - tuliomourarocha/module-sdd-commons/agents/backend-dev.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/supabase-specialist.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/code-reviewer-backend.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/vercel-deploy.agent.md
-
-    - tuliomourarocha/module-sdd-commons/commands/qa-prompt.prompt.md
-    - tuliomourarocha/module-sdd-commons/agents/qa-engineer.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/e2e-tester.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/api-tester.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/bug-reporter.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/ci-checker.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/unit-tester.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/linter.agent.md
-
-    - tuliomourarocha/module-sdd-commons/skills/solid
-    - tuliomourarocha/module-sdd-commons/skills/clean-architecture
-    - tuliomourarocha/module-sdd-commons/skills/clean-code
-    - tuliomourarocha/module-sdd-commons/skills/mermaid-diagrams
-    - tuliomourarocha/module-sdd-commons/skills/design-doc-mermaid
-    - tuliomourarocha/module-sdd-commons/skills/typescript-expert
-    - tuliomourarocha/module-sdd-commons/skills/typescript-react-reviewer
-    - tuliomourarocha/module-sdd-commons/skills/webapp-testing
+    - tuliomourarocha/module-sdd-commons/skills/state-manager
+    - tuliomourarocha/module-sdd-commons/skills/trello-manager
+    - tuliomourarocha/module-sdd-commons/skills/caveman
+    - tuliomourarocha/module-sdd-commons/skills/caveman-review
   includes: auto
 mcp:
   supabase:
