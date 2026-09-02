@@ -32,6 +32,7 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/skills/supabase-postgres-best-practices
     - tuliomourarocha/module-sdd-commons/skills/react-best-practices
     - tuliomourarocha/module-sdd-commons/skills/frontend-design
+    - tuliomourarocha/module-sdd-commons/skills/web-design-guidelines
     - tuliomourarocha/module-sdd-commons/skills/clerk-nextjs-patterns
 
     - tuliomourarocha/module-sdd-commons/skills/webapp-testing

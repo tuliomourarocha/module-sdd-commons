@@ -23,6 +23,8 @@ Planeja antes de construir. Cobre produto (discovery, PRD) e técnica (arquitetu
 - `grill-me` — entrevista de discovery (1 pergunta/vez, max 3 rodadas)
 - `mermaid-diagrams` + `design-doc-mermaid` — diagramas C4, sequência, ERD
 - `clean-architecture` + `solid` — Dependency Rule, boundaries, DDD
+- `frontend-design` — **condicional UI**: só quando feature tem `[Front]`/UI visível; define direção visual intencional (paleta 4–6 hex, tipografia display/body/utility, layout + ASCII wireframe, elemento assinatura, hero como tese) e evita defaults templated (cream #F4F1EA+serif+terracota, near-black+acid-green, broadsheet)
+- `web-design-guidelines` — **condicional UI (DoD)**: só quando `[Front]`/UI visível; usa Vercel Web Interface Guidelines (https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md) como critérios de aceite/DoD — a11y, focus-visible, forms, animation, typography, images, performance, navigation, touch, safe-area, i18n, hydration; complementa `frontend-design` (estética) com conformidade técnica
 - `state-manager` — apenas leitura de STATE/HANDOFF (escrita é do shipper)
 - `find-skills` — descobrir skills de domínio no início
 
@@ -46,8 +48,14 @@ Escreva `.planning/PRD.md` (max 1 página, progressive disclosure):
    - Backend: camadas Clean Architecture, entities/V.O.s, use cases, DTOs, repositories
    - Infra: pipeline, ambientes, deploy
 2. Diagramas Mermaid em `.planning/arch/epic-XX/` (component, layers, sequence, deployment).
-3. Quebre em subtasks com labels `[Front]/[Back]/[Infra]`, estimativa P/M/G e dependências.
-4. Escreva `.planning/PLAN.md`: o que será construído, por camada, ordem, critérios de aceite técnico.
+3. **Se `[Front]`/UI visível → ative `frontend-design` (2 passes):**
+   - Pass 1 — brainstorm plano de design compacto: paleta 4–6 hex nomeados, tipografia (display característico + body complementar + utility se necessário, escala intencional), layout conceito + ASCII wireframe, assinatura (1 elemento memorável que encarna o brief).
+   - Critique o plano: se algum eixo soa como default genérico (cream #F4F1EA/serif/terracota, near-black/acid-green, broadsheet hairline) revise dizendo o que mudou e por quê; hero deve ser tese (o mais característico do subject, não big number+label genérico).
+   - Registre tokens em `.planning/PLAN.md` (seção Design Tokens) e opcional `.planning/arch/epic-XX/design-tokens.md`; todo subtask `[Front]` deve referenciar tokens.
+   - Se feature é `[Back]`/`[Infra]` puro ou bugfix sem UI, registre `Design: N/A — sem superfície visual` e pule este passo.
+4. **Se `[Front]`/UI visível → ative `web-design-guidelines` como DoD:** faça `WebFetch` em `https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md` para obter regras atuais; extraia checklist relevante (Accessibility, Focus States, Forms, Animation, Typography, Content Handling, Images, Performance, Navigation & State, Touch, Safe Areas, Dark Mode, Locale & i18n, Hydration Safety, Hover) e registre em `PLAN.md` seção `Design Compliance Checklist` com critérios de aceite técnico; cada subtask `[Front]` deve herdar checklist (ex.: `aria-label` em icon buttons, `focus-visible:ring-*` sem `outline-none` nu, `autocomplete`/`type` corretos, `prefers-reduced-motion`, `width`/`height` em imagens, `Intl.*` para datas/números). Se sem UI, registre `Compliance: N/A`.
+5. Quebre em subtasks com labels `[Front]/[Back]/[Infra]`, estimativa P/M/G e dependências.
+6. Escreva `.planning/PLAN.md`: o que será construído, por camada, ordem, critérios de aceite técnico.
 
 ## Outputs
 - `.planning/PRD.md`
@@ -63,6 +71,8 @@ Retorne ao harness: resumo do PRD+PLAN, decisões, pendências. NÃO escreva `ST
 - [ ] Dependency Rule e boundaries validados (self-review via clean-architecture)
 - [ ] Subtasks com labels de camada e estimativa P/M/G
 - [ ] `.planning/PRD.md` e `.planning/PLAN.md` escritos
+- [ ] Se `[Front]` existe: `PLAN.md` contém Design Tokens (paleta, tipografia, layout, assinatura) validados contra `frontend-design` (sem default templated não justificado)
+- [ ] Se `[Front]` existe: `PLAN.md` contém `Design Compliance Checklist` derivado de `web-design-guidelines` (via WebFetch) cobrindo a11y, focus, forms, animation, images, performance
 
 ## Rules
 - Nunca propor código antes de PRD+PLAN aprovados.

@@ -29,6 +29,8 @@ Implementa o que o planner planejou. Full-stack: backend, frontend e infra míni
 ## Skills
 - `clean-architecture` + `solid` + `clean-code` — camadas, Dependency Rule, SOLID
 - `nextjs-app-router-patterns` + `react-best-practices` — App Router, Server/Client, hooks
+- `frontend-design` — quando `PLAN.md` tem Design Tokens/`[Front]`: aplica paleta/tipografia/layout/assinatura, hero como tese, motion deliberado, evita defaults templated, trabalha em 2 passes (planejar→criticar→construir→criticar)
+- `web-design-guidelines` — quando `[Front]`/UI visível e `PLAN.md` tem `Design Compliance Checklist`: guardrail de implementação — verifica a11y (`aria-label`, semantic HTML, `aria-live`), focus-visible, forms (`autocomplete`/`type`/`htmlFor`), animation (`prefers-reduced-motion`, `transform`/`opacity` only), images (`width`/`height`, `loading="lazy"`), performance, hydration, i18n; complementa `frontend-design`
 - `supabase-postgres-best-practices` — migrations, RLS, schema
 - `typescript-expert` — strict, generics, monorepo
 - `git-commit` + `github-cli` — commits e PRs (commit local, push só via shipper se quiser)
@@ -51,6 +53,8 @@ Identifique ordem e dependências: infra/banco → backend → frontend. Respeit
 - DTOs nas boundaries, nunca ORM objects vazando
 
 ### 4. Frontend
+- Se `PLAN.md` contém Design Tokens (ativação `frontend-design`): siga estritamente o plano — derive toda cor/tipografia/espaçamento dos tokens; hero como tese (não big number genérico); tipografia com par display/body intencional e escala; estrutura encode informação real (evite 01/02/03 se não for sequência); motion orquestrado único, respeite `prefers-reduced-motion`; implemente em 2 passes (planejar tokens já feitos → criticar → construir → criticar) e remova 1 acessório decorativo (Chanel); cuidado com especificidade CSS (evite `.section` vs `.cta` se cancelando); se sem tokens/`[Front]` ausente, pule `frontend-design` e use implementação funcional padrão.
+- Se `PLAN.md` contém `Design Compliance Checklist` (ativação `web-design-guidelines`): aplique checklist durante codificação — (a) Accessibility: `aria-label` em icon buttons, `label`/`aria-label` em forms, `aria-hidden` em ícones decorativos, `aria-live="polite"` em toasts, semantic HTML antes de ARIA, hierarquia `h1→h6` + skip link; (b) Focus: `focus-visible:ring-*` nunca `outline-none` sem substituto, `:focus-visible` > `:focus`, `:focus-within` para controles compostos; (c) Forms: `autocomplete`+`name`, `type`/`inputmode` corretos, nunca bloquear paste, `htmlFor` clicável, `spellCheck={false}` em emails/códigos, hit target compartilhado em checkbox/radio, botão submit com spinner, erros inline + foco no primeiro erro, placeholder `…` com exemplo; (d) Animation: honrar `prefers-reduced-motion`, animar só `transform`/`opacity`, nunca `transition: all`; (e) Images: `width`/`height` + `loading="lazy"`/`priority`; (f) Performance/hydration/i18n: virtualize listas >50, `Intl.*` para datas/números, `translate="no"` em brands; auto-valide antes do build; se checklist ausente, pule.
 - Componentes, páginas, layouts, Server Components por padrão
 - Data fetching e estado conforme PLAN
 
@@ -72,7 +76,9 @@ Retorne ao harness: lista de arquivos, decisões. NÃO escreva `STATE.md`/`HANDO
 - [ ] DTOs nas boundaries, repo interfaces no domínio
 - [ ] `npm run build` passa
 - [ ] `npx tsc --noEmit` sem erros
-- [ ] `.planning/SUMMARY.md` escrito
+- [ ] Se `[Front]` com Design Tokens: fidelidade visual — paleta/tipografia/escala/layout/assinatura do PLAN aplicados, hero como tese, sem default templated não justificado, responsivo + focus visível + `prefers-reduced-motion` respeitado
+- [ ] Se `[Front]` com `Design Compliance Checklist`: implementação segue `web-design-guidelines` (a11y, focus, forms, animation, images, i18n, hydration) sem violações `HIGH` (ex.: `div onClick` sem `button`, input sem label, `transition: all`, `outline-none` sem substituto, imagem sem dimensões)
+- [ ] `.planning/SUMMARY.md` escrito (inclua desvio de design se houver)
 
 ## Rules
 - Implemente direto — consulte skills, não subagentes.
