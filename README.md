@@ -3,14 +3,15 @@ Repositório central para armazenamento, versionamento e gerenciamento de artefa
 
 ## Instalação multi-harness
 
-O mesmo Harness V2 pode ser instalado em OpenCode, Claude Code ou Codex. Após a
-publicação do pacote, use:
+O mesmo Harness V2 pode ser instalado em OpenCode, Claude Code ou Codex sem
+publicar um pacote no npm. O comando baixa e executa o `package.json` deste
+repositório:
 
 ```bash
-npx @tuliomourarocha/sdd-harness --opencode
-npx @tuliomourarocha/sdd-harness --claude --target /caminho/do/projeto
-npx @tuliomourarocha/sdd-harness --codex
-npx @tuliomourarocha/sdd-harness --all
+npx --yes github:tuliomourarocha/module-sdd-commons#main --opencode
+npx --yes github:tuliomourarocha/module-sdd-commons#main --claude --target /caminho/do/projeto
+npx --yes github:tuliomourarocha/module-sdd-commons#main --codex
+npx --yes github:tuliomourarocha/module-sdd-commons#main --all
 ```
 
 O CLI escreve somente diretórios gerenciados pelo harness:
@@ -26,6 +27,11 @@ Antes de publicar, é possível testar o binário localmente:
 ```bash
 node ./bin/sdd-harness.js --opencode --target /tmp/meu-projeto
 ```
+
+Execute o `npx` dentro do repositório de destino; sem `--target`, ele instala no
+diretório atual. O sufixo `#main` garante que o script venha da branch publicada
+do módulo. Troque-o por uma tag para instalações reproduzíveis, por exemplo
+`#v2.1.0`.
 
 `install.sh` permanece disponível como compatibilidade para instalações antigas
 do OpenCode.

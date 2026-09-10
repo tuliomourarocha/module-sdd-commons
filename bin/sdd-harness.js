@@ -24,7 +24,7 @@ const codexRoleModels = {
 };
 
 function usage(exitCode = 0) {
-  console.log(`Uso: npx @tuliomourarocha/sdd-harness --<plataforma> [opções]
+  console.log(`Uso: npx --yes github:tuliomourarocha/module-sdd-commons#main --<plataforma> [opções]
 
 Plataformas: --opencode, --claude, --codex, --all
 Opções:     --target <diretório-do-projeto>   (padrão: diretório atual)
@@ -32,9 +32,9 @@ Opções:     --target <diretório-do-projeto>   (padrão: diretório atual)
              --help
 
 Exemplos:
-  npx @tuliomourarocha/sdd-harness --opencode
-  npx @tuliomourarocha/sdd-harness --claude --target ../meu-app
-  npx @tuliomourarocha/sdd-harness --all --target .`);
+  npx --yes github:tuliomourarocha/module-sdd-commons#main --opencode
+  npx --yes github:tuliomourarocha/module-sdd-commons#main --claude --target ../meu-app
+  npx --yes github:tuliomourarocha/module-sdd-commons#main --all --target .`);
   process.exit(exitCode);
 }
 
