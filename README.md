@@ -1,17 +1,42 @@
 # module-sdd-commons
 Repositório central para armazenamento, versionamento e gerenciamento de artefatos de IA, como agentes, skills, prompts, instruções e configurações reutilizáveis.
 
-## Instalação em outros repositórios
+## Instalação multi-harness
 
-Para instalar este módulo em outro projeto, execute o `install.sh` direto da raiz do módulo:
+O mesmo Harness V2 pode ser instalado em OpenCode, Claude Code ou Codex. Após a
+publicação do pacote, use:
 
 ```bash
-# 1. Clone ou copie este módulo para seu projeto
-git clone https://github.com/tuliomourarocha/module-sdd-commons.git /tmp/module-sdd-commons
-
-# 2. Execute o install.sh apontando para .opencode/ do seu projeto
-/tmp/module-sdd-commons/install.sh /caminho/do/seu/projeto/.opencode
+npx @tuliomourarocha/sdd-harness --opencode
+npx @tuliomourarocha/sdd-harness --claude --target /caminho/do/projeto
+npx @tuliomourarocha/sdd-harness --codex
+npx @tuliomourarocha/sdd-harness --all
 ```
+
+O CLI escreve somente diretórios gerenciados pelo harness:
+
+| Alvo | Artefatos instalados | Como iniciar |
+| --- | --- | --- |
+| OpenCode | `.opencode/agents`, `commands`, `skills` | `@harness <pedido>` |
+| Claude Code | `.claude/agents`, `commands`, `skills`, `CLAUDE.md` | `/sdd-harness <pedido>` |
+| Codex | `.codex/skills/sdd-harness`, `roles`, `skills` | `$sdd-harness <pedido>` |
+
+Antes de publicar, é possível testar o binário localmente:
+
+```bash
+node ./bin/sdd-harness.js --opencode --target /tmp/meu-projeto
+```
+
+`install.sh` permanece disponível como compatibilidade para instalações antigas
+do OpenCode.
+
+### Política de modelos
+
+O instalador decide os modelos por plataforma: OpenCode preserva os modelos
+originais `opencode/*`; Claude Code usa aliases Anthropic (`haiku`/`sonnet`); e
+Codex grava o roteamento GPT-5.6 (Luna, Terra e Sol) por papel em
+`.codex/sdd-harness.json`. Não há escolha manual de modelos durante a instalação. Os detalhes estão em
+[`platforms/model-policy.md`](platforms/model-policy.md).
 
 ### Via APM (Agent Package Manager)
 
@@ -28,7 +53,7 @@ O APM baixa os artefatos no formato `.agents/`, `.claude/` ou `.github/`. Em seg
 ./install.sh
 ```
 
-### O que o install.sh faz
+### O que o install.sh legado faz
 
 1. **Detecta automaticamente** a origem dos artefatos (`agents/`, `.agents/`, `.claude/`, `.github/`)
 2. **Copia** agentes, commands, skills e packs para `.opencode/`

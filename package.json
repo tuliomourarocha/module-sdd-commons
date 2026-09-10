@@ -1,0 +1,24 @@
+{
+  "name": "@tuliomourarocha/sdd-harness",
+  "version": "2.1.0",
+  "description": "Instalador multi-harness para OpenCode, Claude Code e Codex.",
+  "type": "module",
+  "bin": {
+    "sdd-harness": "bin/sdd-harness.js"
+  },
+  "files": [
+    "AGENTS.md",
+    "agents",
+    "commands",
+    "skills",
+    "bin",
+    "platforms"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT"
+}
