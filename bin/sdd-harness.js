@@ -10,7 +10,6 @@ const claudeRoleModels = {
   harness: "haiku",
   planner: "sonnet",
   builder: "sonnet",
-  checker: "haiku",
   reviewer: "sonnet",
   shipper: "haiku",
 };
@@ -18,7 +17,6 @@ const codexRoleModels = {
   harness: "gpt-5.6-luna",
   planner: "gpt-5.6-sol",
   builder: "gpt-5.6-sol",
-  checker: "gpt-5.6-luna",
   reviewer: "gpt-5.6-terra",
   shipper: "gpt-5.6-terra",
 };
@@ -93,18 +91,16 @@ function claudeFrontmatter(role) {
   if (role === "harness") return [...common, "tools: Read, Glob, Grep, Agent", "disallowedTools: Write, Edit, Bash, WebFetch"].join("\n");
   if (role === "planner") return [...common, "tools: Read, Glob, Grep, Write, Edit, Bash, WebFetch, Skill"].join("\n");
   if (role === "builder") return [...common, "tools: Read, Glob, Grep, Write, Edit, Bash, WebFetch, Skill"].join("\n");
-  if (role === "checker") return [...common, "tools: Read, Glob, Grep, Write, Edit, Bash, WebFetch, Skill"].join("\n");
   if (role === "reviewer") return [...common, "tools: Read, Glob, Grep, Write, Edit, Bash, WebFetch, Skill"].join("\n");
   return [...common, "tools: Read, Glob, Grep, Write, Edit, Bash, WebFetch, Skill"].join("\n");
 }
 
 const descriptions = {
-  harness: "Orquestra feature, project ou bugfix pelos cinco papéis do SDD Harness.",
+  harness: "Orquestra feature, project ou bugfix pelos quatro papéis + hooks do SDD Harness.",
   planner: "Planeja produto e arquitetura; gera PRD, PLAN e diagramas.",
   builder: "Implementa full-stack a partir de um PLAN aprovado.",
-  checker: "Cria e executa testes; gera VALIDATION.md.",
-  reviewer: "Faz revisão estática, lint e typecheck; gera REVIEW.md.",
-  shipper: "Finaliza o ciclo com git, PR, CI e estado do projeto.",
+  reviewer: "Revisa arquitetura técnica e de software; gera REVIEW.md (sem lint — hooks fazem).",
+  shipper: "Finaliza via hook determinístico (git/PR/CI/Trello/STATE/HANDOFF); fallback minimal só STATE/HANDOFF.",
   supervisor: "Audita ciclo completo, mede performance/alucinações/tokens e cria Issue. Acionado por hook final.",
 };
 
@@ -134,7 +130,7 @@ async function installOpenCode(target, dryRun) {
   }
   await copyDirectory(path.join(sourceRoot, "commands"), path.join(root, "commands"), dryRun);
   await copyDirectory(path.join(sourceRoot, "skills"), path.join(root, "skills"), dryRun);
-  // ── Hooks determinísticos (guard rails + supervisor) ──────────────────
+  // ── Hooks determinísticos (guard rails + shipper + supervisor) ──────────────────
   // plugins: copiados para .opencode/plugins/ (auto-load pelo opencode)
   if (await exists(path.join(sourceRoot, "plugins"))) {
     await copyDirectory(path.join(sourceRoot, "plugins"), path.join(root, "plugins"), dryRun);
@@ -146,7 +142,7 @@ async function installOpenCode(target, dryRun) {
     await copyDirectory(path.join(sourceRoot, "hooks"), path.join(target, "hooks"), dryRun);
     if (!dryRun) {
       // garantir permissão de execução nos scripts python
-      for (const script of ["guard_rails.py", "supervisor.py"]) {
+      for (const script of ["guard_rails.py", "shipper.py", "supervisor.py"]) {
         const p1 = path.join(root, "hooks", script);
         const p2 = path.join(target, "hooks", script);
         for (const p of [p1, p2]) {
@@ -200,7 +196,7 @@ async function installClaude(target, dryRun) {
     // hooks determinísticos Claude: settings.json + scripts em .claude/hooks/
     if (await exists(path.join(sourceRoot, "platforms", "claude", "hooks"))) {
       await copyDirectory(path.join(sourceRoot, "platforms", "claude", "hooks"), path.join(root, "hooks"), dryRun);
-      for (const script of ["guard_rails.py", "supervisor.py"]) {
+      for (const script of ["guard_rails.py", "shipper.py", "supervisor.py"]) {
         const p = path.join(root, "hooks", script);
         if (await exists(p)) await chmod(p, 0o755).catch(() => {});
       }
@@ -237,7 +233,7 @@ async function installCodex(target, dryRun) {
     // hooks determinísticos Codex: copia para .codex/hooks/
     if (await exists(path.join(sourceRoot, "hooks"))) {
       await copyDirectory(path.join(sourceRoot, "hooks"), path.join(root, "hooks"), dryRun);
-      for (const script of ["guard_rails.py", "supervisor.py"]) {
+      for (const script of ["guard_rails.py", "shipper.py", "supervisor.py"]) {
         const p = path.join(root, "hooks", script);
         if (await exists(p)) await chmod(p, 0o755).catch(() => {});
       }

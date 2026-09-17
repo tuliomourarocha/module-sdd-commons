@@ -47,6 +47,23 @@ function extractFilePath(tool: string, args: any): string | undefined {
   return undefined;
 }
 
+// ── Log de garantia: prova que hook foi chamado + alerta agentes em caso de erro ──
+async function writeGuaranteeLog(
+  $: any,
+  directory: string,
+  entry: Record<string, any>
+) {
+  const line = JSON.stringify(entry);
+  // Log JSONL em dois lugares para redundância
+  await $`mkdir -p ${directory}/.planning && mkdir -p ${directory}/.opencode/hooks`.nothrow().quiet();
+  await $`echo '${line.replace(/'/g, "'\\''")}' >> ${directory}/.planning/HOOKS.log`.nothrow().quiet();
+  await $`echo '${line.replace(/'/g, "'\\''")}' >> ${directory}/.opencode/hooks/hook-audit.jsonl`.nothrow().quiet();
+  // Também mantém compat com guard-rails.log legado
+  if (entry.hook === "guard-rails") {
+    await $`echo '${line.replace(/'/g, "'\\''")}' >> ${directory}/.opencode/hooks/guard-rails.log`.nothrow().quiet();
+  }
+}
+
 async function runGuardRails(
   $: any,
   directory: string,
@@ -54,6 +71,7 @@ async function runGuardRails(
   client: any
 ) {
   const normalized = filePath.startsWith("/") ? filePath : `${directory}/${filePath}`;
+  const triggerTs = new Date().toISOString();
   // resolve hook script location: .opencode/hooks/guard_rails.py > hooks/guard_rails.py
   const candidates = [
     `${directory}/.opencode/hooks/guard_rails.py`,
@@ -76,15 +94,31 @@ async function runGuardRails(
     hook = `${directory}/hooks/guard_rails.py`;
     const exists = await $`test -f ${hook} && echo ok`.text().catch(() => "");
     if (!exists.includes("ok")) {
+      const errMsg = `Hook script não encontrado para ${filePath} — guard rails NÃO executado`;
       await client.app.log({
         body: {
           service: "guard-rails",
-          level: "warn",
-          message: `Hook script não encontrado para ${filePath}, pulando guard rails`,
+          level: "error",
+          message: errMsg,
           extra: { filePath, directory },
         },
       });
-      return;
+      await writeGuaranteeLog($, directory, {
+        ts: triggerTs,
+        hook: "guard-rails",
+        file: filePath,
+        trigger: "tool.execute.after",
+        duration_ms: 0,
+        exit_code: 127,
+        blocked: false,
+        high: 0,
+        med: 0,
+        status: "error",
+        error: "hook_not_found",
+        message: errMsg,
+      });
+      // Notifica agente via throw visível
+      throw new Error(`🚨 HOOK_GUARD_RAILS_ERROR: ${errMsg} — verifique hooks/guard_rails.py existe e python3 está instalado. Log: .planning/HOOKS.log`);
     }
   }
 
@@ -97,28 +131,65 @@ async function runGuardRails(
   const exitCode: number = result.exitCode ?? 0;
 
   let json: any = null;
+  let parseError: string | null = null;
   try {
     json = JSON.parse(stdout);
-  } catch {
-    // output pode ser texto quando falha
+  } catch (e: any) {
+    parseError = e?.message ?? String(e);
+    // se exit 0 mas parse falhou, pode ser output texto — tratar como erro infra
   }
 
   const blocked = json?.blocked === true || exitCode === 2;
   const findings: any[] = json?.findings ?? [];
   const high = findings.filter((f) => f.severity === "HIGH").length;
   const med = findings.filter((f) => f.severity === "MED").length;
+  const isInfraError = exitCode === 127 || exitCode === 124 || (parseError && exitCode !== 0 && !json);
 
   // Log estruturado sempre
   await client.app.log({
     body: {
       service: "guard-rails",
-      level: blocked ? "error" : med > 0 ? "warn" : "info",
+      level: blocked ? "error" : isInfraError ? "error" : med > 0 ? "warn" : "info",
       message: blocked
         ? `⛔ Guard Rails BLOQUEOU ${filePath} — HIGH:${high} MED:${med} (${duration}ms)`
-        : `🛡️ Guard Rails ${filePath} — HIGH:${high} MED:${med} (${duration}ms)`,
-      extra: { filePath, blocked, high, med, findings: findings.slice(0, 5), stdout: stdout.slice(0, 2000), stderr: stderr.slice(0, 1000) },
+        : isInfraError
+          ? `🚨 Guard Rails ERRO INFRA ${filePath} — exit:${exitCode} (${duration}ms)`
+          : `🛡️ Guard Rails ${filePath} — HIGH:${high} MED:${med} (${duration}ms)`,
+      extra: { filePath, blocked, high, med, findings: findings.slice(0, 5), stdout: stdout.slice(0, 2000), stderr: stderr.slice(0, 1000), isInfraError, parseError },
     },
   });
+
+  // ── GARANTIA: escreve log de prova que hook foi chamado ──
+  await writeGuaranteeLog($, directory, {
+    ts: triggerTs,
+    hook: "guard-rails",
+    file: filePath,
+    trigger: "tool.execute.after",
+    duration_ms: duration,
+    exit_code: exitCode,
+    blocked,
+    high,
+    med,
+    status: blocked ? "blocked" : isInfraError ? "infra_error" : med > 0 ? "warn" : "pass",
+    error: isInfraError ? (parseError ?? stderr.slice(0, 500)) : null,
+  });
+
+  // Notifica agente em caso de erro infra — visível no decorrer do processo
+  if (isInfraError && !blocked) {
+    await client.app.log({
+      body: {
+        service: "guard-rails",
+        level: "error",
+        message: `🚨 Guard Rails falha infra para ${filePath} — agent será notificado. Veja .planning/HOOKS.log`,
+        extra: { filePath, exitCode, stderr: stderr.slice(0, 1000) },
+      },
+    });
+    throw new Error(
+      `🚨 HOOK_GUARD_RAILS_INFRA_ERROR: ${filePath} — hook falhou (exit ${exitCode}). ` +
+      `stderr: ${stderr.slice(0, 800)}\n` +
+      `Aviso: guard rails NÃO validou este arquivo. Corrija infra (python3, ruff, pyright) ou verifique .planning/HOOKS.log`
+    );
+  }
 
   // Também exibe no TUI como toast
   if (blocked) {
@@ -130,11 +201,8 @@ async function runGuardRails(
     // Lança erro determinístico para o agente ver e corrigir (não crash do plugin)
     // O LLM recebe o erro como tool result e deve corrigir (max 2 iterações builder)
     throw new Error(
-      `⛔ GUARD_RAILS_BLOCKED: ${filePath} — corrija HIGH antes de prosseguir\n${msg}\n\nDetalhe: ${stdout.slice(0, 4000)}`
+      `⛔ GUARD_RAILS_BLOCKED: ${filePath} — corrija HIGH antes de prosseguir\n${msg}\n\nDetalhe: ${stdout.slice(0, 4000)}\n\nLog garantia: .planning/HOOKS.log`
     );
-  } else if (med > 0) {
-    // WARNING não bloqueia, mas avisa — reviewer/shipper vê log
-    await $`echo ${JSON.stringify({ file: filePath, high, med, duration })} >> ${directory}/.opencode/hooks/guard-rails.log`.nothrow().quiet();
   }
 }
 
@@ -152,23 +220,24 @@ export const GuardRailsPlugin: Plugin = async ({ $, directory, client }) => {
       if (!filePath) return;
       if (!isCodeFile(filePath)) return;
 
-      // evita loop se o próprio guard criar log
-      if (filePath.includes("guard-rails.log") || filePath.includes("SUPERVISOR")) return;
+      // evita loop se o próprio guard criar log (inclui HOOKS.log)
+      if (filePath.includes("guard-rails.log") || filePath.includes("HOOKS.log") || filePath.includes("hook-audit") || filePath.includes("SUPERVISOR")) return;
 
       try {
         await runGuardRails($, directory, filePath, client);
       } catch (err: any) {
-        // Re-throw para bloquear: o agente builder/reviewer recebe o erro
-        // Se for HIGH, deve corrigir. Se plugin falhar por infra, loga mas não bloqueia.
-        if (err?.message?.includes("GUARD_RAILS_BLOCKED")) throw err;
+        // Re-throw para agente ver — tanto BLOCK quanto INFRA precisam ser visíveis
+        if (err?.message?.includes("GUARD_RAILS_BLOCKED") || err?.message?.includes("HOOK_GUARD_RAILS")) throw err;
         await client.app.log({
           body: {
             service: "guard-rails",
-            level: "warn",
-            message: `Guard Rails falhou infra para ${filePath}: ${err?.message?.slice(0, 500)}`,
+            level: "error",
+            message: `🚨 Guard Rails falhou infra para ${filePath}: ${err?.message?.slice(0, 500)} — notificado ao agente (ver .planning/HOOKS.log)`,
             extra: { filePath, error: String(err) },
           },
         });
+        // Garante que agente builder/reviewer seja notificado mesmo em erro infra
+        throw new Error(`🚨 HOOK_GUARD_RAILS_ERROR: ${filePath} — ${err?.message?.slice(0, 800)} — veja .planning/HOOKS.log`);
       }
     },
 
@@ -177,13 +246,28 @@ export const GuardRailsPlugin: Plugin = async ({ $, directory, client }) => {
       if (event?.type !== "file.edited" && event?.type !== "file.watcher.updated") return;
       const filePath: string | undefined = event?.properties?.path ?? event?.path ?? event?.file;
       if (!filePath || !isCodeFile(filePath)) return;
-      if (filePath.includes("guard-rails.log")) return;
+      if (filePath.includes("guard-rails.log") || filePath.includes("HOOKS.log") || filePath.includes("hook-audit")) return;
       try {
         await runGuardRails($, directory, filePath, client);
       } catch (err: any) {
-        if (err?.message?.includes("GUARD_RAILS_BLOCKED")) {
+        if (err?.message?.includes("GUARD_RAILS_BLOCKED") || err?.message?.includes("HOOK_GUARD_RAILS")) {
           await client.app.log({
             body: { service: "guard-rails", level: "error", message: err.message.slice(0, 2000) },
+          });
+          // Eventos file.edited não têm retorno para agente, mas log garante visibilidade
+          // Também escreve garantia adicional
+          await writeGuaranteeLog($, directory, {
+            ts: new Date().toISOString(),
+            hook: "guard-rails",
+            file: filePath,
+            trigger: "event:file.edited",
+            duration_ms: 0,
+            exit_code: 2,
+            blocked: true,
+            high: 1,
+            med: 0,
+            status: "blocked",
+            error: err.message.slice(0, 500),
           });
         }
       }

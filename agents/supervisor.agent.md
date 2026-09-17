@@ -34,10 +34,10 @@ Você é acionado **deterministicamente** pelo hook `plugins/supervisor.ts` apó
 
 ## Memória e Política de Artefatos
 
-> **Restrição:** Você NÃO persiste PRD/PLAN/SUMMARY/VALIDATION/REVIEW em disco. Lê artefatos **em memória** via `context:` injetado + arquivos `.planning/HANDOFF.md`/`STATE.md`/`SUPERVISOR_REPORT.md` (gerados pelo hook python). Seu output vai para Issue GitHub (fora do harness) + `.planning/SUPERVISOR_REPORT.md` como evidência.
+> **Restrição:** Você NÃO persiste PRD/PLAN/SUMMARY/REVIEW em disco. Lê artefatos **em memória** via `context:` injetado + arquivos `.planning/HANDOFF.md`/`STATE.md`/`SUPERVISOR_REPORT.md` (gerados pelo hook python). Seu output vai para Issue GitHub (fora do harness) + `.planning/SUPERVISOR_REPORT.md` como evidência. `VALIDATION.md` removido (hook guard_rails).
 
 ## Inputs
-Recebe `context: {PRD.md, PLAN.md, SUMMARY.md, VALIDATION.md, REVIEW.md, HANDOFF.md, STATE.md}` + `.planning/SUPERVISOR_REPORT.md` (determinístico) + `git diff HEAD` + `supervisor_metrics.json`.
+Recebe `context: {PRD.md, PLAN.md, SUMMARY.md, REVIEW.md, HANDOFF.md, STATE.md}` + `.planning/SUPERVISOR_REPORT.md` (determinístico) + `git diff HEAD` + `supervisor_metrics.json`.
 
 Se `context:` ausente, leia `.planning/HANDOFF.md` e `.planning/SUPERVISOR_REPORT.md` em disco (única leitura permitida).
 

@@ -21,15 +21,17 @@ test("instala adaptadores com os provedores esperados", async () => {
   assert.match(claudeHarness, /model: haiku/);
   assert.deepEqual(codexRouting.roleModels, {
     harness: "gpt-5.6-luna", planner: "gpt-5.6-sol", builder: "gpt-5.6-sol",
-    checker: "gpt-5.6-luna", reviewer: "gpt-5.6-terra", shipper: "gpt-5.6-terra",
+    reviewer: "gpt-5.6-terra", shipper: "gpt-5.6-terra",
   });
   assert.equal((await stat(path.join(target, ".codex", "skills", "sdd-harness", "SKILL.md"))).isFile(), true);
-  // 6 macros originais + supervisor (hook final)
-  assert.equal((await readdir(path.join(target, ".codex", "roles"))).length, 7);
+  // 5 macros (checker removido) + supervisor (hook final) = 6
+  assert.equal((await readdir(path.join(target, ".codex", "roles"))).length, 6);
   // valida hooks determinísticos instalados
   assert.equal((await stat(path.join(target, ".opencode", "plugins", "guard-rails.ts"))).isFile(), true);
+  assert.equal((await stat(path.join(target, ".opencode", "plugins", "shipper.ts"))).isFile(), true);
   assert.equal((await stat(path.join(target, ".opencode", "plugins", "supervisor.ts"))).isFile(), true);
   assert.equal((await stat(path.join(target, ".opencode", "hooks", "guard_rails.py"))).isFile(), true);
+  assert.equal((await stat(path.join(target, ".opencode", "hooks", "shipper.py"))).isFile(), true);
   assert.equal((await stat(path.join(target, ".opencode", "hooks", "supervisor.py"))).isFile(), true);
   assert.equal((await stat(path.join(target, ".claude", "settings.json"))).isFile(), true);
   assert.equal((await stat(path.join(target, ".claude", "hooks", "guard_rails.py"))).isFile(), true);

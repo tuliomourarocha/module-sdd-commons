@@ -68,20 +68,21 @@ O APM baixa os artefatos no formato `.agents/`, `.claude/` ou `.github/`. Em seg
 
 ## Uso do Harness V2
 
-O `harness` (V2) orquestra 3 fluxos com 5 macros (planner, builder, checker, reviewer, shipper).
+O `harness` (V2) orquestra 3 fluxos com 4 macros + hooks (`planner`, `builder`, `reviewer` arquitetura, `shipper` hook).
 
 ### Arquitetura
 
-| Agente | Papel | Skills principais |
+| Agente/Hook | Papel | Skills principais |
 |--------|-------|-------------------|
 | `harness` | Orquestra `feature/project/bugfix` via `task()` | — |
 | `planner` | Planeja — PRD, PLAN, arquitetura | `po-assistant`, `grill-me`, `mermaid-diagrams`, `clean-architecture` |
 | `builder` | Implementa — full-stack + infra mínima | `clean-architecture`, `nextjs-app-router-patterns`, `supabase-postgres-best-practices` |
-| `checker` | Valida — testes unit/API/e2e | `webapp-testing`, `typescript-expert` |
-| `reviewer` | Revisa — lint, typecheck, code review | `clean-code`, `solid`, `typescript-react-reviewer` |
-| `shipper` | Finaliza — commit, PR, CI, Trello close | `git-commit`, `github-cli`, `trello-manager`, `state-manager` |
+| `reviewer` | Revisa — só arquitetura técnica/software | `clean-architecture`, `solid`, `clean-code` |
+| `shipper` (hook) | Finaliza — git/PR/CI/Trello/STATE/HANDOFF via `hooks/shipper.py` + `plugins/shipper.ts` (fallback minimal) | `state-manager`, `git-commit`, `github-cli` (via hook) |
 
-Fluxo `feature`: `planner → builder → [checker ∥ reviewer] → shipper` (2 gates humanos, 5 tasks, 1 Trello sync).
+> **Guard rails** (lint, testes, ruff/pylance/eslint/biome, tsc) são hooks determinísticos (`hooks/guard_rails.py`) — `checker` removido.
+
+Fluxo `feature`: `planner → builder → reviewer → shipper(hook)` (2 gates humanos, hooks validam per-file).
 
 ### Pré-requisitos
 
@@ -97,10 +98,10 @@ Para adicionar funcionalidades em projeto existente:
 ```
 
 O orquestrador executa:
-1. **Planner** → discovery + `.planning/PRD.md` + `.planning/PLAN.md` + `arch/`
-2. **Builder** → implementa + `.planning/SUMMARY.md`
-3. **Checker ∥ Reviewer** → `.planning/VALIDATION.md` + `.planning/REVIEW.md` (paralelo)
-4. **Shipper** → commit + PR + CI check + `.planning/STATE.md`/`HANDOFF.md` + Trello close
+1. **Planner** → discovery + `.planning/PRD.md` + `.planning/PLAN.md` + `arch/` (memória)
+2. **Builder** → implementa + `.planning/SUMMARY.md` (memória) — `hooks/guard_rails.py` valida per-file
+3. **Reviewer** → `.planning/REVIEW.md` arquitetura (memória, sem lint)
+4. **Shipper(hook)** → commit + PR + CI check + `.planning/STATE.md`/`HANDOFF.md` + Trello close (via `hooks/shipper.py`)
 
 ### Fluxo 2: Novo Projeto (`project`)
 
@@ -127,8 +128,8 @@ Para corrigir bugs de forma rápida:
 O orquestrador executa:
 1. **Planner (triage)** → reproduz, causa, escopo do fix
 2. **Builder (fix)** → corrige código
-3. **Checker ∥ Reviewer** → testes + review
-4. **Shipper** → PR + CI + close
+3. **Reviewer** → review arquitetura
+4. **Shipper(hook)** → PR + CI + close
 
 ### Avançado
 

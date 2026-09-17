@@ -1,16 +1,15 @@
 name: agentic-squad
 version: 2.0.0
-description: Harness V2 — 5 macros (planner/builder/checker/reviewer/shipper) + harness orchestrator
+description: Harness V2 — 4 macros + hooks (planner/builder/reviewer/shipper) + harness orchestrator — checker removido, guard rails em hooks
 author: tuliomourarocha
 targets:
   - opencode
 dependencies:
   apm:
-    # Harness V2 — orquestrador + 5 macros
+    # Harness V2 — orquestrador + 4 macros + hooks
     - tuliomourarocha/module-sdd-commons/agents/harness.agent.md
     - tuliomourarocha/module-sdd-commons/agents/planner.agent.md
     - tuliomourarocha/module-sdd-commons/agents/builder.agent.md
-    - tuliomourarocha/module-sdd-commons/agents/checker.agent.md
     - tuliomourarocha/module-sdd-commons/agents/reviewer.agent.md
     - tuliomourarocha/module-sdd-commons/agents/shipper.agent.md
     - tuliomourarocha/module-sdd-commons/commands/harness.prompt.md

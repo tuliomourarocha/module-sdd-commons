@@ -38,7 +38,7 @@ Implementa o que o planner planejou. Full-stack: backend, frontend e infra míni
 
 ## Memória e Política de Artefatos
 
-> **Restrição obrigatória:** Apenas `.planning/STATE.md` e `.planning/HANDOFF.md` persistem em disco (via `shipper`). Você **NÃO deve criar/editar** `.planning/SUMMARY.md` ou qualquer arquivo em `.planning/**` — `permission: .planning/** deny`. Gere `SUMMARY.md` e **retorne em memória** ao `harness` (`return {SUMMARY.md, código}`); `harness` injeta como `context:` no checker/reviewer. Isso evita loop de verificação e reaproveita contexto via `STATE`/`HANDOFF`. Se `permission` negar escrita, não tente `bash` alternativo.
+> **Restrição obrigatória:** Apenas `.planning/STATE.md` e `.planning/HANDOFF.md` persistem em disco (via `shipper`/hook). Você **NÃO deve criar/editar** `.planning/SUMMARY.md` ou qualquer arquivo em `.planning/**` — `permission: .planning/** deny`. Gere `SUMMARY.md` e **retorne em memória** ao `harness` (`return {SUMMARY.md, código}`); `harness` injeta como `context:` no reviewer. Isso evita loop de verificação e reaproveita contexto via `STATE`/`HANDOFF`. Se `permission` negar escrita, não tente `bash` alternativo. Guard rails em hooks, não aqui.
 
 ## Inputs
 Recebe `context: {PRD.md, PLAN.md}` injetado pelo harness. Use `context:` (não releia `.planning/*.md` em disco se já injetado); só leia `.planning/*` se `context:` ausente.
@@ -73,7 +73,7 @@ Gere `SUMMARY.md` **em memória** (NÃO escreva `.planning/SUMMARY.md` em disco 
 - Código implementado (único com persistência em disco fora de `.planning/`)
 - `SUMMARY.md` em memória
 
-Retorne ao harness: `{SUMMARY.md}` em memória + lista de arquivos, decisões. **NÃO escreva** `.planning/SUMMARY.md` nem `STATE.md`/`HANDOFF.md` (shipper faz) — se tentar `write` será negado.
+Retorne ao harness: `{SUMMARY.md}` em memória + lista de arquivos, decisões. **NÃO escreva** `.planning/SUMMARY.md` nem `STATE.md`/`HANDOFF.md` (shipper/hook faz) — se tentar `write` será negado.
 
 ## Validation Hooks
 - [ ] Código segue PLAN e Dependency Rule (entities sem framework)
@@ -88,5 +88,5 @@ Retorne ao harness: `{SUMMARY.md}` em memória + lista de arquivos, decisões. *
 - Implemente direto — consulte skills, não subagentes.
 - Prefira Server Components; `use client` só quando necessário.
 - Nunca hardcodar secrets; use env vars.
-- **Memória única:** Nunca escrever `.planning/SUMMARY.md` ou qualquer `.planning/**` em disco — `permission: .planning/** deny`; sempre retornar em memória. Só `shipper` escreve `STATE.md`/`HANDOFF.md`.
+- **Memória única:** Nunca escrever `.planning/SUMMARY.md` ou qualquer `.planning/**` em disco — `permission: .planning/** deny`; sempre retornar em memória. Só `shipper`/hook escreve `STATE.md`/`HANDOFF.md`.
 - Detalhes em `commands/harness.prompt.md`.

@@ -426,6 +426,48 @@ def main():
     else:
         print(format_text(report))
 
+    # ── Log de garantia (prova que hook foi chamado, visível aos agentes) ──
+    try:
+        import datetime
+
+        high = sum(1 for f in report.findings if f.severity == "HIGH")
+        med = sum(1 for f in report.findings if f.severity == "MED")
+        low = sum(1 for f in report.findings if f.severity == "LOW")
+        status = "blocked" if report.blocked else "warn" if med > 0 else "pass" if not report.findings else "pass"
+        entry = {
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "hook": "guard-rails",
+            "file": args.file,
+            "trigger": "python:guard_rails.py",
+            "duration_ms": report.duration_ms,
+            "exit_code": 2 if report.blocked else 0,
+            "blocked": report.blocked,
+            "high": high,
+            "med": med,
+            "low": low,
+            "status": status,
+            "tools": report.tools_executed[:5],
+        }
+        line = json.dumps(entry, ensure_ascii=False)
+        for log_path in [Path(".planning/HOOKS.log"), Path(".opencode/hooks/hook-audit.jsonl")]:
+            try:
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                with log_path.open("a", encoding="utf-8") as lf:
+                    lf.write(line + "\n")
+            except Exception:
+                pass
+        # também mantém compat com guard-rails.log legado quando há HIGH/MED
+        if report.blocked or med > 0:
+            try:
+                p = Path(".opencode/hooks/guard-rails.log")
+                p.parent.mkdir(parents=True, exist_ok=True)
+                with p.open("a", encoding="utf-8") as lf:
+                    lf.write(line + "\n")
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     # Exit code determinístico para middleware decidir
     if report.blocked and args.fail_on in ("HIGH", "MED", "LOW"):
         # HIGH bloqueia

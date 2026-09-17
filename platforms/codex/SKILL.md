@@ -1,13 +1,13 @@
 ---
 name: sdd-harness
-description: Execute o Harness V2 para fluxos feature, project ou bugfix, usando os seis papéis versionados deste pacote.
+description: Execute o Harness V2 para fluxos feature, project ou bugfix, usando os 5 papéis + hooks versionados deste pacote (checker removido).
 ---
 
 # Harness V2 para Codex
 
 Use este skill quando o pedido envolver uma feature, projeto novo ou bugfix.
 Leia `../../roles/harness.md` e siga seu pipeline. Os cartões de papel estão em
-`../../roles/{planner,builder,checker,reviewer,shipper}.md`. O roteamento de
+`../../roles/{planner,builder,reviewer,shipper}.md` (checker removido — guard rails em `hooks/guard_rails.py`). O roteamento de
 modelos está em `../../sdd-harness.json`.
 
 ## Regras de adaptação
@@ -15,9 +15,9 @@ modelos está em `../../sdd-harness.json`.
 - O Codex é o orquestrador. Delegue os papéis quando o ambiente oferecer agentes
   filhos; caso contrário, execute as fases sequencialmente mantendo os mesmos
   gates e artefatos.
-- Planner → Builder → Checker e Reviewer em paralelo → Shipper.
-- Preserve os dois gates humanos definidos pelo harness.
-- Apenas Shipper escreve `.planning/STATE.md` e `.planning/HANDOFF.md` — demais artefatos (`PRD.md`, `PLAN.md`, `SUMMARY.md`, `VALIDATION.md`, `REVIEW.md`, `arch/*`) são **em memória** e injetados como `context:` pelo `harness` (nunca em disco); `planner|builder|checker|reviewer` com `deny` em `.planning/**` evita loop de verificação.
+- Planner → Builder → Reviewer (só arquitetura) → Shipper(hook).
+- Preserve os dois gates humanos definidos pelo harness (após planner e após reviewer). Guard rails são hooks, não gates.
+- Apenas Shipper/hook escreve `.planning/STATE.md` e `.planning/HANDOFF.md` — demais artefatos (`PRD.md`, `PLAN.md`, `SUMMARY.md`, `REVIEW.md`, `arch/*`) são **em memória** e injetados como `context:` pelo `harness` (nunca em disco); `planner|builder|reviewer` com `deny` em `.planning/**` evita loop de verificação.
 - Ao delegar, use o modelo OpenAI indicado para cada papel em
   `sdd-harness.json`. Não peça ao usuário para escolher modelos e não substitua
   o roteamento salvo. Em ambientes sem delegação com modelo por agente, use o
@@ -26,6 +26,6 @@ modelos está em `../../sdd-harness.json`.
 
 ## Política de Artefatos — Restrição Obrigatória
 
-- **Disco:** Apenas `.planning/STATE.md` e `.planning/HANDOFF.md` (shipper).
-- **Memória:** `PRD.md`, `PLAN.md`, `SUMMARY.md`, `VALIDATION.md`, `REVIEW.md`, `arch/*` retornados em memória via delegação.
+- **Disco:** Apenas `.planning/STATE.md` e `.planning/HANDOFF.md` (shipper/hook).
+- **Memória:** `PRD.md`, `PLAN.md`, `SUMMARY.md`, `REVIEW.md`, `arch/*` retornados em memória via delegação. `VALIDATION.md` removido (hook).
 - **Violação:** Criação de `.planning/PRD.md` etc. em disco é `HIGH` e bloqueada por `permission`.

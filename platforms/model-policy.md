@@ -10,5 +10,5 @@ um modelo OpenAI gravado nos agentes do OpenCode ou do Claude Code.
 | Codex | OpenAI | O instalador grava automaticamente o roteamento por papel em `.codex/sdd-harness.json`. |
 
 No Codex, `planner` e `builder` usam `gpt-5.6-sol`; `reviewer` e `shipper` usam
-`gpt-5.6-terra`; `harness` e `checker` usam `gpt-5.6-luna`. A instalação aplica
+`gpt-5.6-terra`; `harness` usa `gpt-5.6-luna`. `checker` removido — guard rails são hooks determinísticos. A instalação aplica
 essa decisão, sem exigir escolha do usuário.

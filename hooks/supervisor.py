@@ -494,6 +494,38 @@ def main():
     print("📊 JSON metrics:", json.dumps(asdict(metrics), ensure_ascii=False, default=str)[:2000])
     print("=" * 60)
 
+    # ── Log de garantia (prova que hook supervisor foi chamado) ──
+    try:
+        hallu_high_tmp = sum(1 for h in metrics.hallucinations if h.severity == "HIGH")
+        entry = {
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "hook": "supervisor",
+            "trigger": "python:supervisor.py",
+            "files_changed": metrics.files_changed,
+            "hallucinations": len(metrics.hallucinations),
+            "hallu_high": hallu_high_tmp,
+            "guard_high": metrics.guard_high,
+            "build_passed": metrics.build_passed,
+            "tests_passed": metrics.tests_passed,
+            "status": "critical" if hallu_high_tmp > 0 else "warn" if metrics.guard_high > 0 else "success",
+        }
+        line = json.dumps(entry, ensure_ascii=False)
+        seen = set()
+        for log_path in [repo / ".planning/HOOKS.log", Path(".opencode/hooks/hook-audit.jsonl")]:
+            try:
+                resolved = log_path.resolve()
+                if str(resolved) in seen:
+                    continue
+                seen.add(str(resolved))
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                with log_path.open("a", encoding="utf-8") as lf:
+                    lf.write(line + "\n")
+            except Exception:
+                pass
+        print(f"📝 Log garantia: .planning/HOOKS.log (supervisor status={entry['status']})")
+    except Exception:
+        pass
+
     # cria issue
     hallu_high = sum(1 for h in metrics.hallucinations if h.severity == "HIGH")
     labels = ["supervisor", "automated"]

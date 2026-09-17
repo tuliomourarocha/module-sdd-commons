@@ -21,6 +21,13 @@ import type { Plugin } from "@opencode-ai/plugin";
 const SUPERVISOR_REPO = process.env.SUPERVISOR_REPO ?? "tuliomourarocha/module-sdd-commons";
 let hasRun = false;
 
+async function writeGuaranteeLog($: any, directory: string, entry: Record<string, any>) {
+  const line = JSON.stringify(entry);
+  await $`mkdir -p ${directory}/.planning && mkdir -p ${directory}/.opencode/hooks`.nothrow().quiet();
+  await $`echo '${line.replace(/'/g, "'\\''")}' >> ${directory}/.planning/HOOKS.log`.nothrow().quiet();
+  await $`echo '${line.replace(/'/g, "'\\''")}' >> ${directory}/.opencode/hooks/hook-audit.jsonl`.nothrow().quiet();
+}
+
 async function runSupervisor($: any, directory: string, client: any, trigger: string) {
   if (hasRun) {
     await client.app.log({
@@ -29,6 +36,7 @@ async function runSupervisor($: any, directory: string, client: any, trigger: st
     return;
   }
   hasRun = true;
+  const triggerTs = new Date().toISOString();
 
   const hookCandidates = [
     `${directory}/.opencode/hooks/supervisor.py`,
@@ -43,14 +51,34 @@ async function runSupervisor($: any, directory: string, client: any, trigger: st
     }
   }
   if (!hook) {
+    const errMsg = `hooks/supervisor.py não encontrado via ${trigger}`;
     await client.app.log({
-      body: { service: "supervisor", level: "error", message: "hooks/supervisor.py não encontrado, abortando supervisor hook" },
+      body: { service: "supervisor", level: "error", message: errMsg },
     });
-    return;
+    await writeGuaranteeLog($, directory, {
+      ts: triggerTs,
+      hook: "supervisor",
+      trigger,
+      duration_ms: 0,
+      exit_code: 127,
+      status: "error",
+      error: "hook_not_found",
+      message: errMsg,
+    });
+    throw new Error(`🚨 HOOK_SUPERVISOR_ERROR: ${errMsg} — Log: .planning/HOOKS.log`);
   }
 
   await client.app.log({
     body: { service: "supervisor", level: "info", message: `🤖 Supervisor hook acionado via ${trigger} — rodando auditoria determinística...` },
+  });
+  await writeGuaranteeLog($, directory, {
+    ts: triggerTs,
+    hook: "supervisor",
+    trigger,
+    duration_ms: 0,
+    exit_code: null,
+    status: "started",
+    message: `Supervisor hook iniciado via ${trigger}`,
   });
 
   // 1. Roda auditoria determinística (python) — mede performance, tokens (heurística), alucinações
@@ -63,11 +91,27 @@ async function runSupervisor($: any, directory: string, client: any, trigger: st
   await client.app.log({
     body: {
       service: "supervisor",
-      level: pyResult.exitCode === 0 ? "info" : "warn",
+      level: pyResult.exitCode === 0 ? "info" : pyResult.exitCode === 2 ? "error" : "warn",
       message: `Supervisor determinístico finalizado (${duration}ms, exit ${pyResult.exitCode})`,
       extra: { trigger, stdout: pyOut.slice(0, 4000), stderr: pyErr.slice(0, 1000) },
     },
   });
+  await writeGuaranteeLog($, directory, {
+    ts: new Date().toISOString(),
+    hook: "supervisor",
+    trigger,
+    duration_ms: duration,
+    exit_code: pyResult.exitCode ?? 0,
+    status: pyResult.exitCode === 0 ? "success" : pyResult.exitCode === 2 ? "critical" : "warn",
+    stdout: pyOut.slice(0, 2000),
+    stderr: pyErr.slice(0, 1000),
+  });
+  if ((pyResult.exitCode ?? 0) === 2) {
+    await client.app.log({
+      body: { service: "supervisor", level: "error", message: `🚨 Supervisor hook crítico (exit 2) via ${trigger} — veja .planning/HOOKS.log` },
+    });
+    throw new Error(`🚨 HOOK_SUPERVISOR_CRITICAL via ${trigger} — Log: .planning/HOOKS.log — ${pyOut.slice(0, 800)}`);
+  }
 
   // Salva output para agente supervisor consumir
   const reportPath = `${directory}/.planning/SUPERVISOR_REPORT.md`;
@@ -155,47 +199,51 @@ export const SupervisorPlugin: Plugin = async ({ $, directory, client }) => {
     "tool.execute.after": async (input: any, output: any) => {
       const tool: string = input?.tool ?? output?.tool ?? "";
       const args = output?.args ?? input?.args ?? {};
-
-      // Trigger 1: shipper escreveu HANDOFF.md / STATE.md
-      if (["write", "edit"].includes(tool)) {
-        const fp: string = args?.filePath ?? args?.file ?? args?.path ?? "";
-        if (fp.includes(".planning/HANDOFF.md") || fp.includes(".planning/STATE.md")) {
-          // debounce curto: espera shipper terminar de escrever ambos
-          await new Promise((r) => setTimeout(r, 1500));
-          await runSupervisor($, directory, client, `write:${fp.split("/").pop()}`);
+      try {
+        if (["write", "edit"].includes(tool)) {
+          const fp: string = args?.filePath ?? args?.file ?? args?.path ?? "";
+          if (fp.includes(".planning/HANDOFF.md") || fp.includes(".planning/STATE.md")) {
+            await new Promise((r) => setTimeout(r, 1500));
+            await runSupervisor($, directory, client, `write:${fp.split("/").pop()}`);
+          }
         }
-      }
-
-      // Trigger 2: task shipper completa
-      if (tool === "task") {
-        const agent = args?.agent ?? args?.subagent ?? input?.args?.agent ?? "";
-        if (agent === "shipper") {
-          await new Promise((r) => setTimeout(r, 2000));
-          await runSupervisor($, directory, client, "task:shipper");
+        if (tool === "task") {
+          const agent = args?.agent ?? args?.subagent ?? input?.args?.agent ?? "";
+          if (agent === "shipper") {
+            await new Promise((r) => setTimeout(r, 2000));
+            await runSupervisor($, directory, client, "task:shipper");
+          }
         }
+      } catch (err: any) {
+        await client.app.log({
+          body: { service: "supervisor", level: "error", message: `🚨 Supervisor hook erro visível: ${err?.message?.slice(0, 800)} — Log: .planning/HOOKS.log` },
+        });
+        throw err;
       }
     },
 
     event: async ({ event }: any) => {
-      // Trigger 3: sessão idle após shipper (fallback)
-      if (event?.type === "session.idle") {
-        // só roda se HANDOFF.md existe e ainda não rodou
-        const check = await $`test -f ${directory}/.planning/HANDOFF.md && echo ok`.text().catch(() => "");
-        if (check.includes("ok") && !hasRun) {
-          // verifica se shipper foi o último agente (heurística)
-          const handoff = await $`cat ${directory}/.planning/HANDOFF.md 2>&1 | head -20`.text().catch(() => "");
-          if (handoff.includes("shipper") || handoff.length > 100) {
-            await runSupervisor($, directory, client, "session.idle");
+      try {
+        if (event?.type === "session.idle") {
+          const check = await $`test -f ${directory}/.planning/HANDOFF.md && echo ok`.text().catch(() => "");
+          if (check.includes("ok") && !hasRun) {
+            const handoff = await $`cat ${directory}/.planning/HANDOFF.md 2>&1 | head -20`.text().catch(() => "");
+            if (handoff.includes("shipper") || handoff.length > 100) {
+              await runSupervisor($, directory, client, "session.idle");
+            }
           }
         }
-      }
-      // Trigger 4: file watcher para HANDOFF.md
-      if (event?.type === "file.edited" || event?.type === "file.watcher.updated") {
-        const fp: string = event?.properties?.path ?? event?.path ?? "";
-        if (fp.includes(".planning/HANDOFF.md") && !hasRun) {
-          await new Promise((r) => setTimeout(r, 1000));
-          await runSupervisor($, directory, client, "file.edited:HANDOFF.md");
+        if (event?.type === "file.edited" || event?.type === "file.watcher.updated") {
+          const fp: string = event?.properties?.path ?? event?.path ?? "";
+          if (fp.includes(".planning/HANDOFF.md") && !hasRun) {
+            await new Promise((r) => setTimeout(r, 1000));
+            await runSupervisor($, directory, client, "file.edited:HANDOFF.md");
+          }
         }
+      } catch (err: any) {
+        await client.app.log({
+          body: { service: "supervisor", level: "error", message: `Supervisor hook (event) falhou: ${err?.message?.slice(0, 800)}` },
+        });
       }
     },
   };
