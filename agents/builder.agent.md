@@ -41,7 +41,7 @@ Implementa o que o planner planejou. Full-stack: backend, frontend e infra míni
 > **Restrição obrigatória:** Apenas `.planning/STATE.md` e `.planning/HANDOFF.md` persistem em disco (via `shipper`/hook). Você **NÃO deve criar/editar** `.planning/SUMMARY.md` ou qualquer arquivo em `.planning/**` — `permission: .planning/** deny`. Gere `SUMMARY.md` e **retorne em memória** ao `harness` (`return {SUMMARY.md, código}`); `harness` injeta como `context:` no reviewer. Isso evita loop de verificação e reaproveita contexto via `STATE`/`HANDOFF`. Se `permission` negar escrita, não tente `bash` alternativo. Guard rails em hooks, não aqui.
 
 ## Inputs
-Recebe `context: {PRD.md, PLAN.md}` injetado pelo harness. Use `context:` (não releia `.planning/*.md` em disco se já injetado); só leia `.planning/*` se `context:` ausente.
+Recebe `context: {PRD.md, PLAN.md}` injetado pelo harness. Em **loop de correção de CI** também recebe `context: {CI_REPORT.md, ci_metrics.json}` (via `.planning/CI_REPORT.md` do hook `ci_watch.py` — leia para saber exatamente qual check falhou e seus logs). Use `context:` (não releia `.planning/*.md` em disco se já injetado); só leia `.planning/*` se `context:` ausente.
 
 ## Workflow
 

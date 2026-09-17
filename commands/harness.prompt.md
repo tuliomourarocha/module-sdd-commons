@@ -6,14 +6,16 @@
 
 ### Feature (padrão)
 ```
-planner → builder → reviewer → shipper(hook) → Done
+planner → builder → reviewer → shipper(hook) → ci-watch(hook) → supervisor → Done
 ```
 1. **planner** — PRD + PLAN + arch (memória)
 2. **builder** — código + SUMMARY (hook guard_rails valida per-file durante escrita)
 3. **reviewer** — REVIEW arquitetura apenas (sem lint/testes — hooks fazem)
-4. **shipper(hook)** — commit + PR + CI + STATE/HANDOFF + Trello (determinístico via `hooks/shipper.py` + `plugins/shipper.ts`; fallback `shipper` minimal só para STATE/HANDOFF)
+4. **shipper(hook)** — commit + PR + CI snapshot + STATE/HANDOFF + Trello (determinístico via `hooks/shipper.py` + `plugins/shipper.ts`; fallback `shipper` minimal só para STATE/HANDOFF)
+5. **ci-watch(hook)** — polling `gh pr checks` + `gh run list` até conclusão (`hooks/ci_watch.py` + `plugins/ci-watch.ts`); se falhar → loop `builder→reviewer→shipper→ci-watch` (max 2); orquestrador opcional `hooks/ci_orchestrator.py` com LangGraph StateGraph
+6. **supervisor(hook+agente)** — auditoria + Issue GitHub
 
-Gates humanos: após planner e após reviewer (2 total). Guard rails não são gate humano — bloqueiam per-file no builder via hook.
+Gates humanos: após planner e após reviewer (2 total). Guard rails e ci-watch não são gate humano — bloqueiam per-file e pós-PR via hook (ci-watch aguarda CI e, se fail, volta para builder max 2).
 
 ### Project
 ```
@@ -42,7 +44,9 @@ planner(triage) → builder(fix) → reviewer → shipper(hook)
 | planner → builder | `PRD.md` + `PLAN.md` retornados **em memória** (não em disco) | Bloquear, pedir ajuste planner |
 | builder → reviewer | `SUMMARY.md` em memória + `npm run build` ok + **nenhum HIGH pendente em `guard_rails`** | Bloquear até HIGH corrigido (hook já bloqueou per-file) |
 | reviewer → shipper | `REVIEW.md` em memória sem HIGH arquitetural | Loop builder max 2, depois escalar |
-| shipper(hook) → Done | PR criado + CI verde + `STATE.md`/`HANDOFF.md` (únicos em disco) | Escalar humano |
+| shipper(hook) → ci-watch | PR criado + `STATE.md`/`HANDOFF.md` (únicos em disco) | Escalar humano |
+| ci-watch(hook) → Done | CI verde (exit 0) + `CI_REPORT.md`/`ci_metrics.json` | Se CI fail (exit 2) → loop builder max 2 com contexto `CI_REPORT.md`; se pending timeout (exit 3) → re-poll |
+| ci-watch fail → builder | `CI_REPORT.md` em disco + logs falha | Builder corrige focado, reviewer revalida, shipper re-push, ci-watch re-polla |
 
 ## Anti-patterns
 1. Pular planner e ir direto para builder
@@ -58,8 +62,11 @@ planner(triage) → builder(fix) → reviewer → shipper(hook)
 
 ```
 .planning/  — persistência em disco APENAS:
-├── STATE.md        # shipper/hook (único escritor) — DISCO
-├── HANDOFF.md      # shipper/hook (único escritor) — DISCO
+├── STATE.md            # shipper/hook (único escritor) — DISCO
+├── HANDOFF.md          # shipper/hook (único escritor) — DISCO
+├── CI_REPORT.md        # ci-watch hook (polling CI) — DISCO
+├── ci_metrics.json     # ci-watch hook — DISCO
+├── CI_RETRIES.json     # ci-watch hook (contador retries) — DISCO
 └── (nenhum outro arquivo deve existir em disco)
 
 Memória (via task() → harness injeta como context:, nunca em disco):

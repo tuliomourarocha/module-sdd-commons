@@ -130,7 +130,7 @@ async function installOpenCode(target, dryRun) {
   }
   await copyDirectory(path.join(sourceRoot, "commands"), path.join(root, "commands"), dryRun);
   await copyDirectory(path.join(sourceRoot, "skills"), path.join(root, "skills"), dryRun);
-  // ── Hooks determinísticos (guard rails + shipper + supervisor) ──────────────────
+  // ── Hooks determinísticos (guard rails + shipper + ci-watch + supervisor) ──────
   // plugins: copiados para .opencode/plugins/ (auto-load pelo opencode)
   if (await exists(path.join(sourceRoot, "plugins"))) {
     await copyDirectory(path.join(sourceRoot, "plugins"), path.join(root, "plugins"), dryRun);
@@ -142,13 +142,13 @@ async function installOpenCode(target, dryRun) {
     await copyDirectory(path.join(sourceRoot, "hooks"), path.join(target, "hooks"), dryRun);
     if (!dryRun) {
       // garantir permissão de execução nos scripts python
-      for (const script of ["guard_rails.py", "shipper.py", "supervisor.py"]) {
-        const p1 = path.join(root, "hooks", script);
-        const p2 = path.join(target, "hooks", script);
-        for (const p of [p1, p2]) {
-          if (await exists(p)) await chmod(p, 0o755).catch(() => {});
+        for (const script of ["guard_rails.py", "shipper.py", "ci_watch.py", "ci_orchestrator.py", "supervisor.py"]) {
+          const p1 = path.join(root, "hooks", script);
+          const p2 = path.join(target, "hooks", script);
+          for (const p of [p1, p2]) {
+            if (await exists(p)) await chmod(p, 0o755).catch(() => {});
+          }
         }
-      }
     }
   }
   // garante .opencode/package.json com @opencode-ai/plugin para plugins TS tipados
@@ -196,7 +196,7 @@ async function installClaude(target, dryRun) {
     // hooks determinísticos Claude: settings.json + scripts em .claude/hooks/
     if (await exists(path.join(sourceRoot, "platforms", "claude", "hooks"))) {
       await copyDirectory(path.join(sourceRoot, "platforms", "claude", "hooks"), path.join(root, "hooks"), dryRun);
-      for (const script of ["guard_rails.py", "shipper.py", "supervisor.py"]) {
+      for (const script of ["guard_rails.py", "shipper.py", "ci_watch.py", "ci_orchestrator.py", "supervisor.py"]) {
         const p = path.join(root, "hooks", script);
         if (await exists(p)) await chmod(p, 0o755).catch(() => {});
       }
@@ -233,7 +233,7 @@ async function installCodex(target, dryRun) {
     // hooks determinísticos Codex: copia para .codex/hooks/
     if (await exists(path.join(sourceRoot, "hooks"))) {
       await copyDirectory(path.join(sourceRoot, "hooks"), path.join(root, "hooks"), dryRun);
-      for (const script of ["guard_rails.py", "shipper.py", "supervisor.py"]) {
+      for (const script of ["guard_rails.py", "shipper.py", "ci_watch.py", "ci_orchestrator.py", "supervisor.py"]) {
         const p = path.join(root, "hooks", script);
         if (await exists(p)) await chmod(p, 0o755).catch(() => {});
       }

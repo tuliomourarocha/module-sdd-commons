@@ -28,11 +28,11 @@ Roteia 3 fluxos para 4 macros + hooks via `task()`. Você NÃO implementa, NÃO 
 
 | Fluxo | Gatilho | Pipeline |
 |-------|---------|----------|
-| **feature** | padrão, "feature/funcionalidade/história" | planner → builder → reviewer → shipper(hook) |
-| **project** | "novo projeto/do zero/scaffold" | planner(discover) → builder(scaffold) → loop feature → shipper(hook+finalize) |
-| **bugfix** | "bug/erro/falha/corrigir" | planner(triage) → builder(fix) → reviewer → shipper(hook) |
+| **feature** | padrão, "feature/funcionalidade/história" | planner → builder → reviewer → shipper(hook) → ci-watch(hook) → supervisor |
+| **project** | "novo projeto/do zero/scaffold" | planner(discover) → builder(scaffold) → loop feature → shipper(hook+finalize) → ci-watch → supervisor |
+| **bugfix** | "bug/erro/falha/corrigir" | planner(triage) → builder(fix) → reviewer → shipper(hook) → ci-watch → supervisor |
 
-> Guard rails (lint, testes, typecheck, ruff/pylance/eslint) são **hooks determinísticos** (`hooks/guard_rails.py` + `plugins/guard-rails.ts`) que rodam pós-edição. `checker` removido — `reviewer` faz só arquitetura. `shipper` é hook determinístico (`hooks/shipper.py` + `plugins/shipper.ts`) para git/PR/Trello; STATE/HANDOFF ainda via shipper minimal se necessário.
+> Guard rails (lint, testes, typecheck, ruff/pylance/eslint) são **hooks determinísticos** (`hooks/guard_rails.py` + `plugins/guard-rails.ts`) que rodam pós-edição. `checker` removido — `reviewer` faz só arquitetura. `shipper` é hook determinístico (`hooks/shipper.py` + `plugins/shipper.ts`) para git/PR/Trello; STATE/HANDOFF ainda via shipper minimal se necessário. **CI watch** é hook determinístico (`hooks/ci_watch.py` + `plugins/ci-watch.ts`) que após shipper faz polling `gh pr checks`/`gh run list` até conclusão; se falhar, dispara loop `builder→reviewer→shipper→ci-watch` (max 2). Orquestração avançada opcional via `hooks/ci_orchestrator.py` (LangGraph StateGraph) — sem dependência obrigatória.
 
 Se ambíguo, pergunte: `feature | project | bugfix`.
 
@@ -73,13 +73,29 @@ task("reviewer", context: {PLAN.md, SUMMARY.md, git diff} — em memória)
 Gate humano: "Review {0 blockers arquiteturais} (memória). Avançar para Shipper?" → Avançar | Corrigir (volta builder, max 2) | Abortar
 > Guard rails (`hooks/guard_rails.py`) já bloquearam HIGH per-file durante builder; não há `VALIDATION.md` (checker removido).
 
-### 5. Shipper (hook determinístico) → Done
+### 5. Shipper (hook determinístico) → CI Watch
 ```
 hook shipper: hooks/shipper.py + plugins/shipper.ts
 ou fallback task("shipper", context: {PRD, PLAN, SUMMARY, REVIEW} — em memória)
-→ commit + PR + CI check (hook) + STATE.md + HANDOFF.md (únicos em disco) + Trello close (hook)
+→ commit + PR + CI check (snapshot) + STATE.md + HANDOFF.md (únicos em disco) + Trello close (hook)
 ```
-Se CI falhar, hook reporta e harness escala para builder (max 2 iterações). Se hook não conseguir gerar HANDOFF qualitativo, fallback para `task shipper` minimal que só persiste STATE/HANDOFF.
+Se hook não conseguir gerar HANDOFF qualitativo, fallback para `task shipper` minimal que só persiste STATE/HANDOFF.
+
+### 6. CI Watch (hook determinístico) → Done / Loop Correção
+```
+hook ci-watch: hooks/ci_watch.py + plugins/ci-watch.ts  (trigger: task shipper / HANDOFF.md / session.idle)
+→ polling `gh pr checks` + `gh run list` --wait --timeout 600 --interval 30
+→ gera .planning/CI_REPORT.md + ci_metrics.json + HOOKS.log
+→ exit 0 = CI pass → supervisor → Done
+→ exit 2 = CI fail → harness escala para builder (max 2) com contexto {PLAN, SUMMARY, CI_REPORT} → reviewer → shipper → ci-watch novamente
+→ exit 3 = CI pending timeout → warn, re-poll manual
+```
+Loop é determinístico (sem LLM) + orquestrador opcional `hooks/ci_orchestrator.py` com LangGraph (graph `detect_pr→wait_ci→analyze→fix→review→reship→wait_ci`) quando `pip install langgraph` disponível. Veja `hooks/README.md#ci-watch`.
+
+### 7. Supervisor (hook + agente) → Done
+```
+hook supervisor: hooks/supervisor.py + plugins/supervisor.ts → Issue GitHub
+```
 
 ## Rules
 - Nunca passe `model` no `task()` — cada macro já tem modelo otimizado.
@@ -96,5 +112,6 @@ Se CI falhar, hook reporta e harness escala para builder (max 2 iterações). Se
 - [ ] Reviewer executado (só arquitetura, sem lint) — retorno em memória
 - [ ] Guard rails hooks executados per-file durante builder (nenhum HIGH pendente)
 - [ ] Gate 2 aprovado antes de shipper
-- [ ] Shipper hook confirmou PR + CI + Trello close + STATE/HANDOFF únicos em disco (nenhum `.planning/PRD.md` etc. criado)
-- [ ] Nenhum artefato fora de `STATE.md`/`HANDOFF.md` foi criado em disco (deny verificado)
+- [ ] Shipper hook confirmou PR + Trello close + STATE/HANDOFF únicos em disco (nenhum `.planning/PRD.md` etc. criado)
+- [ ] CI watch hook verificou PR até conclusão (`CI_REPORT.md` + `ci_metrics.json` + HOOKS.log) — se fail, loop builder max 2 com contexto CI_REPORT
+- [ ] Nenhum artefato fora de `STATE.md`/`HANDOFF.md`/`CI_REPORT.md` foi criado em disco além do permitido (deny verificado)

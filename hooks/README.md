@@ -1,8 +1,8 @@
-# Hooks Determinísticos — Guard Rails, Shipper & Supervisor
+# Hooks Determinísticos — Guard Rails, Shipper, CI Watch & Supervisor
 
 Hooks são **middlewares fora do LLM** (travas determinísticas) que interceptam, validam, formatam ou bloqueiam ações da IA no ciclo de vida da tool. Equivalente Claude Code: `PostToolUse` / `PreToolUse` / `Stop`.
 
-Este diretório contém os **3 hooks determinísticos** do harness, implementados como **scripts Python** acionados por **plugins OpenCode** (fora do modelo) e por **settings Claude/Codex**. `checker` removido — testes/lint são guard rails; `reviewer` só arquitetura.
+Este diretório contém os **4 (+1 orquestrador) hooks determinísticos** do harness, implementados como **scripts Python** acionados por **plugins OpenCode** (fora do modelo) e por **settings Claude/Codex**. `checker` removido — testes/lint são guard rails; `reviewer` só arquitetura; `ci-watch` verifica CI pós-PR com loop de correção.
 
 ## 1. Guard Rails — pós-edição de arquivo de código
 
@@ -74,6 +74,39 @@ python3 hooks/supervisor.py --run --repo . --repo-slug tuliomourarocha/module-sd
 SUPERVISOR_REPO=meu/repo python3 hooks/supervisor.py --run --dry-run
 ```
 
+## 4. CI Watch — verificação de CI pós-PR + loop de correção
+
+**Trigger:** após `shipper` abrir/atualizar PR (`task shipper` completa ou `write HANDOFF.md`/`STATE.md` ou `session.idle`).
+
+| Aspecto | Detalhe |
+|---------|---------|
+| **Script** | `hooks/ci_watch.py` |
+| **Plugin OpenCode** | `plugins/ci-watch.ts` → `tool.execute.after` (task shipper, write HANDOFF/STATE) + `event: session.idle` + `file.edited` HANDOFF |
+| **Claude** | `.claude/settings.json` → `hooks.Stop` / `hooks.PostToolUse` (opcional, após shipper) |
+| **O que faz** | Descobre PR via `gh pr view --json statusCheckRollup` (fallback `gh pr checks` + `gh run list --branch`), polling até conclusão (`--wait --timeout 600 --interval 30`), classifica `pass`/`fail`/`pending`/`unknown`, em `fail` coleta logs `gh run view --log-failed` + gera `.planning/CI_REPORT.md` + `ci_metrics.json`, tracking retries em `CI_RETRIES.json` (max 2) |
+| **Determinismo** | Sem LLM; exit `0` = CI verde, `2` = fail (precisa loop correção), `3` = pending timeout, `1` = infra/unknown |
+| **Loop correção** | Plugin lança `🚨 CI_FAILED_NEEDS_FIX` → harness escala `task builder` com contexto `CI_REPORT.md` + `PLAN` → `reviewer` → `shipper` → `ci-watch` re-polla; após `max_retries` → `🚨 CI_RETRIES_EXHAUSTED` → humano |
+| **Orquestrador LangGraph** | `hooks/ci_orchestrator.py` — StateGraph opcional `detect_pr → wait_ci → analyze → fix → review → reship → wait_ci` (requer `pip install langgraph`), fallback determinístico puro se ausente |
+
+**Uso manual:**
+```bash
+python3 hooks/ci_watch.py --run --wait --timeout 600 --interval 30 --max-retries 2 --verbose
+python3 hooks/ci_watch.py --run --no-wait --pr 123
+python3 hooks/ci_watch.py --run --wait --dry-run
+python3 hooks/ci_orchestrator.py --run --max-retries 2 --timeout 600
+python3 hooks/ci_orchestrator.py --run --with-langgraph  # requer pip install langgraph
+```
+
+**Exemplo `CI_REPORT.md` (fail):**
+```md
+# CI Report — 2026-09-17T21:00:00Z
+**Status:** 🔴 `fail` — fail:1 pass:3
+**Branch:** `feat/auth` | **PR:** #42 — https://github.com/.../pull/42
+**Ação:** harness deve chamar `task builder` com este relatório (max 2)
+## Logs de falha
+gh run view 999 --log-failed ...
+```
+
 ## Instalação
 
 Via `sdd-harness` (recomendado):
@@ -84,9 +117,9 @@ npx --yes github:tuliomourarocha/module-sdd-commons#main --all --target .
 ```
 
 O que cada alvo instala:
-- **OpenCode:** `.opencode/plugins/guard-rails.ts`, `shipper.ts`, `supervisor.ts` (auto-load) + `.opencode/hooks/*.py` + `hooks/*.py` fallback + `agents/supervisor.md`
-- **Claude:** `.claude/settings.json` (hooks PostToolUse/PreToolUse/Stop) + `.claude/hooks/*.py` + `agents/supervisor.md`
-- **Codex:** `.codex/hooks/*.py` + `roles/supervisor.md`
+- **OpenCode:** `.opencode/plugins/guard-rails.ts`, `shipper.ts`, `ci-watch.ts`, `supervisor.ts` (auto-load) + `.opencode/hooks/*.py` (5 scripts) + `hooks/*.py` fallback + `agents/supervisor.md`
+- **Claude:** `.claude/settings.json` (hooks PostToolUse/PreToolUse/Stop + ci-watch) + `.claude/hooks/*.py` (5 scripts) + `agents/supervisor.md`
+- **Codex:** `.codex/hooks/*.py` (5 scripts) + `roles/supervisor.md`
 
 Legado: `./install.sh` também copia `plugins/` e `hooks/`.
 
@@ -100,9 +133,21 @@ Legado: `./install.sh` também copia `plugins/` e `hooks/`.
 
 ```
 builder escreve arquivo → [Hook Guard Rails: python determinístico] → HIGH? bloqueia → builder corrige (max 2)
-builder → reviewer (só arquitetura) → [Hook Shipper: git/PR/HANDOFF/STATE determinístico] → [Hook Supervisor: python + agente supervisor] → Issue GitHub
-(fallback: shipper minimal só enriquece HANDOFF/STATE se hook gerou minimal)
+builder → reviewer (só arquitetura) → [Hook Shipper: git/PR/HANDOFF/STATE determinístico] → [Hook CI Watch: polling CI até conclusão] → fail? → builder (com CI_REPORT) → reviewer → shipper → ci-watch (max 2) → [Hook Supervisor: python + agente supervisor] → Issue GitHub
+(fallback: shipper minimal só enriquece HANDOFF/STATE se hook gerou minimal; orquestrador LangGraph opcional em hooks/ci_orchestrator.py)
 ```
+
+### Decisão: Hook determinístico vs LangGraph — quando usar cada
+
+| Critério | Hook determinístico (`ci_watch.py` + `ci-watch.ts` + harness loop) | LangGraph (`ci_orchestrator.py` com StateGraph) |
+|----------|-------------------------------------------------------------------|--------------------------------------------------|
+| **Dependências** | Apenas `python3` + `gh` (zero deps extras) | `pip install langgraph langgraph-checkpoint` |
+| **Orquestração** | Harness faz `task builder` quando plugin lança `CI_FAILED_NEEDS_FIX`; polling puro | StateGraph `detect_pr → wait_ci → analyze → fix → review → reship → wait_ci` com checkpointing |
+| **Checkpoint/Resume** | Via `CI_RETRIES.json` + `ORCHESTRATOR_STATE.json` manual | Nativo via `MemorySaver` / `SqliteSaver` + graph recursion |
+| **Branching complexo** | Simples `pass/fail/pending` | Suporta branching paralelo, human-in-the-loop, múltiplos agentes concorrentes |
+| **Recomendado para** | 90% dos projetos; CI linear pós-PR, loop max 2 | Projetos com múltiplos checks paralelos, necessidade de resume após falha de rede, ou orquestrar >3 agentes simultâneos |
+
+> **Recomendação:** use o hook determinístico como primário (já instalado e sem dependências). Ative LangGraph apenas se precisar de orquestração avançada — ambos coexistem e compartilham `ci_watch.py` como `wait_ci` node.
 
 ## Log de Garantia — Prova que hooks foram chamados + alerta a agentes
 
@@ -118,6 +163,8 @@ Todos os hooks escrevem **log de garantia** em dois lugares para redundância:
 ```json
 {"ts":"2026-09-17T21:15:02Z","hook":"guard-rails","file":"src/app.ts","duration_ms":45,"exit_code":2,"blocked":true,"high":1,"med":0,"status":"blocked"}
 {"ts":"2026-09-17T21:15:04Z","hook":"shipper","trigger":"task:reviewer","duration_ms":1200,"exit_code":0,"status":"success","pr_url":"https://github.com/.../pull/12"}
+{"ts":"2026-09-17T21:15:06Z","hook":"ci-watch","branch":"feat/auth","pr_number":42,"status":"fail","exit_code":2,"retries":1,"message":"CI falhou"}
+{"ts":"2026-09-17T21:15:06Z","hook":"ci-orchestrator","status":"fail","retries":1,"branch":"feat/auth"}
 {"ts":"2026-09-17T21:15:08Z","hook":"supervisor","files_changed":12,"hallu_high":0,"guard_high":0,"status":"success"}
 ```
 
@@ -133,6 +180,8 @@ cat .opencode/hooks/hook-audit.jsonl        # mesmo audit no OpenCode
 - `guard-rails` HIGH → `throw GUARD_RAILS_BLOCKED` — builder recebe erro como `tool result` e corrige (max 2 iterações) — visível no TUI como `⛔`
 - `guard-rails` infra (hook não encontrado, python erro, timeout) → `throw HOOK_GUARD_RAILS_INFRA_ERROR` — builder/reviewer vê `🚨` no meio da execução + log em `.planning/HOOKS.log` com `status: infra_error`
 - `shipper` crítico (git falhou, exit 2) → `throw HOOK_SHIPPER_CRITICAL` — harness vê e escala para builder/humano — também logado com `status: critical`
+- `ci-watch` falha (CI fail, exit 2) → `throw 🚨 CI_FAILED_NEEDS_FIX` — harness reinicia `task builder` com contexto `CI_REPORT.md` (max 2) → `reviewer` → `shipper` → `ci-watch` re-polla; se retries esgotados → `throw 🚨 CI_RETRIES_EXHAUSTED` → escalar humano
+- `ci-watch` pending timeout (exit 3) → warn (não loopa, permite re-poll posterior via `session.idle`)
 - `supervisor` crítico (hallucination HIGH) → `throw HOOK_SUPERVISOR_CRITICAL` — não bloqueia shipper (observability), mas alerta com `🚨`
 
 > Todos os plugins usam `client.app.log(level:error)` + `writeGuaranteeLog()` + `throw` quando necessário — erro é **sempre visível** tanto no TUI (`service: guard-rails|shipper|supervisor`) quanto no arquivo `.planning/HOOKS.log` que qualquer agente pode ler via `Read`.

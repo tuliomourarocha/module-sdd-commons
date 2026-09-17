@@ -11,10 +11,11 @@ Regras globais que se aplicam a todos os agentes neste projeto.
 | `builder` | **Implementa** — full-stack + infra mínima | Gate 2 |
 | `reviewer` | **Revisa** — só arquitetura técnica/software (sem lint/testes) | Gate 3 |
 | `shipper` | **Finaliza (hook)** — git/PR/CI/Trello via `hooks/shipper.py` + `plugins/shipper.ts`; fallback minimal só STATE/HANDOFF | Gate 4 (hook) |
+| `ci-watch` | **Verifica CI (hook)** — polling `gh pr checks` + `gh run list` via `hooks/ci_watch.py` + `plugins/ci-watch.ts`; se falhar, inicia loop builder (max 2); orquestrador opcional `hooks/ci_orchestrator.py` com LangGraph | Pós-shipper (Gate 4+) |
 
-> **Guard rails** (lint, typecheck, testes, ruff/pylance/eslint/biome, secrets, size) são **hooks determinísticos** (`hooks/guard_rails.py` + `plugins/guard-rails.ts`) — single source of truth. `checker` removido.
+> **Guard rails** (lint, typecheck, testes, ruff/pylance/eslint/biome, secrets, size) são **hooks determinísticos** (`hooks/guard_rails.py` + `plugins/guard-rails.ts`) — single source of truth. `checker` removido. **CI watch** é hook determinístico pós-shipper (`hooks/ci_watch.py` + `plugins/ci-watch.ts`) que aguarda conclusão do CI e dispara loop de correção; orquestração avançada opcional via `hooks/ci_orchestrator.py` (LangGraph StateGraph) sem dependência obrigatória.
 
-Fluxos: `feature` (planner→builder→reviewer→shipper(hook)), `project` (discover→scaffold→loop feature→finalize via hook), `bugfix` (triage→fix→review→ship(hook)).
+Fluxos: `feature` (planner→builder→reviewer→shipper(hook)→ci-watch→supervisor), `project` (discover→scaffold→loop feature→finalize via hook+ci-watch), `bugfix` (triage→fix→review→ship(hook)→ci-watch).
 
 ## Estrutura do Projeto
 
@@ -22,9 +23,9 @@ Fluxos: `feature` (planner→builder→reviewer→shipper(hook)), `project` (dis
 - `commands/` — `harness.prompt.md` (fluxos)
 - `skills/` — 28 habilidades carregadas sob demanda pelos macros
 - `packs/` — `agentic-squad` (harness V2)
-- `hooks/` — `guard_rails.py` ( pós-edição), `shipper.py` (git/PR/Trello/STATE), `supervisor.py` (auditoria)
-- `plugins/` — `guard-rails.ts`, `shipper.ts`, `supervisor.ts` (hooks determinísticos)
-- `.planning/` — `PRD.md` (planner), `PLAN.md` (planner), `SUMMARY.md` (builder), `REVIEW.md` (reviewer arquitetura), `STATE.md`/`HANDOFF.md` (shipper/hook único escritor)
+- `hooks/` — `guard_rails.py` ( pós-edição), `shipper.py` (git/PR/Trello/STATE), `ci_watch.py` (polling CI + retry), `ci_orchestrator.py` (LangGraph opcional), `supervisor.py` (auditoria)
+- `plugins/` — `guard-rails.ts`, `shipper.ts`, `ci-watch.ts`, `supervisor.ts` (hooks determinísticos)
+- `.planning/` — `PRD.md` (planner), `PLAN.md` (planner), `SUMMARY.md` (builder), `REVIEW.md` (reviewer arquitetura), `STATE.md`/`HANDOFF.md` (shipper/hook único escritor), `CI_REPORT.md`/`ci_metrics.json` (ci-watch)
 
 ## Regras Gerais
 
