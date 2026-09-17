@@ -5,8 +5,8 @@
  * Complementa hooks/guard_rails.py (per-file) e hooks/supervisor.py (pós-shipper).
  *
  * Acionamento (determinístico, sem depender de LLM decidir):
- *   - Trigger primário: `tool.execute.after` quando `task` com agent `reviewer` completa (após review arquitetura)
- *   - Trigger secundário: `tool.execute.after` quando `write` em `.planning/REVIEW.md` (fallback, embora REVIEW seja memória)
+ *   - Trigger primário: `tool.execute.after` quando `task` com agent `reviewer` completa (após parecer de arquitetura em memória)
+ *   - Trigger secundário removido: **não há** `write` em `.planning/REVIEW.md`/`SUMMARY.md`/`VALIDATION.md` — esses arquivos são proibidos e nunca devem ser criados (hook guard-rails bloqueia)
  *   - Trigger terciário: `event: session.idle` após reviewer (fallback)
  *   - Debounce: roda no máximo 1x por sessão (flag global)
  *
@@ -142,7 +142,7 @@ async function runShipper($: any, directory: string, client: any, trigger: strin
       body: {
         service: "shipper",
         level: "info",
-        message: `HANDOFF minimal detectado — harness pode chamar task shipper minimal para enriquecer com PRD/PLAN/REVIEW em memória`,
+        message: `HANDOFF minimal detectado — harness pode chamar task shipper minimal para enriquecer com PRD/PLAN + resumo/parecer em memória (nunca SUMMARY/REVIEW como arquivos)`,
       },
     });
   }
@@ -167,12 +167,15 @@ export const ShipperPlugin: Plugin = async ({ $, directory, client }) => {
             });
           }
         }
-        // Trigger 2: write em REVIEW.md (embora REVIEW seja memória)
+        // Trigger 2 removido: não há write em REVIEW.md/SUMMARY.md/VALIDATION.md — proibidos (guard-rails bloqueia com HIGH)
+        // Mantido compat apenas para detectar tentativa indevida e logar
         if (["write", "edit"].includes(tool)) {
           const fp: string = args?.filePath ?? args?.file ?? args?.path ?? "";
-          if (fp.includes(".planning/REVIEW.md") || fp.includes("REVIEW.md")) {
-            await new Promise((r) => setTimeout(r, 1000));
-            await runShipper($, directory, client, `write:${fp.split("/").pop()}`);
+          if (fp.includes("SUMMARY.md") || fp.includes("REVIEW.md") || fp.includes("VALIDATION.md")) {
+            await client.app.log({
+              body: { service: "shipper", level: "error", message: `🚨 Tentativa de criar artefato proibido detectada: ${fp} — bloqueado por guard-rails (deve ser memória, não arquivo)` },
+            });
+            // não aciona shipper para artefato proibido; apenas loga
           }
         }
       } catch (err: any) {

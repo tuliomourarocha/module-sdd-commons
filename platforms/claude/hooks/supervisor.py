@@ -18,17 +18,18 @@ O que mede (determinístico, sem LLM):
   - Performance: duração por gate (git log timestamps, HANDOFF timestamps), nº arquivos alterados, linhas, build time, test time
   - Tokens/consumo: se disponível via opencode session JSON / env OTEL, senão heurística por tamanho de prompts
   - Alucinações (heurísticas determinísticas):
-      * arquivos referenciados no SUMMARY/PLAN que não existem em disco
+      * arquivos referenciados no HANDOFF/PLAN que não existem em disco
       * imports que não resolvem
       * APIs inventadas (grep por padrões não existentes)
       * TODO/FIXME deixados
       * divergência PLAN vs código (arquivos prometidos vs entregues)
+      * criação proibida de SUMMARY.md/REVIEW.md/VALIDATION.md em disco
   - Segurança/qualidade residual: re-roda guard_rails em diff
 
 Output:
-  - Markdown de auditoria + JSON de métricas
+  - Markdown de auditoria + JSON de métricas **embarcados em `.planning/HANDOFF.md` e `.planning/STATE.md`** (não cria artefactos separados)
   - Issue criada em GitHub via `gh issue create` no repo `tuliomourarocha/module-sdd-commons` (configurável)
-  - Também salva em `.planning/SUPERVISOR_REPORT.md` (em memória, não bloqueia STATE/HANDOFF)
+  - Legado: `--md-out/--json-out` ainda podem criar `.planning/SUPERVISOR_REPORT.md` se explicitado, mas default é atualizar HANDOFF/STATE
 
 Exit codes:
   0 = auditoria ok, issue criada ou dry-run
@@ -195,7 +196,7 @@ def detect_hallucinations(repo: Path, handoff_text: str) -> list[HallucinationFi
                 HallucinationFinding(
                     type="file_not_found",
                     severity="MED",
-                    evidence=f"Arquivo mencionado em HANDOFF/SUMMARY não existe em disco: `{m}`",
+                    evidence=f"Arquivo mencionado em HANDOFF não existe em disco: `{m}`",
                     file=m,
                 )
             )
@@ -272,6 +273,29 @@ def detect_hallucinations(repo: Path, handoff_text: str) -> list[HallucinationFi
                     )
                     if len([f for f in findings if f.type == "plan_divergence"]) > 5:
                         break
+
+    # 5. Artefatos proibidos em disco (SUMMARY/REVIEW/VALIDATION nunca devem existir)
+    for forbidden in [".planning/SUMMARY.md", ".planning/REVIEW.md", ".planning/VALIDATION.md"]:
+        if (repo / forbidden).exists():
+            findings.append(
+                HallucinationFinding(
+                    type="forbidden_artifact",
+                    severity="HIGH",
+                    evidence=f"Artefato proibido encontrado em disco: `{forbidden}` — deve ser removido (retorne em memória, não arquivo).",
+                    file=forbidden,
+                )
+            )
+    # também verifica basename solto no repo root
+    for name in ["SUMMARY.md", "REVIEW.md", "VALIDATION.md"]:
+        if (repo / name).exists():
+            findings.append(
+                HallucinationFinding(
+                    type="forbidden_artifact",
+                    severity="HIGH",
+                    evidence=f"Artefato proibido encontrado: `{name}` na raiz — remova (não deve existir).",
+                    file=name,
+                )
+            )
 
     return findings
 
@@ -377,6 +401,76 @@ def build_issue_markdown(
     return "\n".join(lines)
 
 
+SUPERVISOR_HANDOFF_START = "<!-- SUPERVISOR:START -->"
+SUPERVISOR_HANDOFF_END = "<!-- SUPERVISOR:END -->"
+SUPERVISOR_STATE_START = "<!-- SUPERVISOR_STATE:START -->"
+SUPERVISOR_STATE_END = "<!-- SUPERVISOR_STATE:END -->"
+
+
+def upsert_handoff_supervisor(repo: Path, supervisor_md: str) -> Path:
+    """Atualiza HANDOFF.md com seção Supervisor (idempotente) ao invés de criar SUPERVISOR_REPORT.md."""
+    handoff_path = repo / ".planning" / "HANDOFF.md"
+    wrapped = f"\n{SUPERVISOR_HANDOFF_START}\n{supervisor_md.strip()}\n{SUPERVISOR_HANDOFF_END}\n"
+    try:
+        handoff_path.parent.mkdir(parents=True, exist_ok=True)
+        if handoff_path.exists():
+            existing = handoff_path.read_text(encoding="utf-8", errors="ignore")
+            if SUPERVISOR_HANDOFF_START in existing and SUPERVISOR_HANDOFF_END in existing:
+                # substitui seção existente
+                before = existing.split(SUPERVISOR_HANDOFF_START)[0]
+                after = existing.split(SUPERVISOR_HANDOFF_END)[-1]
+                new_content = before.rstrip() + "\n" + wrapped + after.lstrip()
+            else:
+                new_content = existing.rstrip() + "\n\n---\n" + wrapped
+        else:
+            # HANDOFF inexistente — cria minimal com supervisor
+            new_content = f"# HANDOFF — {datetime.datetime.now(datetime.timezone.utc).isoformat()}\n\n{wrapped}\n"
+        handoff_path.write_text(new_content, encoding="utf-8")
+        print(f"✅ HANDOFF.md atualizado com auditoria Supervisor ({len(supervisor_md)} chars) → {handoff_path}")
+    except Exception as e:
+        print(f"⚠️ Falha ao atualizar HANDOFF.md com supervisor: {e}", file=sys.stderr)
+    return handoff_path
+
+
+def upsert_state_supervisor(repo: Path, metrics: "SupervisorMetrics") -> Path:
+    """Atualiza STATE.md com métricas do supervisor (embed metrics como seção)."""
+    state_path = repo / ".planning" / "STATE.md"
+    hallu_high = sum(1 for h in metrics.hallucinations if h.severity == "HIGH")
+    hallu_med = sum(1 for h in metrics.hallucinations if h.severity == "MED")
+    # bloco resumido para STATE (não todo md)
+    state_block = f"""### 🤖 Supervisor — {metrics.finished_at}
+- **Status:** {"🔴 CRÍTICO" if hallu_high>0 else "⚠️ Revisar" if metrics.guard_high>0 else "✅ OK"}
+- **Hallucinations:** {len(metrics.hallucinations)} (HIGH:{hallu_high} MED:{hallu_med}) | **Guard HIGH/MED:** {metrics.guard_high}/{metrics.guard_med}
+- **Arquivos:** {metrics.files_changed} (+{metrics.lines_added}/-{metrics.lines_removed}) | **Commits:** {metrics.commits}
+- **Build/Test:** {metrics.build_passed}/{metrics.tests_passed} | **Tokens:** {metrics.token_estimate_input}/{metrics.token_estimate_output} ({metrics.token_source}) | **Custo:** ${metrics.cost_estimate_usd}
+- **Duração:** {metrics.duration_seconds}s
+- **Detalhe:** ver HANDOFF.md seção Supervisor (marcadores SUPERVISOR:START/END)
+"""
+    wrapped = f"\n{SUPERVISOR_STATE_START}\n{state_block.strip()}\n{SUPERVISOR_STATE_END}\n"
+    try:
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        if state_path.exists():
+            existing = state_path.read_text(encoding="utf-8", errors="ignore")
+            if SUPERVISOR_STATE_START in existing and SUPERVISOR_STATE_END in existing:
+                before = existing.split(SUPERVISOR_STATE_START)[0]
+                after = existing.split(SUPERVISOR_STATE_END)[-1]
+                new_content = before.rstrip() + "\n" + wrapped + after.lstrip()
+            else:
+                # anexa seção; tenta inserir antes do último --- ou no final
+                new_content = existing.rstrip() + "\n\n" + wrapped
+            # também garante que gate supervisor está registrado
+            if "supervisor:" not in existing.lower():
+                new_content = new_content.replace("```", "```")  # noop para manter compat
+        else:
+            new_content = f"# STATE — {datetime.datetime.now(datetime.timezone.utc).isoformat()}\n\n**Flow:** `feature` | **Gate:** `done` | **Branch:** `main`\n\n{wrapped}\n"
+        # garantir secção persiste
+        state_path.write_text(new_content, encoding="utf-8")
+        print(f"✅ STATE.md atualizado com métricas Supervisor → {state_path}")
+    except Exception as e:
+        print(f"⚠️ Falha ao atualizar STATE.md com supervisor: {e}", file=sys.stderr)
+    return state_path
+
+
 def create_github_issue(
     repo_slug: str,
     title: str,
@@ -478,14 +572,49 @@ def main():
 
     md = build_issue_markdown(metrics, repo, handoff, git, dry_run=args.dry_run)
 
-    # salva arquivos se pedido ou default
-    md_out = Path(args.md_out) if args.md_out else repo / ".planning" / "SUPERVISOR_REPORT.md"
-    json_out = Path(args.json_out) if args.json_out else repo / ".planning" / "supervisor_metrics.json"
-    # .planning pode não existir fora do shipper — tenta salvar, mas não falha se não puder
-    for p, content in [(md_out, md), (json_out, json.dumps(asdict(metrics), indent=2, ensure_ascii=False, default=str))]:
+    # ── Novo comportamento (exigência usuário): atualiza HANDOFF.md + STATE.md ao invés de criar artefatos .md separados ──
+    # Sempre atualiza HANDOFF/STATE de forma idempotente (marcadores SUPERVISOR:START/END)
+    # Só cria legado SUPERVISOR_REPORT.md / supervisor_metrics.json se --md-out/--json-out explicitamente passados ou env LEGACY=1
+    has_legacy_md = bool(args.md_out)
+    has_legacy_json = bool(args.json_out)
+    use_legacy_env = os.environ.get("SUPERVISOR_LEGACY", "") in ("1", "true", "yes")
+
+    # atualiza HANDOFF/STATE (principal) — dry-run não persiste, apenas --run persiste
+    if not args.dry_run:
+        upsert_handoff_supervisor(repo, md)
+        upsert_state_supervisor(repo, metrics)
+    else:
+        print("(dry-run — HANDOFF/STATE não atualizados; use --run sem --dry-run para persistir)")
+
+    # legado opcional
+    if has_legacy_md:
+        md_out = Path(args.md_out)
         try:
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(content, encoding="utf-8")
+            md_out.parent.mkdir(parents=True, exist_ok=True)
+            md_out.write_text(md, encoding="utf-8")
+            print(f"✅ Legado SUPERVISOR_REPORT: {md_out}")
+        except Exception:
+            pass
+    elif use_legacy_env:
+        md_out = repo / ".planning" / "SUPERVISOR_REPORT.md"
+        try:
+            md_out.parent.mkdir(parents=True, exist_ok=True)
+            md_out.write_text(md, encoding="utf-8")
+        except Exception:
+            pass
+    if has_legacy_json:
+        json_out = Path(args.json_out)
+        try:
+            json_out.parent.mkdir(parents=True, exist_ok=True)
+            json_out.write_text(json.dumps(asdict(metrics), indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+            print(f"✅ Legado supervisor_metrics: {json_out}")
+        except Exception:
+            pass
+    elif use_legacy_env:
+        json_out = repo / ".planning" / "supervisor_metrics.json"
+        try:
+            json_out.parent.mkdir(parents=True, exist_ok=True)
+            json_out.write_text(json.dumps(asdict(metrics), indent=2, ensure_ascii=False, default=str), encoding="utf-8")
         except Exception:
             pass
 
@@ -493,6 +622,40 @@ def main():
     print("\n" + "=" * 60)
     print("📊 JSON metrics:", json.dumps(asdict(metrics), ensure_ascii=False, default=str)[:2000])
     print("=" * 60)
+    if not has_legacy_md and not use_legacy_env:
+        print("ℹ️ Supervisor persistido em .planning/HANDOFF.md (seção SUPERVISOR:START) e .planning/STATE.md (SUPERVISOR_STATE) — sem criar SUPERVISOR_REPORT.md separado")
+
+    # ── Log de garantia (prova que hook supervisor foi chamado) ──
+    try:
+        hallu_high_tmp = sum(1 for h in metrics.hallucinations if h.severity == "HIGH")
+        entry = {
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "hook": "supervisor",
+            "trigger": "python:supervisor.py",
+            "files_changed": metrics.files_changed,
+            "hallucinations": len(metrics.hallucinations),
+            "hallu_high": hallu_high_tmp,
+            "guard_high": metrics.guard_high,
+            "build_passed": metrics.build_passed,
+            "tests_passed": metrics.tests_passed,
+            "status": "critical" if hallu_high_tmp > 0 else "warn" if metrics.guard_high > 0 else "success",
+        }
+        line = json.dumps(entry, ensure_ascii=False)
+        seen = set()
+        for log_path in [repo / ".planning/HOOKS.log", Path(".opencode/hooks/hook-audit.jsonl")]:
+            try:
+                resolved = log_path.resolve()
+                if str(resolved) in seen:
+                    continue
+                seen.add(str(resolved))
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                with log_path.open("a", encoding="utf-8") as lf:
+                    lf.write(line + "\n")
+            except Exception:
+                pass
+        print(f"📝 Log garantia: .planning/HOOKS.log (supervisor status={entry['status']})")
+    except Exception:
+        pass
 
     # cria issue
     hallu_high = sum(1 for h in metrics.hallucinations if h.severity == "HIGH")
@@ -523,7 +686,7 @@ def main():
                     ok, msg = create_github_issue(args.repo_slug, title, md, labels, dry_run=False)
                     print(f"\n{'✅' if ok else '⚠️'} GitHub issue (auto): {msg}")
                 else:
-                    print("\n⚠️ gh não encontrado — markdown salvo em .planning/SUPERVISOR_REPORT.md")
+                    print("\n⚠️ gh não encontrado — auditoria salva em .planning/HANDOFF.md (SUPERVISOR:START) e STATE.md")
 
     if args.fail_on_hallucination and hallu_high > 0:
         sys.exit(2)

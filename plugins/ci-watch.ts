@@ -4,25 +4,28 @@
  * Conceito: middleware fora do LLM que, após shipper abrir/atualizar PR, verifica CI
  * de forma determinística (polling) e, em caso de falha, sinaliza harness para iniciar
  * loop de correção (builder → reviewer → shipper → ci-watch). Complementa hooks/shipper.py.
+ * Persistência: **atualiza `.planning/HANDOFF.md` (marcadores CI_REPORT:START) e `.planning/STATE.md` (CI_STATE)**
+ * ao invés de criar `.planning/CI_REPORT.md`/`ci_metrics.json` separados — single invocation.
  *
  * Acionamento (determinístico, sem depender de LLM decidir):
  *   - Trigger primário: `tool.execute.after` quando `task` com agent `shipper` completa
  *   - Trigger secundário: `tool.execute.after` quando `write` em `.planning/HANDOFF.md` ou `STATE.md`
  *   - Trigger terciário: `event: session.idle` após shipper (fallback) — verifica se HANDOFF existe e shipper já rodou
  *   - Trigger quaternário: `file.edited` em HANDOFF.md (redundância)
- *   - Debounce: roda no máximo 1× por sessão, mas respeita retries (max 2) — verifica .planning/CI_RETRIES.json
+ *   - Debounce: roda no máximo 1× por sessão harness (single-run), mas respeita retries (max 2) via STATE.md (CI_STATE)
+ *   - Harness permanece bloqueante até CI finalizar (não re-invoca harness externamente)
  *
- * Orquestração:
- *   - polling via `hooks/ci_watch.py --run --wait --timeout 600 --interval 30`
- *   - exit 0 = CI verde → done → supervisor
- *   - exit 2 = CI falhou → throw `🚨 CI_FAILED_NEEDS_FIX` → harness escala para `task builder` com contexto CI_REPORT (max 2)
- *   - exit 3 = CI pending timeout → warn, não loopa, mas loga para re-poll manual
+ * Orquestração (single harness run):
+ *   - polling via `hooks/ci_watch.py --run --wait --timeout 600 --interval 30` (bloqueante, até pass/fail)
+ *   - exit 0 = CI verde → done → supervisor (mesma sessão harness)
+ *   - exit 2 = CI falhou → throw `🚨 CI_FAILED_NEEDS_FIX` → harness (mesma run) escala para `task builder` com contexto HANDOFF/STATE (max 2)
+ *   - exit 3 = CI pending timeout → warn, harness aguarda re-poll sem encerrar (não loopa imediatamente)
  *   - exit 1 = infra/unknown → warn, notifica para verificar `gh auth`
  *
  * Retry tracking:
- *   - Lê `.planning/CI_RETRIES.json` {retries, max_retries}
- *   - Se retries >= max_retries e CI ainda fail, lança `🚨 CI_RETRIES_EXHAUSTED` para escalar humano
- *   - Incrementa retries somente quando harness de fato re-chama builder (via plugin detectar novo ciclo). Aqui apenas lê.
+ *   - Lê retries de `STATE.md` (bloco CI_STATE) + fallback legado `.planning/CI_RETRIES.json` se env legado
+ *   - Se retries >= max_retries e CI ainda fail, lança `🚨 CI_RETRIES_EXHAUSTED` para escalar humano (ainda dentro da mesma sessão harness)
+ *   - Incrementa retries dentro da mesma sessão e atualiza STATE.md — não requer nova invocação harness
  *
  * Instalação: copiado para `.opencode/plugins/ci-watch.ts` via bin/sdd-harness.js
  * Requer: python3, hooks/ci_watch.py, gh CLI (opcional), git
@@ -46,24 +49,59 @@ async function writeGuaranteeLog($: any, directory: string, entry: Record<string
 }
 
 async function readRetryCount($: any, directory: string): Promise<number> {
+  // Prioridade: STATE.md (CI_STATE) — exigência de não criar artefactos separados
+  try {
+    const state = await $`cat ${directory}/.planning/STATE.md 2>&1`.text().catch(() => "");
+    // procura padrão "Retries: X/Y" dentro do bloco CI_STATE ou linha "CI retries"
+    let m = state.match(/Retries:\s*(\d+)\s*\//i);
+    if (m) return parseInt(m[1], 10) || 0;
+    m = state.match(/CI retries.*?(\d+)/i);
+    if (m) return parseInt(m[1], 10) || 0;
+    m = state.match(/CI_STATE[\s\S]*?retries["']?\s*[:=]\s*(\d+)/i);
+    if (m) return parseInt(m[1], 10) || 0;
+  } catch {}
+  // fallback legado CI_RETRIES.json apenas se existir (transição)
   try {
     const txt = await $`cat ${directory}/.planning/CI_RETRIES.json 2>&1`.text().catch(() => "");
-    if (txt) {
+    if (txt && !txt.includes("No such")) {
       const j = JSON.parse(txt);
       return Number(j.retries ?? j.count ?? 0) || 0;
     }
-  } catch {}
-  try {
-    const state = await $`cat ${directory}/.planning/STATE.md 2>&1`.text().catch(() => "");
-    const m = state.match(/CI retries.*?(\d+)/i);
-    if (m) return parseInt(m[1], 10) || 0;
   } catch {}
   return ciWatchRetries;
 }
 
 async function writeRetryCount($: any, directory: string, retries: number) {
-  const entry = JSON.stringify({ retries, updated: new Date().toISOString(), max_retries: MAX_RETRIES });
-  await $`mkdir -p ${directory}/.planning && echo '${entry.replace(/'/g, "'\\''")}' > ${directory}/.planning/CI_RETRIES.json`.nothrow().quiet();
+  // Novo: atualiza STATE.md (bloco CI_STATE) ao invés de criar arquivo separado
+  // Mantém compatibilidade: também escreve CI_RETRIES.json apenas se legacy env ativo
+  try {
+    const statePath = `${directory}/.planning/STATE.md`;
+    const hasState = await $`test -f ${statePath} && echo ok`.text().catch(() => "");
+    if (hasState.includes("ok")) {
+      // Atualiza retries dentro do bloco CI_STATE via sed inline se marcador existir
+      // fallback simples: se não houver marcador CI_STATE, anexa linha de retries
+      const hasMarker = await $`grep -c "CI_STATE:START" ${statePath} 2>&1`.text().catch(() => "0");
+      if (hasMarker.trim() !== "0" && !hasMarker.includes("No such")) {
+        // usa python para edição idempotente (evitar sed portabilidade)
+        await $`python3 -c "
+import re, pathlib
+p=pathlib.Path('${statePath}')
+t=p.read_text(encoding='utf-8', errors='ignore')
+# substitui 'Retries: X/Y' por novo valor se existir
+new = re.sub(r'Retries:\s*\d+\s*/', f'Retries: ${retries}/', t)
+if new == t:
+    # se não havia padrão, tenta inserir após CI_STATE:START
+    new = t.replace('<!-- CI_STATE:START -->', '<!-- CI_STATE:START -->\n- **Retries (atualizado):** ${retries}/${MAX_RETRIES}')
+p.write_text(new, encoding='utf-8')
+" 2>&1`.nothrow().quiet();
+      }
+    }
+  } catch {}
+  // legado opcional
+  if (process.env.CI_WATCH_LEGACY === "1") {
+    const entry = JSON.stringify({ retries, updated: new Date().toISOString(), max_retries: MAX_RETRIES });
+    await $`mkdir -p ${directory}/.planning && echo '${entry.replace(/'/g, "'\\''")}' > ${directory}/.planning/CI_RETRIES.json`.nothrow().quiet();
+  }
   ciWatchRetries = retries;
 }
 
@@ -184,12 +222,28 @@ async function runCIWatch($: any, directory: string, client: any, trigger: strin
     retries: currentRetries,
   });
 
-  // Verifica se CI_REPORT foi gerado
-  const checkReport = await $`ls -lh ${directory}/.planning/CI_REPORT.md 2>&1 | head -5`.nothrow().quiet();
-  const checkOut = checkReport.stdout?.toString() ?? checkReport.stderr?.toString() ?? "";
+  // Verifica que HANDOFF/STATE foram atualizados (nova persistência)
+  const checkHandoff = await $`grep -c "CI_REPORT:START" ${directory}/.planning/HANDOFF.md 2>&1 | head -5`.nothrow().quiet();
+  const checkState = await $`grep -c "CI_STATE:START" ${directory}/.planning/STATE.md 2>&1 | head -5`.nothrow().quiet();
+  const handoffMark = (checkHandoff.stdout?.toString() ?? "").trim();
+  const stateMark = (checkState.stdout?.toString() ?? "").trim();
+  const hasCIReport = handoffMark !== "0" && !handoffMark.includes("No such");
   await client.app.log({
-    body: { service: "ci-watch", level: exitCode === 0 ? "info" : "warn", message: `CI_REPORT: ${checkOut.trim().slice(0, 500)}`, extra: { trigger } },
+    body: {
+      service: "ci-watch",
+      level: hasCIReport ? "info" : "warn",
+      message: hasCIReport
+        ? `✅ CI report persistido em HANDOFF.md (CI_REPORT:START) e STATE.md (CI_STATE) — status ${exitCode}`
+        : `⚠️ CI markers não encontrados em HANDOFF/STATE — verifique hook output`,
+      extra: { trigger, handoffMark: handoffMark.slice(0, 200), stateMark: stateMark.slice(0, 200) },
+    },
   });
+  // Legado opcional log
+  const legacyCheck = await $`ls -lh ${directory}/.planning/CI_REPORT.md 2>&1 | head -2`.nothrow().quiet();
+  const legacyOut = legacyCheck.stdout?.toString() ?? "";
+  if (legacyOut.includes("CI_REPORT")) {
+    await client.app.log({ body: { service: "ci-watch", level: "info", message: `Legado CI_REPORT.md (ignorado): ${legacyOut.trim().slice(0, 300)}` } });
+  }
 
   if (exitCode === 0) {
     // CI verde — sucesso, vai para supervisor
@@ -204,10 +258,10 @@ async function runCIWatch($: any, directory: string, client: any, trigger: strin
   }
 
   if (exitCode === 2) {
-    // CI falhou — precisa loop correção
+    // CI falhou — precisa loop correção (mesma sessão harness, sem re-invocar)
     const retriesNow = await readRetryCount($, directory);
     if (retriesNow >= MAX_RETRIES) {
-      const failMsg = `CI falhou e retries esgotados (${retriesNow}/${MAX_RETRIES}) via ${trigger} — escalar para humano. Veja .planning/CI_REPORT.md e .planning/HOOKS.log`;
+      const failMsg = `CI falhou e retries esgotados (${retriesNow}/${MAX_RETRIES}) via ${trigger} — escalar para humano. Veja HANDOFF.md seção CI_REPORT e .planning/HOOKS.log (single harness run)`;
       await client.app.log({ body: { service: "ci-watch", level: "error", message: failMsg } });
       await writeGuaranteeLog($, directory, {
         ts: new Date().toISOString(),
@@ -219,34 +273,34 @@ async function runCIWatch($: any, directory: string, client: any, trigger: strin
         retries: retriesNow,
         message: failMsg,
       });
-      throw new Error(`🚨 CI_RETRIES_EXHAUSTED: ${failMsg} — Log: .planning/CI_REPORT.md — ${out.slice(0, 1500)}`);
+      throw new Error(`🚨 CI_RETRIES_EXHAUSTED: ${failMsg} — Log: HANDOFF.md#CI_REPORT / .planning/HOOKS.log — ${out.slice(0, 1500)}`);
     }
-    // Ainda há retries: sinaliza harness para loop builder
+    // Ainda há retries: sinaliza harness para loop builder dentro da mesma run (bloqueante)
     const nextRetry = retriesNow + 1;
     await writeRetryCount($, directory, nextRetry);
-    // Permite próximo ciclo re-executar (reset hasRun para próxima verificação pós-fix)
+    // Permite próximo ciclo re-executar (reset hasRun para próxima verificação pós-fix) — harness permanece vivo
     hasRun = false;
-    const fixMsg = `CI falhou (exit 2) via ${trigger} — retry ${nextRetry}/${MAX_RETRIES} — harness deve reiniciar builder (max 2) com contexto CI_REPORT.md. Detalhe: ${out.slice(0, 2000)}`;
+    const fixMsg = `CI falhou (exit 2) via ${trigger} — retry ${nextRetry}/${MAX_RETRIES} — harness (single run) deve reiniciar builder (max 2) com contexto HANDOFF.md/STATE.md (CI_REPORT:START). Detalhe: ${out.slice(0, 2000)}`;
     await client.app.log({ body: { service: "ci-watch", level: "error", message: fixMsg } });
-    // Lança erro visível que harness deve capturar para loop
+    // Lança erro visível que harness (single invocation) deve capturar para loop sem re-invocar
     throw new Error(
-      `🚨 CI_FAILED_NEEDS_FIX (retry ${nextRetry}/${MAX_RETRIES}): CI falhou — builder deve corrigir com base em .planning/CI_REPORT.md\n` +
+      `🚨 CI_FAILED_NEEDS_FIX (retry ${nextRetry}/${MAX_RETRIES}): CI falhou — builder deve corrigir com base em HANDOFF.md seção CI_REPORT:START + STATE.md CI_STATE (sem criar artefactos separados)\n` +
         `${out.slice(0, 3000)}\n\n` +
-        `Instrução para harness: task("builder", context:{PLAN, SUMMARY, CI_REPORT em .planning/CI_REPORT.md}) max 2. Log: .planning/HOOKS.log`
+        `Instrução para harness (single run, bloqueante): task("builder", context:{PLAN, resumo, CI_REPORT extraído de .planning/HANDOFF.md#CI_REPORT:START}) max 2 (nunca SUMMARY.md/REVIEW.md em disco). Harness permanece bloqueado até verde — não re-invocar externamente. Log: .planning/HOOKS.log`
     );
   }
 
   if (exitCode === 3) {
-    // Timeout pending — não falha CI, apenas avisa
+    // Timeout pending — não falha CI, apenas avisa (harness permanece vivo, não re-invoca)
     await client.app.log({
       body: {
         service: "ci-watch",
         level: "warn",
-        message: `⏳ CI ainda pendente após ${DEFAULT_TIMEOUT}s via ${trigger} (exit 3) — não inicia loop de correção. Re-poll manualmente: python3 hooks/ci_watch.py --run --wait --timeout 600. Log: .planning/CI_REPORT.md`,
+        message: `⏳ CI ainda pendente após ${DEFAULT_TIMEOUT}s via ${trigger} (exit 3) — harness permanece bloqueado, aguardando re-poll (não inicia loop correção). Re-poll automático via session.idle ou manual: python3 hooks/ci_watch.py --run --wait --timeout 600. Log: HANDOFF.md#CI_REPORT / STATE.md#CI_STATE`,
       },
     });
-    // não throw — apenas aviso; próximo session.idle tentará novamente se hasRun reset
-    hasRun = false; // permite re-poll posterior
+    // não throw — apenas aviso; próximo session.idle tentará novamente se hasRun reset, mesma sessão harness
+    hasRun = false; // permite re-poll posterior dentro da mesma harness run
     return;
   }
 
@@ -255,7 +309,7 @@ async function runCIWatch($: any, directory: string, client: any, trigger: strin
     body: {
       service: "ci-watch",
       level: "warn",
-      message: `CI watch retornou exit ${exitCode} via ${trigger} (unknown/infra) — verifique gh auth e Actions tab. Log: .planning/HOOKS.log`,
+      message: `CI watch retornou exit ${exitCode} via ${trigger} (unknown/infra) — verifique gh auth e Actions tab. Harness permanece vivo (single run). Log: .planning/HOOKS.log / HANDOFF.md`,
     },
   });
   // não bloqueia fluxo, mas avisa
@@ -287,25 +341,27 @@ export const CIWatchPlugin: Plugin = async ({ $, directory, client }) => {
         }
       } catch (err: any) {
         await client.app.log({
-          body: { service: "ci-watch", level: "error", message: `🚨 CI watch erro visível ao harness: ${err?.message?.slice(0, 1200)} — Log: .planning/CI_REPORT.md / .planning/HOOKS.log` },
+          body: { service: "ci-watch", level: "error", message: `🚨 CI watch erro visível ao harness (single run): ${err?.message?.slice(0, 1200)} — Log: HANDOFF.md#CI_REPORT / STATE.md / .planning/HOOKS.log` },
         });
-        throw err; // harness vê e decide loop
+        throw err; // harness (mesma run, bloqueante) vê e decide loop sem re-invocar
       }
     },
 
     event: async ({ event }: any) => {
       if (event?.type === "session.idle") {
-        // Só executa se HANDOFF existe e ainda não rodou (ou retry pendente)
+        // Só executa se HANDOFF existe e ainda não rodou (ou retry pendente) — single harness run, não re-invoca
         const check = await $`test -f ${directory}/.planning/HANDOFF.md && echo ok`.text().catch(() => "");
         if (!check.includes("ok")) return;
         // Se já rodou e não há retry pendente, não re-executa em idle
         const retries = await readRetryCount($, directory);
         if (hasRun && retries <= ciWatchRetries) return;
-        // adicional: verifica se houve push recente (diff) ou PR checks pending
-        const diffCheck = await $`git -C ${directory} diff --stat HEAD 2>&1 | head -5`.text().catch(() => "");
-        // Se já existe CI_REPORT com pass, não repolla desnecessariamente
-        const reportStatus = await $`grep -m1 '"status":' ${directory}/.planning/ci_metrics.json 2>&1 | head -1`.text().catch(() => "");
-        if (reportStatus.includes('"pass"') && hasRun) return;
+        // Se já existe CI_STATE com pass em STATE.md, não repolla desnecessariamente (harness já verde)
+        const stateCheck = await $`grep -A2 "CI_STATE:START" ${directory}/.planning/STATE.md 2>&1 | grep -i "pass" | head -1`.text().catch(() => "");
+        const handoffPass = await $`grep -A2 "CI_REPORT:START" ${directory}/.planning/HANDOFF.md 2>&1 | grep -i "pass" | head -1`.text().catch(() => "");
+        if ((stateCheck.includes("pass") || handoffPass.includes("pass")) && hasRun) return;
+        // também verifica legado ci_metrics.json se existir (compat)
+        const legacyStatus = await $`cat ${directory}/.planning/ci_metrics.json 2>&1 | grep -m1 '"status"' | head -1`.text().catch(() => "");
+        if (legacyStatus.includes('"pass"') && hasRun) return;
         try {
           await runCIWatch($, directory, client, "session.idle");
         } catch (err: any) {

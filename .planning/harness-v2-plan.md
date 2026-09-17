@@ -1,4 +1,6 @@
-# Harness V2 — Plano de Simplificação (5 Macros)
+# Harness V2 — Plano de Simplificação (5 Macros) — ARQUIVADO
+
+> **⚠️ LEGADO — V2 final implementado com 4 macros + hooks.** Este documento descreve o plano de transição V1→V2 e contém referências históricas a `checker`, `VALIDATION.md`, `SUMMARY.md` e `REVIEW.md` como **arquivos em disco**. **A partir do Harness V2 final (2026-09), esses artefatos são PROIBIDOS em disco**: `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md` nunca devem ser criados como arquivos — builder retorna resumo em memória, reviewer retorna parecer em memória, validação é hook determinístico `guard_rails.py`. Este arquivo é mantido apenas como histórico e **não deve ser recriado** pelo harness; apenas `STATE.md`/`HANDOFF.md`/`CI_REPORT.md`/`SUPERVISOR_REPORT.md` persistem em `.planning/`.
 
 > **Objetivo:** reduzir de 27 agentes para 6 arquivos (1 orquestrador + 5 macros), cortar ~60-70% de tokens por ciclo, reduzir janela de contexto em ~50% e eliminar latência de delegação em árvore.
 

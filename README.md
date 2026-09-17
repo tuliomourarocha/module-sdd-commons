@@ -98,9 +98,9 @@ Para adicionar funcionalidades em projeto existente:
 ```
 
 O orquestrador executa:
-1. **Planner** → discovery + `.planning/PRD.md` + `.planning/PLAN.md` + `arch/` (memória)
-2. **Builder** → implementa + `.planning/SUMMARY.md` (memória) — `hooks/guard_rails.py` valida per-file
-3. **Reviewer** → `.planning/REVIEW.md` arquitetura (memória, sem lint)
+1. **Planner** → discovery + `PRD.md` + `PLAN.md` + `arch/` (memória — nunca em disco)
+2. **Builder** → implementa + resumo em memória (nunca `SUMMARY.md` em disco) — `hooks/guard_rails.py` valida per-file e bloqueia `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`
+3. **Reviewer** → parecer de arquitetura em memória (nunca `REVIEW.md`/`VALIDATION.md` em disco, sem lint — hooks fazem)
 4. **Shipper(hook)** → commit + PR + CI check + `.planning/STATE.md`/`HANDOFF.md` + Trello close (via `hooks/shipper.py`)
 
 ### Fluxo 2: Novo Projeto (`project`)

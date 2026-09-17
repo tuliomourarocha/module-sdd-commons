@@ -68,6 +68,16 @@ SECRET_PATTERNS = [
 MAX_FILE_LINES = 600
 MAX_FUNCTION_LINES = 60  # heuristic, validado via grep posterior
 
+# Artefatos proibidos em disco — nunca devem ser criados como arquivos
+FORBIDDEN_PLANNING_ARTIFACTS = {
+    ".planning/SUMMARY.md",
+    ".planning/REVIEW.md",
+    ".planning/VALIDATION.md",
+    ".planning/PRD.md",
+    ".planning/PLAN.md",
+}
+FORBIDDEN_BASENAMES = {"SUMMARY.md", "REVIEW.md", "VALIDATION.md"}
+
 
 @dataclass
 class Finding:
@@ -335,6 +345,90 @@ def check_js_ts(file: Path, report: GuardReport, auto_fix: bool = False):
                             break
 
 
+def check_forbidden_artifacts(file: Path, report: GuardReport):
+    """Bloqueia criação de artefatos proibidos em .planning."""
+    # normaliza para comparação
+    rel = str(file)
+    # casos: .planning/SUMMARY.md, SUMMARY.md, REVIEW.md, VALIDATION.md
+    if file.name in FORBIDDEN_BASENAMES:
+        # só bloqueia se estiver em .planning ou se basename for exatamente esses três (evita falso positivo em src/SUMMARY.md? mas ainda proibido)
+        if ".planning" in rel or file.name in FORBIDDEN_BASENAMES:
+            # verifica se é exatamente os proibidos globais
+            if file.name in FORBIDDEN_BASENAMES:
+                report.findings.append(
+                    Finding(
+                        file=str(file),
+                        line=None,
+                        rule="guard/forbidden-planning-artifact",
+                        severity="HIGH",
+                        message=f"Artefato proibido em disco: `{file.name}` — SUMMARY/REVIEW/VALIDATION nunca devem ser criados como arquivos (retorne em memória). Remova o arquivo e retorne o conteúdo em memória.",
+                        tool="guard",
+                    )
+                )
+                report.blocked = True
+                return True
+    # verifica paths específicos
+    for forbidden in FORBIDDEN_PLANNING_ARTIFACTS:
+        if rel.endswith(forbidden) or f"/{forbidden}" in rel:
+            report.findings.append(
+                Finding(
+                    file=str(file),
+                    line=None,
+                    rule="guard/forbidden-planning-artifact",
+                    severity="HIGH",
+                    message=f"Artefato proibido: `{forbidden}` nunca deve existir em disco (memória apenas).",
+                    tool="guard",
+                )
+            )
+            report.blocked = True
+            return True
+    # bloqueia qualquer .planning/PRD.md, PLAN.md, arch/** além dos permitidos STATE/HANDOFF (single source) — CI_REPORT/SUPERVISOR etc agora são seções em HANDOFF/STATE, não arquivos separados
+    if ".planning/" in rel:
+        # Apenas STATE, HANDOFF e HOOKS.log são permitidos por default; CI_REPORT etc bloqueados (legado só via env)
+        allowed = {".planning/STATE.md", ".planning/HANDOFF.md", ".planning/HOOKS.log"}
+        # Legado: se env legado ativo, permite temporariamente
+        if os.environ.get("CI_WATCH_LEGACY", "") in ("1", "true", "yes"):
+            allowed.update({".planning/CI_REPORT.md", ".planning/ci_metrics.json", ".planning/CI_RETRIES.json"})
+        if os.environ.get("SUPERVISOR_LEGACY", "") in ("1", "true", "yes"):
+            allowed.update({".planning/SUPERVISOR_REPORT.md", ".planning/supervisor_metrics.json", ".planning/SUPERVISOR_PROMPT.md"})
+        if os.environ.get("ORCH_LEGACY_JSON", "") in ("1", "true", "yes"):
+            allowed.update({".planning/ORCHESTRATOR_STATE.json", ".planning/COORCHESTRATOR_STATE.json"})
+        # se é .planning/*.md e não está na allow list, e não é codebase/*, bloqueia se for SUMMARY/REVIEW/VALIDATION/PRD/PLAN/arch
+        if rel.endswith(".md") and ".planning/codebase" not in rel:
+            # extrai base
+            is_allowed = any(rel.endswith(a) for a in allowed)
+            if not is_allowed and any(x in rel for x in ["SUMMARY", "REVIEW", "VALIDATION", "PRD.md", "PLAN.md", "/arch/", "CI_REPORT", "SUPERVISOR_REPORT", "ORCHESTRATOR_STATE", "COORCHESTRATOR_STATE"]):
+                report.findings.append(
+                    Finding(
+                        file=str(file),
+                        line=None,
+                        rule="guard/forbidden-planning-artifact",
+                        severity="HIGH",
+                        message=f"Artefato .planning não permitido: `{rel}` — apenas STATE/HANDOFF/HOOKS.log podem persistir (ci-watch/supervisor/orquestrador devem atualizar HANDOFF/STATE via marcadores, não criar .md separados).",
+                        tool="guard",
+                    )
+                )
+                report.blocked = True
+                return True
+        # também bloqueia .planning/*.json fora do allow (ci_metrics, supervisor_metrics, orchestrator state)
+        if rel.endswith(".json") and ".planning/" in rel and ".planning/codebase" not in rel:
+            is_allowed = any(rel.endswith(a) for a in allowed)
+            if not is_allowed and any(x in rel for x in ["ci_metrics", "supervisor_metrics", "CI_RETRIES", "ORCHESTRATOR_STATE", "COORCHESTRATOR"]):
+                report.findings.append(
+                    Finding(
+                        file=str(file),
+                        line=None,
+                        rule="guard/forbidden-planning-artifact",
+                        severity="HIGH",
+                        message=f"Artefato .planning JSON não permitido: `{rel}` — apenas STATE/HANDOFF/HOOKS.log podem persistir (métricas devem estar embarcadas em STATE/HANDOFF).",
+                        tool="guard",
+                    )
+                )
+                report.blocked = True
+                return True
+    return False
+
+
 def run_guard(file_path: str, auto_fix: bool = False, output_format: str = "text") -> GuardReport:
     import time
 
@@ -344,6 +438,13 @@ def run_guard(file_path: str, auto_fix: bool = False, output_format: str = "text
     lang = CODE_EXTENSIONS.get(ext, "unknown")
 
     report = GuardReport(file=str(file), language=lang)
+
+    # ── Bloqueio prioritário: artefatos proibidos sempre HIGH, mesmo se extensão desconhecida ──
+    if check_forbidden_artifacts(file, report):
+        report.duration_ms = int((time.time() - start) * 1000)
+        # garante blocked mesmo se finding foi adicionado
+        report.blocked = True
+        return report
 
     # ignora arquivos fora de código ou gerados
     if lang == "unknown":

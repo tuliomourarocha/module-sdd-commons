@@ -1,16 +1,13 @@
-# SDD Harness V2
+# SDD Harness V2 — Single-run + HANDOFF/STATE only
 
-Para uma feature, projeto ou bugfix, inicie pelo subagente `harness`. Ele deve
-seguir `planner → builder → reviewer → shipper(hook)`, preservando os
-gates humanos e os artefatos em `.planning/`. Guard rails (lint/testes) são hooks determinísticos (`hooks/guard_rails.py`); `checker` removido; `reviewer` só revisa arquitetura técnica/software.
+Para uma feature, projeto ou bugfix, inicie pelo subagente `harness` **uma única vez** (single-run, bloqueante até hooks finalizarem). Ele deve seguir `planner → builder → reviewer → shipper(hook) → ci-watch(hook, bloqueante) → supervisor(hook, bloqueante)`, preservando gates humanos e artefactos em `.planning/`. Guard rails (lint/testes) são hooks determinísticos (`hooks/guard_rails.py`); `checker` removido; `reviewer` só revisa arquitetura técnica/software. **ci-watch, supervisor e orquestrador também atualizam HANDOFF.md/STATE.md via marcadores** — não criam artefactos separados.
 
-Os subagentes são instalados em `.claude/agents/`. Somente `shipper` (hook `hooks/shipper.py` ou fallback minimal) pode
-escrever `.planning/STATE.md` e `.planning/HANDOFF.md` — demais artefatos (`PRD.md`, `PLAN.md`, `SUMMARY.md`, `REVIEW.md`, `arch/*`) são **em memória** via `Agent tool` e injetados como `context:` pelo `harness` (nunca em disco). `permission: .planning/** deny` para `planner|builder|reviewer` evita loop de verificação e reaproveita contexto.
+Os subagentes são instalados em `.claude/agents/`. Somente `shipper`, `ci-watch`, `supervisor` e `orquestrador` (hooks determinísticos) podem escrever `.planning/STATE.md` e `.planning/HANDOFF.md` (marcadores CI_REPORT/SUPERVISOR/ORCHESTRATOR) — demais artefatos (`PRD.md`, `PLAN.md`, `arch/*`) são **em memória** via `Agent tool` e injetados como `context:` pelo `harness` (nunca em disco). **PROIBIDO criar** `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`/`CI_REPORT.md`/`SUPERVISOR_REPORT.md`/`ci_metrics.json`/`ORCHESTRATOR_STATE.json` — esses hooks atualizam HANDOFF/STATE ao invés de criar .md separados (`permission: .planning/** deny` para `planner|builder|reviewer` evita loop; guard rails bloqueia com HIGH). **Harness não deve ser re-invoacado enquanto HOOKS.log não mostrar ci-watch + supervisor done — faça polling em STATE.md/HANDOFF.md.**
 
 ## Memória e Política de Artefatos — Restrição Obrigatória
 
-- **Disco (allow):** Apenas `.planning/STATE.md` e `.planning/HANDOFF.md`, exclusivamente pelo `shipper`/hook no Gate 4.
-- **Memória (deny em disco):** `PRD.md`, `PLAN.md`, `SUMMARY.md`, `REVIEW.md`, `arch/*` retornados em memória; proibido `Write`/`Edit`/`Bash` nesses caminhos. `VALIDATION.md` removido (checker → hook guard_rails).
-- **Injeção única:** `harness` lê `STATE`/`HANDOFF` **uma vez** e injeta; macros consomem `context:` sem reler disco — evita loop de verificação.
+- **Disco (allow):** Apenas `.planning/STATE.md` e `.planning/HANDOFF.md`, exclusivamente pelos hooks `shipper`, `ci-watch`, `supervisor`, `orquestrador` (marcadores CI_REPORT/SUPERVISOR/ORCHESTRATOR). `permission` desses hooks permite apenas esses dois arquivos; `deny` para demais `.planning/**` (inclui CI_REPORT/SUPERVISOR_REPORT).
+- **Memória (deny em disco):** `PRD.md`, `PLAN.md`, `arch/*` retornados em memória; builder retorna resumo e reviewer retorna parecer **em memória** (nunca `SUMMARY.md`/`REVIEW.md`). Proibido `Write`/`Edit`/`Bash` nesses caminhos; também proibido `CI_REPORT.md`/`SUPERVISOR_REPORT.md`/`ci_metrics.json`. `VALIDATION.md`/`SUMMARY.md`/`REVIEW.md` removidos — nunca em disco (checker → hook guard_rails).
+- **Injeção única e Single-run:** `harness` lê `STATE`/`HANDOFF` **uma vez** no início e injeta; macros consomem `context:` sem reler disco — evita loop de verificação. **Harness é single-run (única invocação, bloqueante até HOOKS.log mostrar supervisor concluído)** — não re-invoque externamente.
 
 Use `/sdd-harness <pedido>` para solicitar explicitamente o fluxo.

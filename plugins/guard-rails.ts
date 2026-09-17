@@ -19,11 +19,35 @@ import type { Plugin } from "@opencode-ai/plugin";
 
 const CODE_EXT_RE = /\.(py|ts|tsx|js|jsx|mjs|cjs|css|scss|json)$/i;
 const IGNORE_RE = /(?:node_modules|\.git|\.next|dist\/|build\/|\.venv|__pycache__)/;
+// Artefatos proibidos em disco — nunca devem ser criados (bloqueio HIGH imediato)
+// Novo: CI_REPORT.md / SUPERVISOR_REPORT.md / ci_metrics.json / ORCHESTRATOR_STATE.json também são proibidos — devem ser seções em HANDOFF/STATE
+const FORBIDDEN_ARTIFACT_RE = /(?:\.planning\/(?:SUMMARY|REVIEW|VALIDATION|PRD|PLAN|CI_REPORT|SUPERVISOR_REPORT|ORCHESTRATOR_STATE|COORCHESTRATOR_STATE)\.md$|\.planning\/arch\/|(?:^|\/)(?:SUMMARY|REVIEW|VALIDATION|CI_REPORT|SUPERVISOR_REPORT)\.md$|\.planning\/(?:ci_metrics|supervisor_metrics|CI_RETRIES|ORCHESTRATOR_STATE|COORCHESTRATOR_STATE)\.json$)/i;
+const FORBIDDEN_BASENAME_RE = /^(?:SUMMARY|REVIEW|VALIDATION|CI_REPORT|SUPERVISOR_REPORT)\.md$/i;
 
 function isCodeFile(path: string | undefined): boolean {
   if (!path) return false;
   if (IGNORE_RE.test(path)) return false;
   return CODE_EXT_RE.test(path);
+}
+
+function isForbiddenArtifact(path: string | undefined): boolean {
+  if (!path) return false;
+  // verifica .planning/SUMMARY.md etc., CI_REPORT, SUPERVISOR_REPORT e jsons — agora tudo proibido como arquivo separado
+  if (FORBIDDEN_ARTIFACT_RE.test(path)) return true;
+  const base = path.split("/").pop() ?? "";
+  if (FORBIDDEN_BASENAME_RE.test(base)) return true;
+  // qualquer .planning/*.json de métricas/state separado também proibido
+  if (path.includes(".planning/") && (path.endsWith("ci_metrics.json") || path.endsWith("supervisor_metrics.json") || path.endsWith("CI_RETRIES.json") || path.endsWith("ORCHESTRATOR_STATE.json") || path.endsWith("COORCHESTRATOR_STATE.json"))) {
+    return true;
+  }
+  // bloqueia qualquer .planning/*.md que não seja STATE/HANDOFF/HOOKS (single source; CI_REPORT etc agora são seções)
+  if (path.includes(".planning/") && path.endsWith(".md")) {
+    if (path.includes(".planning/codebase")) return false;
+    const allowed = ["STATE.md", "HANDOFF.md"]; // sem CI_REPORT/SUPERVISOR_REPORT — são marcadores em HANDOFF/STATE
+    const isAllowed = allowed.some((a) => path.endsWith(a));
+    if (!isAllowed && /(?:SUMMARY|REVIEW|VALIDATION|PRD|PLAN|CI_REPORT|SUPERVISOR_REPORT|ORCHESTRATOR)/i.test(path)) return true;
+  }
+  return false;
 }
 
 function extractFilePath(tool: string, args: any): string | undefined {
@@ -218,6 +242,30 @@ export const GuardRailsPlugin: Plugin = async ({ $, directory, client }) => {
       const args = output?.args ?? input?.args ?? {};
       const filePath = extractFilePath(tool, args);
       if (!filePath) return;
+
+      // ── Bloqueio prioritário: artefatos proibidos (SUMMARY/REVIEW/VALIDATION/CI_REPORT/SUPERVISOR_REPORT/etc) sempre HIGH, mesmo se não for code file — devem ser seções em HANDOFF/STATE ──
+      if (isForbiddenArtifact(filePath)) {
+        const msg = `⛔ GUARD_RAILS_BLOCKED: ${filePath} — artefato proibido (SUMMARY/REVIEW/VALIDATION/CI_REPORT/SUPERVISOR_REPORT/ci_metrics etc nunca devem ser criados em disco; retorne em memória ou embarque em HANDOFF.md/STATE.md)`;
+        await client.app.log({
+          body: { service: "guard-rails", level: "error", message: msg, extra: { filePath, forbidden: true } },
+        });
+        await writeGuaranteeLog($, directory, {
+          ts: new Date().toISOString(),
+          hook: "guard-rails",
+          file: filePath,
+          trigger: "tool.execute.after:forbidden-artifact",
+          duration_ms: 0,
+          exit_code: 2,
+          blocked: true,
+          high: 1,
+          med: 0,
+          status: "blocked",
+          error: "forbidden_artifact",
+          message: msg,
+        });
+        throw new Error(`${msg} — Log: .planning/HOOKS.log`);
+      }
+
       if (!isCodeFile(filePath)) return;
 
       // evita loop se o próprio guard criar log (inclui HOOKS.log)
@@ -245,7 +293,28 @@ export const GuardRailsPlugin: Plugin = async ({ $, directory, client }) => {
     event: async ({ event }: any) => {
       if (event?.type !== "file.edited" && event?.type !== "file.watcher.updated") return;
       const filePath: string | undefined = event?.properties?.path ?? event?.path ?? event?.file;
-      if (!filePath || !isCodeFile(filePath)) return;
+      if (!filePath) return;
+      // bloqueio prioritário para artefatos proibidos mesmo via watcher
+      if (isForbiddenArtifact(filePath)) {
+        await client.app.log({
+          body: { service: "guard-rails", level: "error", message: `⛔ Guard Rails bloqueou artefato proibido via watcher: ${filePath}` },
+        });
+        await writeGuaranteeLog($, directory, {
+          ts: new Date().toISOString(),
+          hook: "guard-rails",
+          file: filePath,
+          trigger: "event:file.edited:forbidden",
+          duration_ms: 0,
+          exit_code: 2,
+          blocked: true,
+          high: 1,
+          med: 0,
+          status: "blocked",
+          error: "forbidden_artifact",
+        });
+        return;
+      }
+      if (!isCodeFile(filePath)) return;
       if (filePath.includes("guard-rails.log") || filePath.includes("HOOKS.log") || filePath.includes("hook-audit")) return;
       try {
         await runGuardRails($, directory, filePath, client);

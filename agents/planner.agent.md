@@ -81,6 +81,6 @@ Retorne ao harness: `{PRD.md, PLAN.md, arch/*}` em memória + resumo, decisões,
 ## Rules
 - Nunca propor código antes de PRD+PLAN aprovados.
 - Nunca criar PRDs paralelos (só `PRD.md` oficial em memória, injetado via `context:`).
-- **Memória única:** Nunca escrever `.planning/PRD.md`/`.planning/PLAN.md`/`.planning/arch/**` em disco — `permission: .planning/** deny`; sempre retornar em memória. Só `shipper` escreve `STATE.md`/`HANDOFF.md`.
+- **Memória única:** Nunca escrever `.planning/PRD.md`/`.planning/PLAN.md`/`.planning/arch/**` em disco — `permission: .planning/** deny`; sempre retornar em memória. **NUNCA crie** `.planning/SUMMARY.md`, `.planning/REVIEW.md` ou `.planning/VALIDATION.md`. Só `shipper` escreve `STATE.md`/`HANDOFF.md`.
 - Português padrão.
 - Detalhes em `commands/harness.prompt.md`.
