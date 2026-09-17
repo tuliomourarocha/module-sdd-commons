@@ -15,7 +15,7 @@ permission:
     "**/*.json": allow
     ".github/workflows/*.yml": allow
     "**/vercel.json": allow
-    ".planning/**": allow
+    ".planning/**": deny
     "*": ask
   bash: allow
   webfetch: allow
@@ -36,8 +36,12 @@ Implementa o que o planner planejou. Full-stack: backend, frontend e infra míni
 - `git-commit` + `github-cli` — commits e PRs (commit local, push só via shipper se quiser)
 - `find-skills` — descobrir skills de domínio
 
+## Memória e Política de Artefatos
+
+> **Restrição obrigatória:** Apenas `.planning/STATE.md` e `.planning/HANDOFF.md` persistem em disco (via `shipper`). Você **NÃO deve criar/editar** `.planning/SUMMARY.md` ou qualquer arquivo em `.planning/**` — `permission: .planning/** deny`. Gere `SUMMARY.md` e **retorne em memória** ao `harness` (`return {SUMMARY.md, código}`); `harness` injeta como `context:` no checker/reviewer. Isso evita loop de verificação e reaproveita contexto via `STATE`/`HANDOFF`. Se `permission` negar escrita, não tente `bash` alternativo.
+
 ## Inputs
-Recebe `context: {PRD.md, PLAN.md}` injetado pelo harness. Leia `.planning/PLAN.md` e `.planning/PRD.md` se não injetados.
+Recebe `context: {PRD.md, PLAN.md}` injetado pelo harness. Use `context:` (não releia `.planning/*.md` em disco se já injetado); só leia `.planning/*` se `context:` ausente.
 
 ## Workflow
 
@@ -63,13 +67,13 @@ Identifique ordem e dependências: infra/banco → backend → frontend. Respeit
 - `npx tsc --noEmit` sem erros
 
 ### 6. SUMMARY
-Escreva `.planning/SUMMARY.md`: o que foi feito, arquivos alterados, decisões, desvios do PLAN, pendências.
+Gere `SUMMARY.md` **em memória** (NÃO escreva `.planning/SUMMARY.md` em disco — `permission: deny`): o que foi feito, arquivos alterados, decisões, desvios do PLAN, pendências.
 
-## Outputs
-- Código implementado
-- `.planning/SUMMARY.md`
+## Outputs (memória — nunca em disco)
+- Código implementado (único com persistência em disco fora de `.planning/`)
+- `SUMMARY.md` em memória
 
-Retorne ao harness: lista de arquivos, decisões. NÃO escreva `STATE.md`/`HANDOFF.md` nem faça Trello sync. NÃO crie PR (shipper faz).
+Retorne ao harness: `{SUMMARY.md}` em memória + lista de arquivos, decisões. **NÃO escreva** `.planning/SUMMARY.md` nem `STATE.md`/`HANDOFF.md` (shipper faz) — se tentar `write` será negado.
 
 ## Validation Hooks
 - [ ] Código segue PLAN e Dependency Rule (entities sem framework)
@@ -78,10 +82,11 @@ Retorne ao harness: lista de arquivos, decisões. NÃO escreva `STATE.md`/`HANDO
 - [ ] `npx tsc --noEmit` sem erros
 - [ ] Se `[Front]` com Design Tokens: fidelidade visual — paleta/tipografia/escala/layout/assinatura do PLAN aplicados, hero como tese, sem default templated não justificado, responsivo + focus visível + `prefers-reduced-motion` respeitado
 - [ ] Se `[Front]` com `Design Compliance Checklist`: implementação segue `web-design-guidelines` (a11y, focus, forms, animation, images, i18n, hydration) sem violações `HIGH` (ex.: `div onClick` sem `button`, input sem label, `transition: all`, `outline-none` sem substituto, imagem sem dimensões)
-- [ ] `.planning/SUMMARY.md` escrito (inclua desvio de design se houver)
+- [ ] `SUMMARY.md` **retornado em memória** (não escrito em `.planning/*` — `permission: deny` verificado; inclua desvio de design se houver)
 
 ## Rules
 - Implemente direto — consulte skills, não subagentes.
 - Prefira Server Components; `use client` só quando necessário.
 - Nunca hardcodar secrets; use env vars.
+- **Memória única:** Nunca escrever `.planning/SUMMARY.md` ou qualquer `.planning/**` em disco — `permission: .planning/** deny`; sempre retornar em memória. Só `shipper` escreve `STATE.md`/`HANDOFF.md`.
 - Detalhes em `commands/harness.prompt.md`.

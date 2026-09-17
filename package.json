@@ -11,6 +11,8 @@
     "agents",
     "commands",
     "skills",
+    "hooks",
+    "plugins",
     "bin",
     "platforms"
   ],

@@ -12,6 +12,7 @@ permission:
     "**/*.jsx": allow
     "**/*.css": allow
     "**/*.json": allow
+    ".planning/**": deny
   bash:
     "npm run lint": allow
     "npm run lint:*": allow
@@ -38,8 +39,12 @@ Revisa código sem rodar testes (checker faz). Lint, typecheck, arquitetura, seg
 - `web-design-guidelines` — **fit perfeito (review principal)**: quando `[Front]`/UI visível, faz `WebFetch` em `https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md` e audita `file:line` contra Accessibility, Focus States, Forms, Animation, Typography, Images, Performance, Navigation, Touch, Safe Areas, Dark Mode, Locale & i18n, Hydration, Hover; reporte terse `arquivo:linha — regra — severidade`; complementa `frontend-design` (estética) com conformidade
 - `mermaid-diagrams` — validar aderência a diagramas do PLAN (se houver)
 
+## Memória e Política de Artefatos
+
+> **Restrição obrigatória:** Apenas `.planning/STATE.md` e `.planning/HANDOFF.md` persistem em disco (via `shipper`). Você **NÃO deve criar/editar** `.planning/REVIEW.md` ou qualquer arquivo em `.planning/**` — `permission: .planning/** deny`. Gere `REVIEW.md` e **retorne em memória** ao `harness`; `harness` injeta como `context:` no shipper. Isso evita loop de verificação e reaproveita contexto.
+
 ## Inputs
-Recebe `context: {PLAN.md, SUMMARY.md, git diff}` injetado pelo harness. Rode `git diff --stat` e `git diff` para ver mudanças.
+Recebe `context: {PLAN.md, SUMMARY.md, git diff}` injetado pelo harness (não releia `.planning/*.md` em disco se já injetado). Rode `git diff --stat` e `git diff` para ver mudanças.
 
 ## Workflow
 
@@ -59,13 +64,13 @@ Recebe `context: {PLAN.md, SUMMARY.md, git diff}` injetado pelo harness. Rode `g
 `HIGH` (bloqueia) / `MED` (deve corrigir) / `LOW` (sugestão). HIGH = Dependency Rule quebrada, `any`, secret vazado, `tsc` erro.
 
 ### 4. Reportar
-Escreva `.planning/REVIEW.md` com lista `arquivo:linha — severidade — descrição`. Se zero HIGH/MED: "✅ Aprovado".
+Gere `REVIEW.md` **em memória** (NÃO escreva `.planning/REVIEW.md` em disco — `permission: deny`) com lista `arquivo:linha — severidade — descrição`. Se zero HIGH/MED: "✅ Aprovado".
 
-## Outputs
-- Auto-fix aplicado onde possível
-- `.planning/REVIEW.md`
+## Outputs (memória — nunca em disco fora de auto-fix)
+- Auto-fix aplicado onde possível (único com persistência em disco fora de `.planning/`)
+- `REVIEW.md` em memória
 
-Retorne ao harness: `aprovado | warnings | blockers` + contagem por severidade. NÃO escreva `STATE.md`/`HANDOFF.md` nem Trello.
+Retorne ao harness: `{REVIEW.md}` em memória + `aprovado | warnings | blockers` + contagem. **NÃO escreva** `.planning/REVIEW.md` nem `STATE.md`/`HANDOFF.md` (shipper faz) — se tentar `write` será negado.
 
 ## Validation Hooks
 - [ ] `npm run lint` + `npx tsc --noEmit` executados
@@ -74,9 +79,10 @@ Retorne ao harness: `aprovado | warnings | blockers` + contagem por severidade. 
 - [ ] Se `frontend-design` ativo: fidelidade design (tokens, sem default templated, hero, tipografia, responsivo, focus, reduced-motion) reportada em `REVIEW.md` com severidade `MED`/`LOW`
 - [ ] Se `web-design-guidelines` ativo: auditoria `file:line` agrupada por arquivo contra guidelines Vercel (via WebFetch) incluída em `REVIEW.md`; `HIGH` para `outline-none` nu, `div onClick`, input sem label, `user-scalable=no`, `transition: all` sem necessidade
 - [ ] Infra: sem secrets, workflows válidos
-- [ ] `.planning/REVIEW.md` escrito com severidades (inclui seção `## src/File.tsx` com `✓ pass` ou lista `arquivo:linha — regra`)
+- [ ] `REVIEW.md` **retornado em memória** com severidades (inclui seção `## src/File.tsx` com `✓ pass` ou lista `arquivo:linha — regra`) — não escrito em `.planning/*` (`permission: deny` verificado)
 
 ## Rules
 - Nunca desabilitar regra sem `// eslint-disable-next-line reason`.
 - Se aprovado sem issues: "✅ Código aprovado".
+- **Memória única:** Nunca escrever `.planning/REVIEW.md` ou qualquer `.planning/**` em disco — `permission: .planning/** deny`; sempre retornar em memória. Só `shipper` escreve `STATE.md`/`HANDOFF.md`.
 - Detalhes em `commands/harness.prompt.md`.

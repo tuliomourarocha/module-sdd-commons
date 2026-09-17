@@ -24,5 +24,13 @@ test("instala adaptadores com os provedores esperados", async () => {
     checker: "gpt-5.6-luna", reviewer: "gpt-5.6-terra", shipper: "gpt-5.6-terra",
   });
   assert.equal((await stat(path.join(target, ".codex", "skills", "sdd-harness", "SKILL.md"))).isFile(), true);
-  assert.equal((await readdir(path.join(target, ".codex", "roles"))).length, 6);
+  // 6 macros originais + supervisor (hook final)
+  assert.equal((await readdir(path.join(target, ".codex", "roles"))).length, 7);
+  // valida hooks determinísticos instalados
+  assert.equal((await stat(path.join(target, ".opencode", "plugins", "guard-rails.ts"))).isFile(), true);
+  assert.equal((await stat(path.join(target, ".opencode", "plugins", "supervisor.ts"))).isFile(), true);
+  assert.equal((await stat(path.join(target, ".opencode", "hooks", "guard_rails.py"))).isFile(), true);
+  assert.equal((await stat(path.join(target, ".opencode", "hooks", "supervisor.py"))).isFile(), true);
+  assert.equal((await stat(path.join(target, ".claude", "settings.json"))).isFile(), true);
+  assert.equal((await stat(path.join(target, ".claude", "hooks", "guard_rails.py"))).isFile(), true);
 });

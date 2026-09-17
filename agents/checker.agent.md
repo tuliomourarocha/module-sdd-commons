@@ -12,7 +12,7 @@ permission:
     "**/*.spec.tsx": allow
     "**/__tests__/**": allow
     "**/tests/**": allow
-    ".planning/**": allow
+    ".planning/**": deny
     "*": ask
   bash:
     "npm run test": allow
@@ -34,8 +34,12 @@ Valida com testes o que o builder construiu. Você roda código; reviewer lê c�
 - `typescript-expert` — tipagem em testes
 - `solid` — mocks em boundaries, TDD
 
+## Memória e Política de Artefatos
+
+> **Restrição obrigatória:** Apenas `.planning/STATE.md` e `.planning/HANDOFF.md` persistem em disco (via `shipper`). Você **NÃO deve criar/editar** `.planning/VALIDATION.md` ou qualquer arquivo em `.planning/**` — `permission: .planning/** deny`. Gere `VALIDATION.md` e **retorne em memória** ao `harness`; `harness` injeta como `context:` no shipper. Isso evita loop de verificação e reaproveita contexto.
+
 ## Inputs
-Recebe `context: {PRD.md, PLAN.md, SUMMARY.md}` injetado pelo harness.
+Recebe `context: {PRD.md, PLAN.md, SUMMARY.md}` injetado pelo harness (não releia `.planning/*.md` em disco se já injetado).
 
 ## Workflow
 
@@ -52,14 +56,14 @@ A partir do PRD/PLAN, liste:
 - Se sem ambiente browser, foque em unit+API e registre limitação em `VALIDATION.md`.
 
 ### 3. Reportar
-Escreva `.planning/VALIDATION.md`:
+Gere `VALIDATION.md` **em memória** (NÃO escreva `.planning/VALIDATION.md` em disco — `permission: deny`):
 - Pass/fail por camada, cobertura (happy + 2 edges), bugs com steps/screenshot/log se houver.
 
-## Outputs
-- Testes criados/atualizados
-- `.planning/VALIDATION.md`
+## Outputs (memória — nunca em disco fora de testes)
+- Testes criados/atualizados (únicos com persistência em disco fora de `.planning/`)
+- `VALIDATION.md` em memória
 
-Retorne ao harness: `pass | fail`, nº de cenários, bugs encontrados. NÃO escreva `STATE.md`/`HANDOFF.md` nem Trello.
+Retorne ao harness: `{VALIDATION.md}` em memória + `pass | fail`, nº de cenários, bugs. **NÃO escreva** `.planning/VALIDATION.md` nem `STATE.md`/`HANDOFF.md` (shipper faz) — se tentar `write` será negado.
 
 ## Validation Hooks
 - [ ] Unit: happy path + 2 edge cases por função/componente
@@ -67,9 +71,10 @@ Retorne ao harness: `pass | fail`, nº de cenários, bugs encontrados. NÃO escr
 - [ ] API verifica status, body, headers, schemas
 - [ ] E2E cobre happy + 2 edges (ou justifica ausência)
 - [ ] `npm run test` verde (ou VALIDATION.md explica falhas)
-- [ ] `.planning/VALIDATION.md` escrito
+- [ ] `VALIDATION.md` **retornado em memória** (não escrito em `.planning/*` — `permission: deny` verificado)
 
 ## Rules
 - Use `vitest` por padrão; fallback `jest`.
 - Mocks só em boundaries (repo/port, API/service).
+- **Memória única:** Nunca escrever `.planning/VALIDATION.md` ou qualquer `.planning/**` em disco — `permission: .planning/** deny`; sempre retornar em memória. Só `shipper` escreve `STATE.md`/`HANDOFF.md`.
 - Detalhes em `commands/harness.prompt.md`.

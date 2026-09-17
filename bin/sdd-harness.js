@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { cp, mkdir, readFile, writeFile, access } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile, access, chmod } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -105,7 +105,10 @@ const descriptions = {
   checker: "Cria e executa testes; gera VALIDATION.md.",
   reviewer: "Faz revisão estática, lint e typecheck; gera REVIEW.md.",
   shipper: "Finaliza o ciclo com git, PR, CI e estado do projeto.",
+  supervisor: "Audita ciclo completo, mede performance/alucinações/tokens e cria Issue. Acionado por hook final.",
 };
+
+const HOOKS_SUPERVISOR_REPO = "tuliomourarocha/module-sdd-commons";
 
 async function installOpenCode(target, dryRun) {
   const root = path.join(target, ".opencode");
@@ -120,9 +123,60 @@ async function installOpenCode(target, dryRun) {
         await rm(oldFile);
       }
     }
+    // supervisor é subagent adicional — também normaliza .agent.md → .md se existir
+    const supOld = path.join(root, "agents", "supervisor.agent.md");
+    const supNew = path.join(root, "agents", "supervisor.md");
+    if (await exists(supOld)) {
+      await writeFile(supNew, await readFile(supOld));
+      const { rm } = await import("node:fs/promises");
+      await rm(supOld);
+    }
   }
   await copyDirectory(path.join(sourceRoot, "commands"), path.join(root, "commands"), dryRun);
   await copyDirectory(path.join(sourceRoot, "skills"), path.join(root, "skills"), dryRun);
+  // ── Hooks determinísticos (guard rails + supervisor) ──────────────────
+  // plugins: copiados para .opencode/plugins/ (auto-load pelo opencode)
+  if (await exists(path.join(sourceRoot, "plugins"))) {
+    await copyDirectory(path.join(sourceRoot, "plugins"), path.join(root, "plugins"), dryRun);
+  }
+  // hooks python: copiados para .opencode/hooks/ e também hooks/ na raiz do target para fallback
+  if (await exists(path.join(sourceRoot, "hooks"))) {
+    await copyDirectory(path.join(sourceRoot, "hooks"), path.join(root, "hooks"), dryRun);
+    // também espelha em <target>/hooks para compat com Claude/Codex e fallback do plugin
+    await copyDirectory(path.join(sourceRoot, "hooks"), path.join(target, "hooks"), dryRun);
+    if (!dryRun) {
+      // garantir permissão de execução nos scripts python
+      for (const script of ["guard_rails.py", "supervisor.py"]) {
+        const p1 = path.join(root, "hooks", script);
+        const p2 = path.join(target, "hooks", script);
+        for (const p of [p1, p2]) {
+          if (await exists(p)) await chmod(p, 0o755).catch(() => {});
+        }
+      }
+    }
+  }
+  // garante .opencode/package.json com @opencode-ai/plugin para plugins TS tipados
+  if (!dryRun) {
+    const pkgPath = path.join(root, "package.json");
+    let pkg = {};
+    if (await exists(pkgPath)) {
+      try { pkg = JSON.parse(await readFile(pkgPath, "utf8")); } catch { pkg = {}; }
+    }
+    pkg.dependencies = pkg.dependencies || {};
+    if (!pkg.dependencies["@opencode-ai/plugin"]) {
+      pkg.dependencies["@opencode-ai/plugin"] = "^1.17.11";
+      await mkdir(root, { recursive: true });
+      await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+    }
+  }
+  // template opencode.json se não existir no target
+  if (!dryRun && await exists(path.join(sourceRoot, "platforms", "opencode", "opencode.json"))) {
+    const targetOpencodeJson = path.join(target, "opencode.json");
+    const dotOpencodeJson = path.join(root, "opencode.json");
+    if (!(await exists(targetOpencodeJson)) && !(await exists(dotOpencodeJson))) {
+      await writeFile(targetOpencodeJson, await readFile(path.join(sourceRoot, "platforms", "opencode", "opencode.json")));
+    }
+  }
   return root;
 }
 
@@ -134,9 +188,31 @@ async function installClaude(target, dryRun) {
       const body = (await agentBody(role)).replaceAll("task()", "Agent tool");
       await writeFile(path.join(root, "agents", `${role}.md`), `---\n${claudeFrontmatter(role)}\n---\n\n${body}\n`);
     }
+    // supervisor para Claude também
+    if (await exists(path.join(sourceRoot, "agents", "supervisor.agent.md"))) {
+      const supBody = (await readFile(path.join(sourceRoot, "agents", "supervisor.agent.md"), "utf8")).split(/^---\s*$/m).slice(2).join("---").trim().replaceAll("task()", "Agent tool");
+      const supFm = `name: supervisor\ndescription: ${descriptions.supervisor}\nmodel: haiku\nmaxTurns: 15`;
+      await writeFile(path.join(root, "agents", "supervisor.md"), `---\n${supFm}\n---\n\n${supBody}\n`);
+    }
     await mkdir(path.join(root, "commands"), { recursive: true });
     await writeFile(path.join(root, "commands", "sdd-harness.md"), await readFile(path.join(sourceRoot, "platforms", "claude", "sdd-harness-command.md")));
     await writeFile(path.join(root, "CLAUDE.md"), await readFile(path.join(sourceRoot, "platforms", "claude", "CLAUDE.md")));
+    // hooks determinísticos Claude: settings.json + scripts em .claude/hooks/
+    if (await exists(path.join(sourceRoot, "platforms", "claude", "hooks"))) {
+      await copyDirectory(path.join(sourceRoot, "platforms", "claude", "hooks"), path.join(root, "hooks"), dryRun);
+      for (const script of ["guard_rails.py", "supervisor.py"]) {
+        const p = path.join(root, "hooks", script);
+        if (await exists(p)) await chmod(p, 0o755).catch(() => {});
+      }
+    }
+    if (await exists(path.join(sourceRoot, "platforms", "claude", "settings.json"))) {
+      await mkdir(root, { recursive: true });
+      await writeFile(path.join(root, "settings.json"), await readFile(path.join(sourceRoot, "platforms", "claude", "settings.json")));
+    }
+    // fallback: se platforms/claude não tem hooks, copia de hooks/ raiz
+    if (!(await exists(path.join(root, "hooks", "guard_rails.py"))) && await exists(path.join(sourceRoot, "hooks"))) {
+      await copyDirectory(path.join(sourceRoot, "hooks"), path.join(root, "hooks"), dryRun);
+    }
   }
   await copyDirectory(path.join(sourceRoot, "skills"), path.join(root, "skills"), dryRun);
   return root;
@@ -149,12 +225,23 @@ async function installCodex(target, dryRun) {
     for (const role of Object.keys(claudeRoleModels)) {
       await writeFile(path.join(root, "roles", `${role}.md`), `${await agentBody(role)}\n`);
     }
+    if (await exists(path.join(sourceRoot, "agents", "supervisor.agent.md"))) {
+      await writeFile(path.join(root, "roles", "supervisor.md"), `${await agentBody("supervisor")}\n`);
+    }
     await writeFile(
       path.join(root, "sdd-harness.json"),
       `${JSON.stringify({ provider: "openai", roleModels: codexRoleModels }, null, 2)}\n`,
     );
     await mkdir(path.join(root, "skills", "sdd-harness"), { recursive: true });
     await writeFile(path.join(root, "skills", "sdd-harness", "SKILL.md"), await readFile(path.join(sourceRoot, "platforms", "codex", "SKILL.md")));
+    // hooks determinísticos Codex: copia para .codex/hooks/
+    if (await exists(path.join(sourceRoot, "hooks"))) {
+      await copyDirectory(path.join(sourceRoot, "hooks"), path.join(root, "hooks"), dryRun);
+      for (const script of ["guard_rails.py", "supervisor.py"]) {
+        const p = path.join(root, "hooks", script);
+        if (await exists(p)) await chmod(p, 0o755).catch(() => {});
+      }
+    }
   }
   await copyDirectory(path.join(sourceRoot, "skills"), path.join(root, "skills"), dryRun);
   return root;

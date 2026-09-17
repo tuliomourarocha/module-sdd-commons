@@ -182,6 +182,60 @@ install_agents_md() {
   ok "AGENTS.md"
 }
 
+install_plugins() {
+  local src="$1"
+  local dst="$TARGET/plugins"
+  mkdir -p "$dst"
+  local count=0
+  shopt -s nullglob
+  for f in "$src"/*.ts "$src"/*.js; do
+    [ -f "$f" ] || continue
+    cp "$f" "$dst/$(basename "$f")"
+    count=$((count + 1))
+  done
+  shopt -u nullglob
+  [ "$count" -gt 0 ] && ok "plugins ($count arquivos)" || skip "plugins: nenhum arquivo encontrado"
+}
+
+install_hooks() {
+  local src="$1"
+  local dst="$TARGET/hooks"
+  mkdir -p "$dst"
+  local count=0
+  shopt -s nullglob
+  for f in "$src"/*.py "$src"/*.sh "$src"/*.md; do
+    [ -f "$f" ] || continue
+    cp "$f" "$dst/$(basename "$f")"
+    [[ "$f" == *.py || "$f" == *.sh ]] && chmod +x "$dst/$(basename "$f")" 2>/dev/null || true
+    count=$((count + 1))
+  done
+  shopt -u nullglob
+  # também espelha em <target>/hooks quando TARGET é .opencode (para fallback Claude/Codex)
+  if [[ "$TARGET" == *.opencode ]]; then
+    local alt="$(dirname "$TARGET")/hooks"
+    mkdir -p "$alt"
+    shopt -s nullglob
+    for f in "$src"/*.py "$src"/*.sh "$src"/*.md; do
+      [ -f "$f" ] || continue
+      cp "$f" "$alt/$(basename "$f")"
+      [[ "$f" == *.py || "$f" == *.sh ]] && chmod +x "$alt/$(basename "$f")" 2>/dev/null || true
+    done
+    shopt -u nullglob
+  fi
+  # .opencode/hooks também precisa quando TARGET não é .opencode (ex: .claude)
+  if [[ "$TARGET" != *.opencode ]] && [ -d "$SRC_ROOT/hooks" ]; then
+    mkdir -p ".opencode/hooks"
+    shopt -s nullglob
+    for f in "$SRC_ROOT"/hooks/*.py "$SRC_ROOT"/hooks/*.sh "$SRC_ROOT"/hooks/*.md; do
+      [ -f "$f" ] || continue
+      cp "$f" ".opencode/hooks/$(basename "$f")"
+      [[ "$f" == *.py || "$f" == *.sh ]] && chmod +x ".opencode/hooks/$(basename "$f")" 2>/dev/null || true
+    done
+    shopt -u nullglob
+  fi
+  [ "$count" -gt 0 ] && ok "hooks ($count scripts python)" || skip "hooks: nenhum script encontrado"
+}
+
 install_github() {
   local src="$1"
   local dst="$TARGET/.github"
@@ -275,6 +329,20 @@ main() {
       skip "packs: diretório não encontrado"
     fi
 
+    # Plugins (hooks determinísticos)
+    if has_dir "plugins"; then
+      install_plugins "$SRC_ROOT/plugins"
+    else
+      skip "plugins: diretório não encontrado"
+    fi
+
+    # Hooks python (guard rails + supervisor)
+    if has_dir "hooks"; then
+      install_hooks "$SRC_ROOT/hooks"
+    else
+      skip "hooks: diretório não encontrado"
+    fi
+
     # AGENTS.md
     if has_file "AGENTS.md"; then
       install_agents_md "$SRC_ROOT/AGENTS.md"
@@ -288,10 +356,37 @@ main() {
     install_github "$SRC_ROOT/.github"
   fi
 
+  # Hooks/Plugins mesmo quando .claude/ existe (são sempre necessários)
+  if has_dir ".claude" && has_dir "plugins" && [ ! -d "$TARGET/plugins" ]; then
+    install_plugins "$SRC_ROOT/plugins"
+  fi
+  if has_dir ".claude" && has_dir "hooks" && [ ! -d "$TARGET/hooks" ]; then
+    install_hooks "$SRC_ROOT/hooks"
+  fi
+
+  # Garante .opencode/package.json com @opencode-ai/plugin para plugins tipados
+  if [ -d "$SRC_ROOT/plugins" ] && [ -f "$TARGET/plugins/guard-rails.ts" ]; then
+    local pkg_file="$TARGET/package.json"
+    if [ ! -f "$pkg_file" ]; then
+      echo '{"dependencies":{"@opencode-ai/plugin":"^1.17.11"}}' | python3 -m json.tool > "$pkg_file"
+      ok ".opencode/package.json (criado com @opencode-ai/plugin)"
+    elif ! grep -q "@opencode-ai/plugin" "$pkg_file"; then
+      python3 -c "
+import json, pathlib
+p = pathlib.Path('$pkg_file')
+j = json.loads(p.read_text())
+j.setdefault('dependencies', {})['@opencode-ai/plugin'] = '^1.17.11'
+p.write_text(json.dumps(j, indent=2) + '\n')
+"
+      ok ".opencode/package.json (atualizado com @opencode-ai/plugin)"
+    fi
+  fi
+
   echo ""
   ok "Instalação concluída!"
   echo ""
   info "Para verificar os arquivos instalados: ls -la $TARGET/"
+  info "Hooks determinísticos: .opencode/plugins/guard-rails.ts (pós-edição) + supervisor.ts (final) → Ver hooks/README.md"
 }
 
 main
