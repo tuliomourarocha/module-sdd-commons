@@ -26,16 +26,16 @@ permissions:
     effect: allow
   # 3) Única leitura permitida: os 2 arquivos de estado, uma vez no início (caminho relativo e absoluto).
   - action: read
-    resource: .planning/STATE.md
+    resource: ".planning/STATE.md"
     effect: allow
   - action: read
-    resource: .planning/HANDOFF.md
+    resource: ".planning/HANDOFF.md"
     effect: allow
   - action: read
-    resource: */.planning/STATE.md
+    resource: "*/.planning/STATE.md"
     effect: allow
   - action: read
-    resource: */.planning/HANDOFF.md
+    resource: "*/.planning/HANDOFF.md"
     effect: allow
 ---
 
