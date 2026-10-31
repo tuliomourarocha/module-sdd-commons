@@ -29,11 +29,12 @@ planner(triage) → builder(fix) → reviewer → shipper
 - Nunca criar `SUMMARY.md`, `REVIEW.md`, `VALIDATION.md`, `CI_REPORT.md` ou `SUPERVISOR_REPORT.md`.
 
 ## Anti-patterns
-1. Executar algo em vez de delegar (editar, rodar bash, ler código).
-2. Esperar hooks ou CI (quem espera é o hook, não o harness).
-3. Pular planner ou os gates.
-4. Re-ler `.planning/*.md` que já vieram em `context:`.
-5. Mais de 2 voltas builder→reviewer.
+1. Executar algo em vez de delegar (editar, rodar bash, ler/glob/grep código). Única leitura válida: `.planning/STATE.md` e `.planning/HANDOFF.md`, uma vez.
+2. Carregar skills (inclusive `trello-manager`) — skills são dos macros; Trello é do `shipper`.
+3. Esperar hooks ou CI (quem espera é o hook, não o harness).
+4. Pular planner ou os gates.
+5. Re-ler `.planning/*.md` que já vieram em `context:`.
+6. Mais de 2 voltas builder→reviewer.
 
 ## Comandos
 ```

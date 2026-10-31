@@ -48,7 +48,7 @@ Fluxos: `feature` (planner→builder→reviewer→shipper(hook)→ci-watch→sup
 - **Injeção única:** `harness` lê `STATE.md`/`HANDOFF.md` **uma vez** no início e repassa; macros **NÃO** releem `.planning/*.md` se já injetado — usam o `context:` recebido. Releitura só se `context:` ausente.
 - **Reaproveitamento:** `STATE` guarda `flow`, `gate`, `artifacts status`, `next step`; `HANDOFF` guarda o que foi feito, arquivos alterados, decisões e pendências — próximo agente consome sem re-verificar artefatos antigos.
 - **Permissions por agente:**
-  - `harness`: `edit: deny`, `bash: deny` (só orquestra).
+  - `harness`: `edit: deny`, `bash: deny`, `skill: deny`, `glob/grep: deny`, `read` allow apenas para `.planning/STATE.md` e `.planning/HANDOFF.md` (só delega — exploração, skills e Trello pertencem aos macros/`shipper`, hooks viram hooks).
   - `planner|builder|reviewer`: `edit: deny` para `.planning/**` (inclui `PRD/PLAN/SUMMARY/REVIEW/VALIDATION/arch`), `allow` apenas para código-fonte do escopo do gate; tentativa de escrita em `.planning/**` é bloqueada (especialmente `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md` → `HIGH`). Guard rails em hooks, não em agents.
   - `shipper`: `edit: allow` apenas para `.planning/HANDOFF.md` e `.planning/STATE.md` (fallback minimal); `deny` para demais `.planning/**`. Hook `shipper.py` é primário para git/PR/Trello.
 - **Violação:** Se um agente tentar `write` em `.planning/PRD.md` etc., o sistema nega por `permission` e o agente deve retornar o conteúdo em memória em vez de persistir. CI/review deve apontar `HIGH` se detectar artefato fora de `STATE`/`HANDOFF` criado em disco. Criação de `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md` é sempre `HIGH`.

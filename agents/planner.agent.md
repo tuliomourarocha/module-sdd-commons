@@ -1,7 +1,7 @@
 ---
 description: Planner — planeja produto e arquitetura. Gera PRD, PLAN e diagramas. Funde PO + TechLead + Architecture Reviewer.
 mode: all
-model: opencode/glm-5.3-flash-free#max
+model: opencode/beam-free#max
 temperature: 0.25
 steps: 20
 permission:
