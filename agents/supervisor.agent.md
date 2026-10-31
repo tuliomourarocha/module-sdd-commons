@@ -1,6 +1,6 @@
 ---
 description: Supervisor — audita ciclo completo, mede performance/alucinações/tokens e cria Issue no repo module-sdd-commons. Acionado por hook determinístico final.
-mode: subagent
+mode: all
 model: opencode/mimo-v2.6-flash-free
 temperature: 0.1
 steps: 15
