@@ -1,7 +1,7 @@
 ---
 description: Harness — orquestrador. Só delega (subagent) para planner/builder/reviewer/shipper. Nunca executa, nunca explora, nunca carrega skills.
-mode: all
-model: opencode/nemotron-3.5-lightning-free
+mode: primary
+model: opencode/gpt-6-luna#low
 steps: 30
 permissions:
   # 1) Nega TODA ação por padrão (edit, shell, read, glob, grep, webfetch, websearch, skill, execute, mcp, image...)
