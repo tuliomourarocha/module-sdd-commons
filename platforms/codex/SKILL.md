@@ -18,7 +18,7 @@ modelos está em `../../sdd-harness.json`.
 - Planner → Builder → Reviewer (só arquitetura) → Shipper(hook).
 - Preserve os dois gates humanos definidos pelo harness (após planner e após reviewer). Guard rails são hooks, não gates.
 - Apenas Shipper, ci-watch, supervisor e orquestrador (hooks) escrevem `.planning/STATE.md` e `.planning/HANDOFF.md` (marcadores CI_REPORT/SUPERVISOR/ORCHESTRATOR) — demais artefatos (`PRD.md`, `PLAN.md`, `arch/*`) são **em memória** e injetados como `context:` pelo `harness` (nunca em disco); builder retorna resumo e reviewer retorna parecer em memória (nunca `SUMMARY.md`/`REVIEW.md`); ci-watch/supervisor/orquestrador atualizam HANDOFF/STATE ao invés de criar `CI_REPORT.md`/`SUPERVISOR_REPORT.md`; `planner|builder|reviewer` com `deny` em `.planning/**` evita loop de verificação (guard rails bloqueia `SUMMARY/REVIEW/VALIDATION/CI_REPORT/SUPERVISOR_REPORT` com HIGH).
-- Harness é **single-run (única invocação, bloqueante até hooks finalizarem)** — não re-invoque enquanto HOOKS.log não mostrar ci-watch + supervisor done; faça polling em STATE/HANDOFF.
+- Harness **delega e encerra** — não espera hooks nem faz polling; ci-watch/supervisor rodam sozinhos.
 - Ao delegar, use o modelo OpenAI indicado para cada papel em
   `sdd-harness.json`. Não peça ao usuário para escolher modelos e não substitua
   o roteamento salvo. Em ambientes sem delegação com modelo por agente, use o
