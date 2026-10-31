@@ -1,7 +1,7 @@
 ---
 description: Reviewer — revisão de arquitetura técnica e de software. Funde architecture review + clean architecture + SOLID. Gera parecer de arquitetura em memória (não arquivo). Não roda lint/typecheck/testes (hooks fazem).
 mode: all
-model: opencode/nemotron-3.5-lightning-free
+model: opencode/glm-5.3-flash-free#high
 temperature: 0.05
 steps: 12
 permission:

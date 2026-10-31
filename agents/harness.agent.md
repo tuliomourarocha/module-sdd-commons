@@ -1,7 +1,7 @@
 ---
 description: Harness — orquestra 3 fluxos (feature/project/bugfix) delegando para 4 macros + hooks. Só roteia via task(). Guard rails em hooks, reviewer só arquitetura.
 mode: primary
-model: opencode/muse-spark-1.2-contributor-free
+model: opencode/deepseek-v4.1-flash-free#low
 temperature: 0.15
 steps: 20
 permission:

@@ -1,7 +1,7 @@
 ---
 description: Builder — implementa full-stack a partir do PLAN. Funde backend-dev + frontend-dev + devops-infra + supabase + vercel + react/next experts.
 mode: all
-model: opencode/big-pickle
+model: opencode/deepseek-v4.1-flash-free#max
 temperature: 0.2
 steps: 25
 permission:

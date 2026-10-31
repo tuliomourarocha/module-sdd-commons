@@ -1,7 +1,7 @@
 ---
 description: Shipper minimal — só persiste STATE/HANDOFF quando hook não gera conteúdo qualitativo. Git/PR/Trello/CI são hooks determinísticos.
 mode: all
-model: opencode/muse-spark-1.2-contributor-free
+model: opencode/nemotron-3.5-super-vl-free
 temperature: 0.15
 steps: 10
 permission:
