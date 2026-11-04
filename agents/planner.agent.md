@@ -1,7 +1,11 @@
 ---
 description: Planner — planeja produto e arquitetura. Gera PRD, PLAN e diagramas. Funde PO + TechLead + Architecture Reviewer.
 mode: all
-model: console-openai/gpt-6.1-sol#medium
+# `variant` em chave própria: com chaves legadas (`permission:`/`temperature:`) o
+# OpenCode descarta `model: provedor/modelo#variante` e o subagente herda o modelo
+# do agente que o chamou (bug opencode#50849).
+model: console-openai/gpt-6.1-sol
+variant: medium
 temperature: 0.25
 steps: 20
 permission:

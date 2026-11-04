@@ -1,7 +1,8 @@
 ---
 description: Builder — implementa full-stack a partir do PLAN. Funde backend-dev + frontend-dev + devops-infra + supabase + vercel + react/next experts.
 mode: all
-model: opencode/claude-haiku-5-5#medium
+model: opencode-go/claude-haiku-5-5
+variant: medium
 temperature: 0.2
 steps: 25
 permission:

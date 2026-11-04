@@ -1,7 +1,8 @@
 ---
 description: Reviewer — revisão de arquitetura técnica e de software. Funde architecture review + clean architecture + SOLID. Gera parecer de arquitetura em memória (não arquivo). Não roda lint/typecheck/testes (hooks fazem).
 mode: all
-model: opencode/claude-haiku-5-5#high
+model: opencode-go/claude-haiku-5-5
+variant: high
 temperature: 0.05
 steps: 12
 permission:
