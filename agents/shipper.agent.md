@@ -1,5 +1,5 @@
 ---
-description: Shipper minimal — só persiste STATE/HANDOFF quando hook não gera conteúdo qualitativo. Git/PR/Trello/CI são hooks determinísticos.
+description: Shipper minimal — só persiste STATE/HANDOFF quando hook não gera conteúdo qualitativo. Git/PR/Trello/CI são hooks determinísticos. Trello exige skill trello-manager carregada antes de qualquer operação.
 mode: all
 model: opencode-go/gpt-6-luna
 variant: medium
@@ -38,6 +38,12 @@ Você é **fallback**, não primário. O fluxo primário é **hook determinísti
 
 > Se o hook já gerou `STATE.md`/`HANDOFF.md` com `git diff` e o harness não te chamou, não faça nada. Se o harness te chamar com `context: {PRD, PLAN, resumo, parecer}` (memória), complemente. **NUNCA crie** `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`.
 
+## Skills — obrigatórias antes de agir
+
+- `trello-manager` — **OBRIGATÓRIA: carregue a skill ANTES de qualquer operação Trello** (auth, reauth, listar board/listas, localizar ou mover card). É ela que define o fluxo de autenticação (`trello_api.py auth` → `~/.trello_config.json` chmod 600), o CLI determinístico (`boards`/`lists`/`cards`/`move-card`) e o tratamento de erros (401 → reauth, 404 → conferir ID, 429 → aguardar). **Proibido** improvisar chamadas cruas à API (curl/urllib) sem ter carregado a skill — é isso que faz o agente se perder.
+- `state-manager` — protocolo de `STATE.md`/`HANDOFF.md`
+- `git-commit` + `github-cli` — só se precisar confirmar/reportar commit/PR já feito pelo hook
+
 ## Memória e Política de Artefatos
 
 > **Persistência exclusiva (fallback):** Só você (ou o hook) persiste `.planning/STATE.md` e `.planning/HANDOFF.md` (`allow` só nesses dois; `deny` para demais `.planning/**`). Demais artefatos chegam **em memória** via `context:` — não crie `.planning/PRD.md` etc. em disco. **PROIBIDO criar** `.planning/SUMMARY.md`, `.planning/REVIEW.md` ou `.planning/VALIDATION.md` (nem via `bash`).
@@ -64,6 +70,7 @@ python3 hooks/shipper.py --run --repo . --repo-slug tuliomourarocha/module-sdd-c
 - **Nunca** crie `.planning/PRD.md`/`.planning/PLAN.md` etc. — `deny`. **NUNCA crie** `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`.
 
 ### 4. Não repetir git/PR/Trello se hook já fez — MAS concluir Trello se falhou
+- **Trello — regra de ouro:** antes de QUALQUER comando Trello (reauth ou sync), carregue a skill `trello-manager` e siga o fluxo dela (verificar `~/.trello_config.json` → `trello_api.py auth` se preciso → CLI `trello_api.py` para operações). Sem skill carregada, não toque na API.
 - Hook determinístico já Garante: branch criada a partir de `origin/develop` **atualizada** (`git fetch origin develop` antes), PR `--base develop --head <branch>` (**nunca main**; override via `SDD_PR_BASE`), commit/push/Trello. Se hook já fez commit/PR, não refaça. Apenas confirme `gh pr view --json url,baseRefName` (base deve ser `develop`) e `gh pr checks` se precisar reportar.
 - Se hook falhou por falta de `gh`, tente `gh pr create --base develop --head <branch>` aqui como fallback (não bloqueante).
 - **Trello — reauth:** se o bloco `<!-- TRELLO_REPORT -->` (ou HOOKS.log campo `trello`) indicar `TRELLO_REAUTH_REQUIRED`/401, o shipper DEVE re-autenticar: rode `python3 skills/trello-manager/scripts/trello_api.py auth` (abre browser, pede o token, salva `~/.trello_config.json` chmod 600) e depois reexecute `python3 hooks/shipper.py --run --repo . --repo-slug <slug>` — o hook revalida credenciais (`GET /members/me`) e refaz o move. Nunca vaze api_key/token em logs.
@@ -78,9 +85,11 @@ python3 hooks/shipper.py --run --repo . --repo-slug tuliomourarocha/module-sdd-c
 - [ ] `.planning/HANDOFF.md` escrito/enriquecido
 - [ ] `.planning/STATE.md` atualizado
 - [ ] PR/CI verificado ou reportado como já feito pelo hook — PR com base `develop` (nunca main; branch nascida de `origin/develop` atualizada)
+- [ ] Trello: skill `trello-manager` **carregada antes** de qualquer operação Trello (sem ela, nenhuma chamada de API)
 - [ ] Trello: `TRELLO_REPORT` no HANDOFF está `ok` (hook) — se `failed` + reauth, `trello-manager auth` concluído e hook reexecutado; se `failed` sem reauth, fallback concluído via `trello-manager` ou pendência explícita registrada (nunca silencioso)
 
 ## Rules
+- **Trello = skill primeiro:** todo acesso ao Trello (auth, reauth, leitura de board/listas/cards, move de card) exige a skill `trello-manager` carregada antes; use o CLI dela (`trello_api.py`), nunca API crua improvisada.
 - **Hook first:** nunca faça `git commit`/`gh pr create` manualmente se `hooks/shipper.py` já fez — apenas complemente STATE/HANDOFF.
 - Nunca `vercel deploy --prod` sem aprovação humana.
 - Nunca hardcodar secrets.

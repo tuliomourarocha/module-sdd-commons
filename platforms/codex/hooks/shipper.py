@@ -37,7 +37,7 @@ O que faz (determinístico, sem LLM):
     `ok` SÓ quando o card foi movido de fato (verificado na resposta da API). Qualquer
     falha (misconfiguração, 401/404/ambiguidade, rede) → `TRELLO_SYNC_FAILED` visível no
     stdout, bloco `<!-- TRELLO_REPORT -->` no HANDOFF.md, campo `trello` no HOOKS.log e
-    instrução de fallback (`task shipper` minimal + skill `trello-manager`).
+    instrução de fallback (`task shipper` minimal com a skill `trello-manager` obrigatoriamente carregada antes de qualquer operação Trello).
     Não bloqueia o pipeline por padrão; `--fail-on-trello` força exit 2.
 
 Exit codes:
@@ -300,7 +300,7 @@ def generate_handoff(repo: Path, git_info: dict[str, Any], context: dict[str, An
     lines.append("")
     lines.append("- [ ] CI deve estar verde (ver `gh pr checks` / `gh run list`)")
     lines.append("- [ ] Se hook gerou HANDOFF minimal, agente shipper minimal pode complementar com contexto qualitativo (PRD/PLAN + resumo/parecer em memória)")
-    lines.append("- [ ] Trello sync: ver bloco `TRELLO_REPORT` neste arquivo (ok = card movido; failed = fallback `task shipper` + skill `trello-manager` pendente)")
+    lines.append("- [ ] Trello sync: ver bloco `TRELLO_REPORT` neste arquivo (ok = card movido; failed = fallback `task shipper` com skill `trello-manager` carregada primeiro, pendente)")
     lines.append("")
     lines.append("## Artefatos em memória (não em disco)")
     lines.append("")
@@ -346,7 +346,7 @@ def generate_state(repo: Path, git_info: dict[str, Any], context: dict[str, Any]
     lines.append("- parecer: done (memória, nunca REVIEW.md)")
     lines.append("- `HANDOFF.md`: done (disco — hook)")
     lines.append("- `STATE.md`: done (disco — hook)")
-    lines.append(f"- Trello sync: `{trello_status}` (hook — se `failed`, fallback `task shipper` minimal + skill `trello-manager`; ver HANDOFF.md#TRELLO_REPORT)")
+    lines.append(f"- Trello sync: `{trello_status}` (hook — se `failed`, fallback `task shipper` minimal com skill `trello-manager` carregada primeiro; ver HANDOFF.md#TRELLO_REPORT)")
     lines.append("- `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`: proibidos em disco")
     lines.append("")
     lines.append("## Gates")
@@ -884,9 +884,9 @@ def upsert_handoff_trello(handoff_path: Path, result: dict[str, Any]) -> None:
     ]
     if result.get("status") == "failed":
         if result.get("reauth"):
-            lines.append("- **Ação (reauth):** concluir a autorização aberta no browser — salve o novo token em `~/.trello_config.json` (ex.: `python3 skills/trello-manager/scripts/trello_api.py auth`) e reexecute `python3 hooks/shipper.py --run --repo .`")
+            lines.append("- **Ação (reauth):** carregue a skill `trello-manager` ANTES de qualquer operação Trello; conclua a autorização aberta no browser — salve o novo token em `~/.trello_config.json` (via `python3 skills/trello-manager/scripts/trello_api.py auth`) e reexecute `python3 hooks/shipper.py --run --repo .`")
         else:
-            lines.append("- **Ação (fallback):** acionar `task shipper` (minimal) com skill `trello-manager` para concluir o movimento do card para a lista de destino configurada; falha registrada em `.planning/HOOKS.log` (campo `trello`) e neste bloco — nunca encerrar o gate com sync falho silencioso")
+            lines.append("- **Ação (fallback):** acionar `task shipper` (minimal) com a skill `trello-manager` OBRIGATORIAMENTE carregada antes de operar (auth e movimento de cards seguem o fluxo/CLI da skill — nunca API crua improvisada) para concluir o movimento do card para a lista de destino configurada; falha registrada em `.planning/HOOKS.log` (campo `trello`) e neste bloco — nunca encerrar o gate com sync falho silencioso")
     lines.append(TRELLO_HANDOFF_END)
     block = "\n".join(lines)
     try:
@@ -1003,7 +1003,7 @@ def main():
         if trello.get("reauth"):
             print("   ↪ REAUTH requerido: conclua a autorização aberta no browser (ou `python3 skills/trello-manager/scripts/trello_api.py auth`), salve o token em ~/.trello_config.json e reexecute o shipper")
         else:
-            print("   ↪ fallback requerido: harness deve acionar `task shipper` (minimal) com skill `trello-manager` para mover o card; falha registrada em HANDOFF.md#TRELLO_REPORT e .planning/HOOKS.log (campo trello)")
+            print("   ↪ fallback requerido: harness deve acionar `task shipper` (minimal) com a skill `trello-manager` carregada primeiro (obrigatória para auth e operação de cards) para mover o card; falha registrada em HANDOFF.md#TRELLO_REPORT e .planning/HOOKS.log (campo trello)")
     elif trello_status == "dry_run":
         print(f"🧪 Trello: {trello['message']}")
     else:

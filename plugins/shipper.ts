@@ -14,8 +14,8 @@
  * para a ÚLTIMA lista "concluído" do board (auto; nunca inventa). Se stdout contiver
  * `TRELLO_REAUTH_REQUIRED`, instrui reauth via skill trello-manager; se contiver
  * `TRELLO_SYNC_FAILED`, registra a falha (HOOKS.log `hook: shipper:trello`, level
- * error) e instrui o fallback — harness deve acionar `task shipper` minimal com skill
- * `trello-manager`.
+ * error) e instrui o fallback — harness deve acionar `task shipper` minimal com a
+ * skill `trello-manager` **carregada antes de qualquer operação Trello** (obrigatória).
  *
  * Acionamento (determinístico, sem depender de LLM decidir):
  *   - Trigger primário: `tool.execute.after` quando `task` com agent `reviewer` completa (após parecer de arquitetura em memória)
@@ -152,7 +152,7 @@ async function runShipper($: any, directory: string, client: any, trigger: strin
 
   // ── GARANTIA: registro explícito do sync Trello (falha é SEMPRE visível + aciona fallback) ──
   if (out.includes("TRELLO_REAUTH_REQUIRED")) {
-    const reauthMsg = `TRELLO_REAUTH_REQUIRED via ${trigger} — api_key/token inválidos ou expirados; o hook abriu a página de autorização no browser. Fallback: concluir autorização e salvar o token (ex.: \`python3 skills/trello-manager/scripts/trello_api.py auth\` → ~/.trello_config.json), depois reexecutar \`python3 ${hook} --run\`. Falha visível em HANDOFF.md#TRELLO_REPORT e .planning/HOOKS.log.`;
+    const reauthMsg = `TRELLO_REAUTH_REQUIRED via ${trigger} — api_key/token inválidos ou expirados; o hook abriu a página de autorização no browser. Fallback: carregar primeiro a skill \`trello-manager\` (obrigatória antes de qualquer operação Trello), concluir autorização e salvar o token (ex.: \`python3 skills/trello-manager/scripts/trello_api.py auth\` → ~/.trello_config.json), depois reexecutar \`python3 ${hook} --run\`. Falha visível em HANDOFF.md#TRELLO_REPORT e .planning/HOOKS.log.`;
     await client.app.log({
       body: { service: "shipper", level: "error", message: `🔑 ${reauthMsg}` },
     });
@@ -166,7 +166,7 @@ async function runShipper($: any, directory: string, client: any, trigger: strin
     });
     throw new Error(`🚨 TRELLO_REAUTH_REQUIRED: ${reauthMsg}`);
   } else if (out.includes("TRELLO_SYNC_FAILED")) {
-    const trelloMsg = `TRELLO_SYNC_FAILED via ${trigger} — hook NÃO moveu o card. Fallback obrigatório: harness deve acionar \`task shipper\` (minimal) com skill \`trello-manager\` para localizar o card (ID estável preferível) e movê-lo para a lista de destino configurada. Detalhe em HANDOFF.md#TRELLO_REPORT e .planning/HOOKS.log (campo trello).`;
+    const trelloMsg = `TRELLO_SYNC_FAILED via ${trigger} — hook NÃO moveu o card. Fallback obrigatório: harness deve acionar \`task shipper\` (minimal) com a skill \`trello-manager\` carregada ANTES de qualquer operação Trello (autenticação e movimento de cards seguem o fluxo da skill — nada de API crua improvisada) para localizar o card (ID estável preferível) e movê-lo para a lista de destino configurada. Detalhe em HANDOFF.md#TRELLO_REPORT e .planning/HOOKS.log (campo trello).`;
     await client.app.log({
       body: { service: "shipper", level: "error", message: `🚨 ${trelloMsg}` },
     });
@@ -179,7 +179,7 @@ async function runShipper($: any, directory: string, client: any, trigger: strin
       message: trelloMsg,
     });
     // aciona o fallback de forma visível ao harness na mesma run (padrão CI_FAILED_NEEDS_FIX):
-    // git/PR já concluídos — harness deve chamar `task shipper` minimal com skill `trello-manager`
+    // git/PR já concluídos — harness deve chamar `task shipper` minimal com a skill `trello-manager` carregada primeiro
     throw new Error(`🚨 TRELLO_FALLBACK_REQUIRED: ${trelloMsg}`);
   } else if (out.includes("TRELLO_SYNC_OK")) {
     await writeGuaranteeLog($, directory, {

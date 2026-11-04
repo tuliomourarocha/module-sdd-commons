@@ -133,7 +133,7 @@ O `harness` (V2) orquestra 3 fluxos com 4 macros + hooks (`planner`, `builder`, 
 | `planner` | Planeja — PRD, PLAN, arquitetura | `po-assistant`, `grill-me`, `mermaid-diagrams`, `clean-architecture` |
 | `builder` | Implementa — full-stack + infra mínima | `clean-architecture`, `nextjs-app-router-patterns`, `supabase-postgres-best-practices` |
 | `reviewer` | Revisa — só arquitetura técnica/software | `clean-architecture`, `solid`, `clean-code` |
-| `shipper` (hook) | Finaliza — branch de `origin/develop` atualizada, PR `--base develop` (nunca main), git/CI/Trello/STATE/HANDOFF via `hooks/shipper.py` + `plugins/shipper.ts` (fallback minimal) | `state-manager`, `git-commit`, `github-cli`, `trello-manager` (via hook) |
+| `shipper` (hook) | Finaliza — branch de `origin/develop` atualizada, PR `--base develop` (nunca main), git/CI/Trello/STATE/HANDOFF via `hooks/shipper.py` + `plugins/shipper.ts` (fallback minimal) | `state-manager`, `git-commit`, `github-cli`, `trello-manager` **obrigatória no fallback** (carregar antes de qualquer operação Trello) |
 
 > **Guard rails** (lint, testes, ruff/pylance/eslint/biome, tsc) são hooks determinísticos (`hooks/guard_rails.py`) — `checker` removido.
 
