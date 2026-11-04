@@ -88,12 +88,12 @@ do OpenCode.
 
 ### Política de modelos
 
-O instalador decide os modelos por plataforma: OpenCode segue a regra por
-família — modelos OpenAI (GPT: `harness`, `planner`, `shipper`) são exclusivos
-do provedor OpenAI `console-openai/*`, e o restante (`builder`, `reviewer`,
-`supervisor`) fica no provedor multimodelo pago `opencode-go/*` (`claude-*`) —
-o tier free `opencode/*` é evitado porque esgota a cota e derruba o ciclo
-("Free usage limit reached"); Claude
+O instalador decide os modelos por plataforma: no OpenCode o cenário é de custo-benefício
+no plano **OpenCode Go** (`opencode-go/*`) — `harness`/`shipper` em `gpt-6-luna`,
+`planner`/`supervisor` em `glm-5.3-flash` e `builder`/`reviewer` em `claude-haiku-5-5`;
+o Zen free (`opencode/big-pickle` no harness) foi testado e descartado porque a cota
+esgota e trava o ciclo, e `console-openai` foi abandonado por
+cobrar crédito da organização OpenAI (`credit_balance_exhausted`). Claude
 Code usa aliases Anthropic (`haiku`/`sonnet`); e
 Codex grava o roteamento GPT-5.6 (Luna, Terra e Sol) por papel em
 `.codex/sdd-harness.json`. Não há escolha manual de modelos durante a instalação. Os detalhes estão em

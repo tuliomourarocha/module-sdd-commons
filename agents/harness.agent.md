@@ -1,7 +1,7 @@
 ---
 description: Harness — orquestrador. Só delega (subagent) para planner/builder/reviewer/shipper. Nunca executa, nunca explora, nunca carrega skills.
 mode: primary
-model: console-openai/gpt-6-luna
+model: opencode-go/gpt-6-luna
 variant: low
 steps: 30
 permissions:

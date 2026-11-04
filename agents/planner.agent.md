@@ -4,8 +4,8 @@ mode: all
 # `variant` em chave própria: com chaves legadas (`permission:`/`temperature:`) o
 # OpenCode descarta `model: provedor/modelo#variante` e o subagente herda o modelo
 # do agente que o chamou (bug opencode#50849).
-model: console-openai/gpt-6.1-sol
-variant: medium
+model: opencode-go/glm-5.3-flash
+variant: high
 temperature: 0.25
 steps: 20
 permission:

@@ -1,7 +1,7 @@
 ---
 description: Shipper minimal — só persiste STATE/HANDOFF quando hook não gera conteúdo qualitativo. Git/PR/Trello/CI são hooks determinísticos.
 mode: all
-model: console-openai/gpt-6-luna
+model: opencode-go/gpt-6-luna
 variant: medium
 temperature: 0.15
 steps: 10

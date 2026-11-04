@@ -13,21 +13,36 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 test("instala adaptadores com os provedores esperados", async () => {
   const target = await mkdtemp(path.join(tmpdir(), "sdd-harness-test-"));
   await run(process.execPath, ["bin/sdd-harness.js", "--all", "--target", target], { cwd: projectRoot });
-  const openCodeHarness = await readFile(path.join(target, ".opencode", "agents", "harness.md"), "utf8");
-  const openCodeBuilder = await readFile(path.join(target, ".opencode", "agents", "builder.md"), "utf8");
   const claudeHarness = await readFile(path.join(target, ".claude", "agents", "harness.md"), "utf8");
   const codexRouting = JSON.parse(await readFile(path.join(target, ".codex", "sdd-harness.json"), "utf8"));
 
-  // OpenCode: modelos OpenAI exclusivos do provedor OpenAI (console-openai);
-  // o restante (Anthropic) fica no provedor multimodelo opencode/*.
-  // `variant` vai em chave própria — com chaves legadas no frontmatter, o
-  // OpenCode descarta o sufixo inline `modelo#variante` (opencode#50849).
-  assert.match(openCodeHarness, /model: console-openai\/gpt-6-luna\nvariant: low/);
-  assert.doesNotMatch(openCodeHarness, /model: opencode\//);
-  assert.doesNotMatch(openCodeHarness, /model: [^\n]*#/);
-  // Anthropic no plano pago (opencode-go), nunca no tier free `opencode/*` (cota esgotada)
-  assert.match(openCodeBuilder, /model: opencode-go\/claude-haiku-5-5\nvariant: medium/);
-  assert.doesNotMatch(openCodeBuilder, /model: opencode\//);
+  // OpenCode: todos os macros no plano OpenCode Go, `variant` em chave própria — com
+  // chaves legadas no frontmatter o OpenCode descarta o sufixo inline `modelo#variante`
+  // e o subagente herda o modelo do pai (opencode#50849). Nada de `console-openai/*`
+  // (cobra crédito da organização OpenAI) nem do tier free `opencode/*` — o big-pickle
+  // foi testado para o harness e a cota free esgota no meio do ciclo, travando o único
+  // papel que inicia tudo (verificado em 04/11/2026: "Free usage limit reached").
+  const openCodeModels = {
+    harness: ["opencode-go/gpt-6-luna", "low"],
+    planner: ["opencode-go/glm-5.3-flash", "high"],
+    builder: ["opencode-go/claude-haiku-5-5", "medium"],
+    reviewer: ["opencode-go/claude-haiku-5-5", "high"],
+    shipper: ["opencode-go/gpt-6-luna", "medium"],
+    supervisor: ["opencode-go/glm-5.3-flash", "low"],
+  };
+  for (const [role, [model, variant]] of Object.entries(openCodeModels)) {
+    const content = await readFile(path.join(target, ".opencode", "agents", `${role}.md`), "utf8");
+    // Só o frontmatter interessa — o corpo e os comentários YAML citam a sintaxe
+    // `modelo#variante` exatamente para proibi-la, e não devem tripar as guardas.
+    const fm = content.split(/^---\s*$/m)[1] ?? "";
+    const declared = fm.match(/^model:\s*(\S+)\s*$/m)?.[1];
+    const declaredVariant = fm.match(/^variant:\s*(\S+)\s*$/m)?.[1];
+    assert.equal(declared, model, `${role} deve declarar ${model}`);
+    assert.equal(declaredVariant, variant, `${role} deve usar a variante ${variant}`);
+    assert.ok(!declared.includes("#"), `${role} não pode usar sufixo inline #variante`);
+    assert.ok(!declared.startsWith("console-openai/"), `${role} não pode depender de crédito OpenAI`);
+    assert.ok(!declared.startsWith("opencode/"), `${role} não pode usar o tier free do Zen (cota esgota e trava o ciclo)`);
+  }
   assert.match(claudeHarness, /model: haiku/);
   assert.deepEqual(codexRouting.roleModels, {
     harness: "gpt-5.6-luna", planner: "gpt-5.6-sol", builder: "gpt-5.6-sol",
