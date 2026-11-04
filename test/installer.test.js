@@ -17,7 +17,10 @@ test("instala adaptadores com os provedores esperados", async () => {
   const claudeHarness = await readFile(path.join(target, ".claude", "agents", "harness.md"), "utf8");
   const codexRouting = JSON.parse(await readFile(path.join(target, ".codex", "sdd-harness.json"), "utf8"));
 
-  assert.match(openCodeHarness, /model: opencode\/muse-spark-1\.2-contributor-free/);
+  // OpenCode: modelos OpenAI exclusivos do provedor OpenAI (console-openai);
+  // o restante (Anthropic) fica no provedor multimodelo opencode/*
+  assert.match(openCodeHarness, /model: console-openai\/gpt-6-luna#low/);
+  assert.doesNotMatch(openCodeHarness, /model: opencode\//);
   assert.match(claudeHarness, /model: haiku/);
   assert.deepEqual(codexRouting.roleModels, {
     harness: "gpt-5.6-luna", planner: "gpt-5.6-sol", builder: "gpt-5.6-sol",

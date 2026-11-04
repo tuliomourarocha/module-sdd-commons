@@ -42,21 +42,25 @@ python3 hooks/guard_rails.py --file src/page.tsx --format text --fail-on HIGH
 | **Script** | `hooks/shipper.py` |
 | **Plugin OpenCode** | `plugins/shipper.ts` → `tool.execute.after` (task reviewer) + `event: session.idle` |
 | **Claude** | `.claude/settings.json` → `hooks.PostToolUse` (opcional) |
-| **O que faz** | `git status/diff`, `git commit` conventional, `git push`, `gh pr create`/`view`, `gh pr checks`, gera `.planning/HANDOFF.md` + `STATE.md` minimal, **Trello sync real via REST API (stdlib)**: localiza card por **ID estável** (`card_id`, preferível) ou nome exato no board, **move para lista de destino configurada explicitamente** (`list_id`/`dest_list`) e comenta link do PR — status `ok` só quando o card foi movido de fato |
+| **O que faz** | `git fetch origin <base>`, branch de trabalho criada a partir de `origin/<base>` **atualizada** (default `develop` — `--pr-base`/`SDD_PR_BASE`; nunca a main), `git commit` conventional, `git push`, `gh pr create --base <base> --head <branch>`/`view` (corrige base de PR existente para `<base>`), `gh pr checks`, gera `.planning/HANDOFF.md` + `STATE.md` minimal, **Trello sync real via REST API (stdlib)**: valida credenciais (`GET /members/me` — 401 → recarrega config e, persistindo, abre a página de autorização e marca `TRELLO_REAUTH_REQUIRED`), localiza card por **ID estável** (`card_id`, preferível), nome exato no board ou **auto** (hints do branch/PR: ID 24-hex, shortlink `trello.com/c/`, slug do branch), **move para lista de destino configurada explicitamente** (`list_id`/`dest_list`) ou **AUTO = última lista "concluído" do board** (concluído/done/shipped/entregue/finalizado/homologado/produção/deployed — nunca inventa fora disso) e comenta link do PR — status `ok` só quando o card foi movido de fato |
 | **Determinismo** | Sem LLM para git/PR/Trello; HANDOFF minimal via template + `git diff --stat`; enriquecimento qualitativo via fallback `shipper` minimal (agente só STATE/HANDOFF) |
 | **Exit** | `0` = ok (HANDOFF/STATE gerados), `2` = falha crítica (git/gh; Trello só com `--fail-on-trello`) |
-| **Trello honesto** | Sem credenciais = `skipped`. Com credenciais, qualquer falha (misconfig de card/destino, 401/404, ambiguidade de nome, rede) → `TRELLO_SYNC_FAILED` no stdout + bloco `<!-- TRELLO_REPORT -->` no HANDOFF + campo `trello` no HOOKS.log + entrada `shipper:trello` pelo plugin + instrução de fallback (`task shipper` minimal com skill `trello-manager`). **Nunca** retorna sucesso sem mover o card |
-| **Fallback** | Se HANDOFF minimal, `agents/shipper.agent.md` (minimal) complementa com `PRD/PLAN + resumo/parecer` em memória (nunca SUMMARY/REVIEW como arquivos); se `TRELLO_REPORT` está `failed`, o mesmo agente conclui o movimento via skill `trello-manager` |
+| **Trello honesto** | Sem credenciais = `skipped`. Com credenciais, qualquer falha (misconfig de card/destino, 401/404, ambiguidade de nome, rede) → `TRELLO_SYNC_FAILED` no stdout + bloco `<!-- TRELLO_REPORT -->` no HANDOFF + campo `trello` no HOOKS.log + entrada `shipper:trello` pelo plugin + instrução de fallback (`task shipper` minimal com skill `trello-manager`). Em 401 → `TRELLO_REAUTH_REQUIRED` com instrução de reauth (`trello_api.py auth`) e browser aberto. **Nunca** retorna sucesso sem mover o card e **nunca inventa** card/destino |
+| **Fallback** | Se HANDOFF minimal, `agents/shipper.agent.md` (minimal) complementa com `PRD/PLAN + resumo/parecer` em memória (nunca SUMMARY/REVIEW como arquivos); se `TRELLO_REPORT` está `failed`, o mesmo agente conclui o movimento (ou a reauth) via skill `trello-manager` |
 
 **Uso manual:**
 ```bash
 python3 hooks/shipper.py --run --repo . --repo-slug tuliomourarocha/module-sdd-commons
 python3 hooks/shipper.py --run --dry-run --context-file /tmp/context.json
+# base de PR/branch: --pr-base develop (default) ou env SDD_PR_BASE; use main só se o repo não tiver develop
+python3 hooks/shipper.py --run --pr-base develop
 # overrides Trello por execução:
 python3 hooks/shipper.py --run --trello-card <card_id_estável> --trello-list <list_id> [--fail-on-trello] [--no-trello-comment]
+# reauth manual (token expirado — o hook também abre o browser sozinho em 401):
+python3 skills/trello-manager/scripts/trello_api.py auth
 ```
 
-**Config Trello** (`~/.trello_config.json`, repo `.trello_config.json`, `TRELLO_CONFIG` ou env): aceita **`api_key` ou `apiKey`** (e env `TRELLO_API_KEY`/`TRELLO_KEY`); card por **ID estável (preferível)** ou nome; destino **explícito obrigatório** quando configurado:
+**Config Trello** (`~/.trello_config.json`, repo `.trello_config.json`, `TRELLO_CONFIG` ou env): aceita **`api_key` ou `apiKey`** (e env `TRELLO_API_KEY`/`TRELLO_KEY`); card por **ID estável (preferível)**, nome, ou deixo em branco para **auto** (hints do branch/PR); destino **explícito** ou em branco para **auto = última lista "concluído" do board**:
 ```json
 {
   "api_key": "...",            // ou "apiKey"

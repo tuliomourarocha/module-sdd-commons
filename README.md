@@ -88,8 +88,11 @@ do OpenCode.
 
 ### Política de modelos
 
-O instalador decide os modelos por plataforma: OpenCode preserva os modelos
-originais `opencode/*`; Claude Code usa aliases Anthropic (`haiku`/`sonnet`); e
+O instalador decide os modelos por plataforma: OpenCode segue a regra por
+família — modelos OpenAI (GPT: `harness`, `planner`, `shipper`) são exclusivos
+do provedor OpenAI `console-openai/*`, e o restante (`builder`, `reviewer`,
+`supervisor`) fica no provedor multimodelo `opencode/*` (`claude-*`); Claude
+Code usa aliases Anthropic (`haiku`/`sonnet`); e
 Codex grava o roteamento GPT-5.6 (Luna, Terra e Sol) por papel em
 `.codex/sdd-harness.json`. Não há escolha manual de modelos durante a instalação. Os detalhes estão em
 [`platforms/model-policy.md`](platforms/model-policy.md).
@@ -128,7 +131,7 @@ O `harness` (V2) orquestra 3 fluxos com 4 macros + hooks (`planner`, `builder`, 
 | `planner` | Planeja — PRD, PLAN, arquitetura | `po-assistant`, `grill-me`, `mermaid-diagrams`, `clean-architecture` |
 | `builder` | Implementa — full-stack + infra mínima | `clean-architecture`, `nextjs-app-router-patterns`, `supabase-postgres-best-practices` |
 | `reviewer` | Revisa — só arquitetura técnica/software | `clean-architecture`, `solid`, `clean-code` |
-| `shipper` (hook) | Finaliza — git/PR/CI/Trello/STATE/HANDOFF via `hooks/shipper.py` + `plugins/shipper.ts` (fallback minimal) | `state-manager`, `git-commit`, `github-cli` (via hook) |
+| `shipper` (hook) | Finaliza — branch de `origin/develop` atualizada, PR `--base develop` (nunca main), git/CI/Trello/STATE/HANDOFF via `hooks/shipper.py` + `plugins/shipper.ts` (fallback minimal) | `state-manager`, `git-commit`, `github-cli`, `trello-manager` (via hook) |
 
 > **Guard rails** (lint, testes, ruff/pylance/eslint/biome, tsc) são hooks determinísticos (`hooks/guard_rails.py`) — `checker` removido.
 
@@ -151,7 +154,7 @@ O orquestrador executa:
 1. **Planner** → discovery + `PRD.md` + `PLAN.md` + `arch/` (memória — nunca em disco)
 2. **Builder** → implementa + resumo em memória (nunca `SUMMARY.md` em disco) — `hooks/guard_rails.py` valida per-file e bloqueia `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`
 3. **Reviewer** → parecer de arquitetura em memória (nunca `REVIEW.md`/`VALIDATION.md` em disco, sem lint — hooks fazem)
-4. **Shipper(hook)** → commit + PR + CI check + `.planning/STATE.md`/`HANDOFF.md` + Trello close (via `hooks/shipper.py`)
+4. **Shipper(hook)** → fetch develop + branch de `origin/develop` atualizada + commit + PR `--base develop` (nunca main) + CI check + `.planning/STATE.md`/`HANDOFF.md` + Trello close (card → última lista "concluído"; reauth automático em 401) (via `hooks/shipper.py`)
 
 ### Fluxo 2: Novo Projeto (`project`)
 

@@ -1,7 +1,7 @@
 ---
 description: Shipper minimal — só persiste STATE/HANDOFF quando hook não gera conteúdo qualitativo. Git/PR/Trello/CI são hooks determinísticos.
 mode: all
-model: opencode/gpt-6-luna#medium
+model: console-openai/gpt-6-luna#medium
 temperature: 0.15
 steps: 10
 permission:
@@ -18,6 +18,14 @@ permission:
     "git status*": allow
     "git diff*": allow
     "git log*": allow
+    "git fetch*": allow
+    "git switch*": allow
+    "git pull*": allow
+    "git rev-parse*": allow
+    "gh pr view*": allow
+    "gh pr checks*": allow
+    "gh pr create*": ask
+    "gh auth status*": allow
     "cat .planning/*": allow
     "ls *": allow
 ---
@@ -55,9 +63,10 @@ python3 hooks/shipper.py --run --repo . --repo-slug tuliomourarocha/module-sdd-c
 - **Nunca** crie `.planning/PRD.md`/`.planning/PLAN.md` etc. — `deny`. **NUNCA crie** `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`.
 
 ### 4. Não repetir git/PR/Trello se hook já fez — MAS concluir Trello se falhou
-- Se hook já fez commit/PR, não refaça. Apenas confirme `gh pr view --json url` e `gh pr checks` se precisar reportar.
-- Se hook falhou por falta de `gh`, tente `gh pr create` aqui como fallback (não bloqueante).
-- **Trello:** leia o bloco `<!-- TRELLO_REPORT:START -->` do `.planning/HANDOFF.md` (ou `grep TRELLO .planning/HOOKS.log`). Se status `failed`/`TRELLO_SYNC_FAILED`, você DEVE concluir o sync via skill `trello-manager`: localizar o card pelo ID estável (`card_id`) — ou por nome exato no board — e movê-lo para a lista de destino configurada (`list_id`/`dest_list`, explícita; nunca invente destino). Depois atualize o bloco no HANDOFF para `ok (fallback)` com card/lista usados. Se credenciais/destino não existirem, registre a pendência explícita — **nunca** encerre com falha silenciosa. Status `skipped` (sem credenciais) não exige ação.
+- Hook determinístico já Garante: branch criada a partir de `origin/develop` **atualizada** (`git fetch origin develop` antes), PR `--base develop --head <branch>` (**nunca main**; override via `SDD_PR_BASE`), commit/push/Trello. Se hook já fez commit/PR, não refaça. Apenas confirme `gh pr view --json url,baseRefName` (base deve ser `develop`) e `gh pr checks` se precisar reportar.
+- Se hook falhou por falta de `gh`, tente `gh pr create --base develop --head <branch>` aqui como fallback (não bloqueante).
+- **Trello — reauth:** se o bloco `<!-- TRELLO_REPORT -->` (ou HOOKS.log campo `trello`) indicar `TRELLO_REAUTH_REQUIRED`/401, o shipper DEVE re-autenticar: rode `python3 skills/trello-manager/scripts/trello_api.py auth` (abre browser, pede o token, salva `~/.trello_config.json` chmod 600) e depois reexecute `python3 hooks/shipper.py --run --repo . --repo-slug <slug>` — o hook revalida credenciais (`GET /members/me`) e refaz o move. Nunca vaze api_key/token em logs.
+- **Trello — sync pendente:** se status `failed` sem reauth, conclua o sync via skill `trello-manager`: localizar o card pelo ID estável (`card_id`) — ou por nome exato no board — e movê-lo para a lista de destino configurada (`list_id`/`dest_list`) ou para a **última lista "concluído"** do board (o hook resolve essa lista automaticamente — concluído/done/shipped/entregue/finalizado/homologado/produção/deployed). Depois atualize o bloco no HANDOFF para `ok (fallback)` com card/lista usados. Se credenciais/destino não existirem, registre a pendência explícita — **nunca** encerre com falha silenciosa e **nunca invente destino**. Status `skipped` (sem credenciais) não exige ação.
 
 ## Outputs
 - `.planning/HANDOFF.md` + `.planning/STATE.md` enriquecidos (se necessário)
@@ -67,8 +76,8 @@ python3 hooks/shipper.py --run --repo . --repo-slug tuliomourarocha/module-sdd-c
 - [ ] `hooks/shipper.py` tentado primeiro (determinístico)
 - [ ] `.planning/HANDOFF.md` escrito/enriquecido
 - [ ] `.planning/STATE.md` atualizado
-- [ ] PR/CI verificado ou reportado como já feito pelo hook
-- [ ] Trello: `TRELLO_REPORT` no HANDOFF está `ok` (hook) — se `failed`, fallback concluído via `trello-manager` ou pendência explícita registrada (nunca silencioso)
+- [ ] PR/CI verificado ou reportado como já feito pelo hook — PR com base `develop` (nunca main; branch nascida de `origin/develop` atualizada)
+- [ ] Trello: `TRELLO_REPORT` no HANDOFF está `ok` (hook) — se `failed` + reauth, `trello-manager auth` concluído e hook reexecutado; se `failed` sem reauth, fallback concluído via `trello-manager` ou pendência explícita registrada (nunca silencioso)
 
 ## Rules
 - **Hook first:** nunca faça `git commit`/`gh pr create` manualmente se `hooks/shipper.py` já fez — apenas complemente STATE/HANDOFF.

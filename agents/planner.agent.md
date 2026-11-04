@@ -1,7 +1,7 @@
 ---
 description: Planner — planeja produto e arquitetura. Gera PRD, PLAN e diagramas. Funde PO + TechLead + Architecture Reviewer.
 mode: all
-model: opencode/gpt-6.1-sol#medium
+model: console-openai/gpt-6.1-sol#medium
 temperature: 0.25
 steps: 20
 permission:

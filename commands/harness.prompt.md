@@ -9,9 +9,9 @@ planner → builder → reviewer → shipper → fim
 1. **planner** — PRD + PLAN + arch (memória)
 2. **builder** — código no disco + resumo (memória)
 3. **reviewer** — parecer de arquitetura (memória)
-4. **shipper** — commit, PR, CI, `.planning/STATE.md` + `.planning/HANDOFF.md` (Trello sync real pelo hook)
+4. **shipper** — fetch develop, branch de `origin/develop` atualizada, PR `--base develop` (nunca main), CI, `.planning/STATE.md` + `.planning/HANDOFF.md` (Trello sync real pelo hook: valida credenciais, reauth aberta no browser em 401, move card para destino explícito ou a última lista "concluído")
 
-Fallback pós-hook (uma vez só): se o resultado da task mostrar `🚨 TRELLO_FALLBACK_REQUIRED` (ou `HANDOFF.md` tiver `<!-- TRELLO_REPORT -->` com status `failed`), chame `task shipper` minimal com instrução de concluir o movimento do card via skill `trello-manager` — falha de sincronização nunca termina silenciosa.
+Fallback pós-hook (uma vez só): se o resultado da task mostrar `🚨 TRELLO_FALLBACK_REQUIRED` ou `🚨 TRELLO_REAUTH_REQUIRED` (ou `HANDOFF.md` tiver `<!-- TRELLO_REPORT -->` com status `failed`), chame `task shipper` minimal com instrução de: em reauth, rodar `trello-manager` (`trello_api.py auth`) e reexecutar o hook; em sync pendente, concluir o movimento do card via skill `trello-manager` — falha de sincronização nunca termina silenciosa.
 
 Gates humanos: após planner e após reviewer.
 
