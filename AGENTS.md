@@ -37,6 +37,14 @@ Fluxos: `feature` (planner→builder→reviewer→shipper(hook)→ci-watch→sup
 6. **Validação** — Execute hooks antes de finalizar cada artefato.
 7. **Anti-loop e Single-run** — Apenas `STATE.md`/`HANDOFF.md` persistem em disco (hooks `shipper`, `ci-watch`, `supervisor`, `orquestrador` atualizam esses dois). Demais artefatos (`PRD.md`, `PLAN.md`, `arch/*`) e saídas de builder/reviewer (resumo/parecer) são retornados **em memória** via `task()` e injetados como `context:` pelo `harness`. Proibido criar `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`/`CI_REPORT.md`/`SUPERVISOR_REPORT.md` em disco — bloqueado com `HIGH`. `harness` **só delega e encerra** — não espera hooks, não faz polling, não executa nada. `VALIDATION.md` removido (hook guard_rails).
 
+## RTK — economia de tokens (quando instalado)
+
+7. **Rodar em cima do rtk** — o instalador da squad baixa o `rtk` (`github.com/rtk-ai/rtk`) e vincula ao harness (`rtk init`): um proxy reescreve comandos de shell (`git status` → `rtk git status`) e comprime a saída antes do LLM ler.
+   - **Nunca** adicione prefixo `rtk` manualmente — o plugin/hook faz a reescrita transparente.
+   - O rtk só intercepta **comandos de shell**: built-ins `read`/`grep`/`glob` não passam por ele. Para leituras grandes, prefira shell (`rg`, `cat`, `git diff`) para gerar economia.
+   - Saída parecer cortada/estranha? `rtk bypass <cmd>` executa sem filtro (escape hatch); `RTK_DISABLED=1 <cmd>` desliga na sessão.
+   - Métricas: `rtk gain` (economia acumulada), `rtk discover` (oportunidades perdidas) — o `supervisor` pode citar o ganho no parecer.
+
 ## Memória e Política de Artefatos — Restrição Obrigatória
 
 > Objetivo: impedir criação de artefatos em disco fora de `HANDOFF`/`STATE`, evitando loop de verificação e garantindo reaproveitamento de contexto via injeção única do `harness`.

@@ -27,6 +27,7 @@ You are the Builder macro.
 Implementa o que o planner planejou. Full-stack: backend, frontend e infra mínima. Você escreve código e retorna um **resumo de implementação em memória** (não arquivo).
 
 ## Skills
+- `ponytail` — **padrão em toda implementação** (nível `full`, a menos que o usuário peça `lite|ultra` ou "normal mode"): menor mudança que resolve o problema inteiro — sem feature/opção/abstração não pedida (nomear em 1 linha no resumo se uma alternativa menor existir), reusa helpers/patterns/dependências existentes, fecha os pontos que a mudança quebra (callers, tests, fixtures), termina com 1-2 linhas: o que pulou/não verificou + risco. Governa o **escopo/quantidade de código**; a estrutura segue o PLAN e `clean-architecture`
 - `clean-architecture` + `solid` + `clean-code` — camadas, Dependency Rule, SOLID
 - `nextjs-app-router-patterns` + `react-best-practices` — App Router, Server/Client, hooks
 - `frontend-design` — quando `PLAN.md` tem Design Tokens/`[Front]`: aplica paleta/tipografia/layout/assinatura, hero como tese, motion deliberado, evita defaults templated, trabalha em 2 passes (planejar→criticar→construir→criticar)
@@ -82,6 +83,7 @@ Retorne ao harness: `{resumo}` em memória + lista de arquivos, decisões. **NÃ
 - [ ] `npx tsc --noEmit` sem erros
 - [ ] Se `[Front]` com Design Tokens: fidelidade visual — paleta/tipografia/escala/layout/assinatura do PLAN aplicados, hero como tese, sem default templated não justificado, responsivo + focus visível + `prefers-reduced-motion` respeitado
 - [ ] Se `[Front]` com `Design Compliance Checklist`: implementação segue `web-design-guidelines` (a11y, focus, forms, animation, images, i18n, hydration) sem violações `HIGH` (ex.: `div onClick` sem `button`, input sem label, `transition: all`, `outline-none` sem substituto, imagem sem dimensões)
+- [ ] Menor mudança completa (`ponytail` full): sem código "for later"/features não pedidas; pontos quebrados pela mudança fechados; o que pulou/risco citado no fim do resumo
 - [ ] Resumo da implementação **retornado em memória** (não escrito em `.planning/*` — `permission: deny` verificado; inclua desvio de design se houver) — **nenhum** `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md` criado em disco
 
 ## Rules

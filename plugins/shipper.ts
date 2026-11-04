@@ -4,6 +4,11 @@
  * Conceito: middleware fora do LLM que finaliza o ciclo deterministicamente.
  * Complementa hooks/guard_rails.py (per-file) e hooks/supervisor.py (pós-shipper).
  *
+ * Trello: `hooks/shipper.py` move o card de fato (API REST, ID estável preferível,
+ * lista de destino explícita). Se stdout contiver `TRELLO_SYNC_FAILED`, este plugin
+ * registra a falha (HOOKS.log `hook: shipper:trello`, level error) e instrui o
+ * fallback — harness deve acionar `task shipper` minimal com skill `trello-manager`.
+ *
  * Acionamento (determinístico, sem depender de LLM decidir):
  *   - Trigger primário: `tool.execute.after` quando `task` com agent `reviewer` completa (após parecer de arquitetura em memória)
  *   - Trigger secundário removido: **não há** `write` em `.planning/REVIEW.md`/`SUMMARY.md`/`VALIDATION.md` — esses arquivos são proibidos e nunca devem ser criados (hook guard-rails bloqueia)
@@ -133,6 +138,37 @@ async function runShipper($: any, directory: string, client: any, trigger: strin
     // Erro não crítico mas deve avisar
     await client.app.log({
       body: { service: "shipper", level: "warn", message: `Shipper hook avisou via ${trigger}: exit ${exitCode} — verifique .planning/HOOKS.log` },
+    });
+  }
+
+  // ── GARANTIA: registro explícito do sync Trello (falha é SEMPRE visível + aciona fallback) ──
+  if (out.includes("TRELLO_SYNC_FAILED")) {
+    const trelloMsg = `TRELLO_SYNC_FAILED via ${trigger} — hook NÃO moveu o card. Fallback obrigatório: harness deve acionar \`task shipper\` (minimal) com skill \`trello-manager\` para localizar o card (ID estável preferível) e movê-lo para a lista de destino configurada. Detalhe em HANDOFF.md#TRELLO_REPORT e .planning/HOOKS.log (campo trello).`;
+    await client.app.log({
+      body: { service: "shipper", level: "error", message: `🚨 ${trelloMsg}` },
+    });
+    await writeGuaranteeLog($, directory, {
+      ts: new Date().toISOString(),
+      hook: "shipper:trello",
+      trigger,
+      status: "failed",
+      fallback_required: true,
+      message: trelloMsg,
+    });
+    // aciona o fallback de forma visível ao harness na mesma run (padrão CI_FAILED_NEEDS_FIX):
+    // git/PR já concluídos — harness deve chamar `task shipper` minimal com skill `trello-manager`
+    throw new Error(`🚨 TRELLO_FALLBACK_REQUIRED: ${trelloMsg}`);
+  } else if (out.includes("TRELLO_SYNC_OK")) {
+    await writeGuaranteeLog($, directory, {
+      ts: new Date().toISOString(),
+      hook: "shipper:trello",
+      trigger,
+      status: "ok",
+      message: `Trello sync ok via ${trigger} — card movido para a lista de destino (ver HANDOFF.md#TRELLO_REPORT)`,
+    });
+  } else if (out.includes("Trello não configurado")) {
+    await client.app.log({
+      body: { service: "shipper", level: "info", message: `Trello não configurado — sync pulado via ${trigger} (configure api_key/token + card_id + list_id para ativar)` },
     });
   }
 

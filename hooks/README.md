@@ -42,15 +42,32 @@ python3 hooks/guard_rails.py --file src/page.tsx --format text --fail-on HIGH
 | **Script** | `hooks/shipper.py` |
 | **Plugin OpenCode** | `plugins/shipper.ts` → `tool.execute.after` (task reviewer) + `event: session.idle` |
 | **Claude** | `.claude/settings.json` → `hooks.PostToolUse` (opcional) |
-| **O que faz** | `git status/diff`, `git commit` conventional, `git push`, `gh pr create`/`view`, `gh pr checks`, gera `.planning/HANDOFF.md` + `STATE.md` minimal, Trello sync (se `~/.trello_config.json`) |
+| **O que faz** | `git status/diff`, `git commit` conventional, `git push`, `gh pr create`/`view`, `gh pr checks`, gera `.planning/HANDOFF.md` + `STATE.md` minimal, **Trello sync real via REST API (stdlib)**: localiza card por **ID estável** (`card_id`, preferível) ou nome exato no board, **move para lista de destino configurada explicitamente** (`list_id`/`dest_list`) e comenta link do PR — status `ok` só quando o card foi movido de fato |
 | **Determinismo** | Sem LLM para git/PR/Trello; HANDOFF minimal via template + `git diff --stat`; enriquecimento qualitativo via fallback `shipper` minimal (agente só STATE/HANDOFF) |
-| **Exit** | `0` = ok (HANDOFF/STATE gerados), `2` = falha crítica (git/gh) |
-| **Fallback** | Se HANDOFF minimal, `agents/shipper.agent.md` (minimal) complementa com `PRD/PLAN + resumo/parecer` em memória (nunca SUMMARY/REVIEW como arquivos) |
+| **Exit** | `0` = ok (HANDOFF/STATE gerados), `2` = falha crítica (git/gh; Trello só com `--fail-on-trello`) |
+| **Trello honesto** | Sem credenciais = `skipped`. Com credenciais, qualquer falha (misconfig de card/destino, 401/404, ambiguidade de nome, rede) → `TRELLO_SYNC_FAILED` no stdout + bloco `<!-- TRELLO_REPORT -->` no HANDOFF + campo `trello` no HOOKS.log + entrada `shipper:trello` pelo plugin + instrução de fallback (`task shipper` minimal com skill `trello-manager`). **Nunca** retorna sucesso sem mover o card |
+| **Fallback** | Se HANDOFF minimal, `agents/shipper.agent.md` (minimal) complementa com `PRD/PLAN + resumo/parecer` em memória (nunca SUMMARY/REVIEW como arquivos); se `TRELLO_REPORT` está `failed`, o mesmo agente conclui o movimento via skill `trello-manager` |
 
 **Uso manual:**
 ```bash
 python3 hooks/shipper.py --run --repo . --repo-slug tuliomourarocha/module-sdd-commons
 python3 hooks/shipper.py --run --dry-run --context-file /tmp/context.json
+# overrides Trello por execução:
+python3 hooks/shipper.py --run --trello-card <card_id_estável> --trello-list <list_id> [--fail-on-trello] [--no-trello-comment]
+```
+
+**Config Trello** (`~/.trello_config.json`, repo `.trello_config.json`, `TRELLO_CONFIG` ou env): aceita **`api_key` ou `apiKey`** (e env `TRELLO_API_KEY`/`TRELLO_KEY`); card por **ID estável (preferível)** ou nome; destino **explícito obrigatório** quando configurado:
+```json
+{
+  "api_key": "...",            // ou "apiKey"
+  "token": "...",
+  "card_id": "64a0...",        // ID estável — preferível
+  "list_id": "64b0...",        // lista de destino explícita — ou "dest_list": "Done" + "board_id"
+  "board_id": "64c0...",       // opcional: permite card_name/dest_list por nome e resolve board por nome também
+  "pos": "top",                // opcional
+  "add_pr_comment": true,      // opcional: comenta link do PR no card
+  "archive": false             // opcional: arquiva após mover
+}
 ```
 
 ## 3. Supervisor — auditoria final + Issue GitHub
@@ -170,7 +187,8 @@ Todos os hooks escrevem **log de garantia** em dois lugares para redundância:
 **Exemplo linha:**
 ```json
 {"ts":"2026-09-17T21:15:02Z","hook":"guard-rails","file":"src/app.ts","duration_ms":45,"exit_code":2,"blocked":true,"high":1,"med":0,"status":"blocked"}
-{"ts":"2026-09-17T21:15:04Z","hook":"shipper","trigger":"task:reviewer","duration_ms":1200,"exit_code":0,"status":"success","pr_url":"https://github.com/.../pull/12"}
+{"ts":"2026-09-17T21:15:04Z","hook":"shipper","trigger":"task:reviewer","duration_ms":1200,"exit_code":0,"status":"success","pr_url":"https://github.com/.../pull/12","trello":{"status":"ok","moved":true,"card_id":"64a0...","dest_list_name":"Done"}}
+{"ts":"2026-09-17T21:15:05Z","hook":"shipper:trello","trigger":"task:reviewer","status":"failed","fallback_required":true,"message":"TRELLO_SYNC_FAILED — card não movido (fallback: task shipper + skill trello-manager)"}
 {"ts":"2026-09-17T21:15:06Z","hook":"ci-watch","branch":"feat/auth","pr_number":42,"status":"fail","exit_code":2,"retries":1,"message":"CI falhou"}
 {"ts":"2026-09-17T21:15:06Z","hook":"ci-orchestrator","status":"fail","retries":1,"branch":"feat/auth"}
 {"ts":"2026-09-17T21:15:08Z","hook":"supervisor","files_changed":12,"hallu_high":0,"guard_high":0,"status":"success"}
@@ -188,6 +206,7 @@ cat .opencode/hooks/hook-audit.jsonl        # mesmo audit no OpenCode
 - `guard-rails` HIGH → `throw GUARD_RAILS_BLOCKED` — builder recebe erro como `tool result` e corrige (max 2 iterações) — visível no TUI como `⛔`
 - `guard-rails` infra (hook não encontrado, python erro, timeout) → `throw HOOK_GUARD_RAILS_INFRA_ERROR` — builder/reviewer vê `🚨` no meio da execução + log em `.planning/HOOKS.log` com `status: infra_error`
 - `shipper` crítico (git falhou, exit 2) → `throw HOOK_SHIPPER_CRITICAL` — harness (mesma run) vê e escala para builder/humano — também logado com `status: critical`
+- `shipper` Trello (`TRELLO_SYNC_FAILED` no stdout) → log `level:error` + entrada `.planning/HOOKS.log` `hook: shipper:trello, status: failed, fallback_required: true` + bloco `HANDOFF.md#TRELLO_REPORT` — harness deve acionar `task shipper` minimal com skill `trello-manager` para mover o card (não bloqueia git/PR já feitos, salvo `--fail-on-trello`)
 - `ci-watch` falha (CI fail, exit 2) → `throw 🚨 CI_FAILED_NEEDS_FIX` — harness **single-run** reinicia `task builder` com contexto extraído de `HANDOFF.md#CI_REPORT:START` + `STATE.md#CI_STATE` (max 2) → `reviewer` → `shipper` → `ci-watch` re-polla; se retries esgotados → `throw 🚨 CI_RETRIES_EXHAUSTED` → escalar humano (sem re-invocar harness)
 - `ci-watch` pending timeout (exit 3) → warn (harness permanece bloqueante, re-poll via `session.idle` sem encerrar)
 - `supervisor` crítico (hallucination HIGH) → `throw HOOK_SUPERVISOR_CRITICAL` — não bloqueia shipper (observability), mas alerta com `🚨`; harness só finaliza após `HOOKS.log` registrar `supervisor status=success|critical`

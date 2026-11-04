@@ -3,6 +3,7 @@
 import { cp, mkdir, readFile, writeFile, access, chmod } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const platforms = new Set(["opencode", "claude", "codex"]);
@@ -21,18 +22,49 @@ const codexRoleModels = {
   shipper: "gpt-5.6-terra",
 };
 
+// ── RTK (economia de tokens) ─────────────────────────────────────────────────
+// rtk — https://github.com/rtk-ai/rtk — proxy de comandos que comprime a saída
+// de shell antes do LLM ler (60–90% menos tokens de bash). Durante a instalação
+// da squad o binário é baixado (brew/winget/install.sh oficial) e vinculado ao
+// harness escolhido via `rtk init <flags-do-agent>`. O rtk falha em aberto:
+// sem o binário os hooks passam o comando original, então a squad funciona
+// mesmo que o vínculo falhe.
+const RTK_INIT_FLAGS = {
+  opencode: ["--global", "--opencode"], // único escopo do rtk (plugin TS em ~/.config/opencode/plugins/rtk.ts)
+  claude: ["--global"], // hook nativo PreToolUse + patch do settings.json
+  codex: ["--global", "--codex"], // hook PreToolUse (updatedInput) + RTK.md em ~/.codex
+};
+const RTK_EDITIONS = new Set(["full", "oss"]);
+const RTK_INSTALL_URL =
+  "https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh";
+
 function usage(exitCode = 0) {
   console.log(`Uso: npx --yes github:tuliomourarocha/module-sdd-commons#main --<plataforma> [opções]
 
 Plataformas: --opencode, --claude, --codex, --all
 Opções:     --target <diretório-do-projeto>   (padrão: diretório atual)
              --dry-run
+             --no-rtk                          (não baixa nem vincula o rtk)
+             --rtk-edition <full|oss>          (padrão: full; oss = Apache-2.0, sem motor BUSL)
+             --rtk-scope <global|project>      (padrão: global; opencode é sempre global)
+             --rtk-only                        (só baixa/vincula o rtk, sem artefatos)
              --help
+
+Sobre o rtk: proxy de comandos (https://github.com/rtk-ai/rtk) que comprime a
+saída de shell antes do LLM ler. Durante a instalação o binário é baixado
+(brew / winget / install.sh oficial) e vinculado ao harness escolhido com
+"rtk init". Saída estranha? "rtk bypass <cmd>" roda sem filtro.
+
+--rtk-agents: por padrão o vínculo segue as plataformas da instalação;
+  "all" detecta e vincula todos os harnesses instalados (opencode, claude,
+  codex); ou passe uma lista csv: --rtk-agents opencode,codex
 
 Exemplos:
   npx --yes github:tuliomourarocha/module-sdd-commons#main --opencode
   npx --yes github:tuliomourarocha/module-sdd-commons#main --claude --target ../meu-app
-  npx --yes github:tuliomourarocha/module-sdd-commons#main --all --target .`);
+  npx --yes github:tuliomourarocha/module-sdd-commons#main --codex --no-rtk
+  npx --yes github:tuliomourarocha/module-sdd-commons#main --opencode --rtk-agents all
+  npx --yes github:tuliomourarocha/module-sdd-commons#main --rtk-only --rtk-agents all`);
   process.exit(exitCode);
 }
 
@@ -40,11 +72,45 @@ function parseArgs(args) {
   const selected = [];
   let target = process.cwd();
   let dryRun = false;
+  const rtk = {
+    enabled: true,
+    only: false,
+    edition: process.env.RTK_EDITION === "oss" ? "oss" : "full",
+    scope: "global",
+    agents: null,
+  };
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === "--help" || argument === "-h") usage();
     if (argument === "--dry-run") { dryRun = true; continue; }
+    if (argument === "--no-rtk") { rtk.enabled = false; continue; }
+    if (argument === "--rtk-only") { rtk.enabled = true; rtk.only = true; continue; }
+    if (argument === "--rtk-edition") {
+      const value = args[index + 1];
+      if (!value || !RTK_EDITIONS.has(value)) {
+        throw new Error("--rtk-edition aceita: full ou oss.");
+      }
+      rtk.edition = value;
+      index += 1;
+      continue;
+    }
+    if (argument === "--rtk-scope") {
+      const value = args[index + 1];
+      if (value !== "global" && value !== "project") {
+        throw new Error("--rtk-scope aceita: global ou project.");
+      }
+      rtk.scope = value;
+      index += 1;
+      continue;
+    }
+    if (argument === "--rtk-agents") {
+      const value = args[index + 1];
+      if (!value) throw new Error("--rtk-agents aceita: all ou uma lista csv (opencode,claude,codex).");
+      rtk.agents = value;
+      index += 1;
+      continue;
+    }
     if (argument === "--all") { selected.push(...platforms); continue; }
     if (argument.startsWith("--") && platforms.has(argument.slice(2))) {
       selected.push(argument.slice(2));
@@ -60,8 +126,11 @@ function parseArgs(args) {
     throw new Error(`Argumento desconhecido: ${argument}`);
   }
 
-  if (selected.length === 0) throw new Error("Escolha uma plataforma: --opencode, --claude, --codex ou --all.");
-  return { selected: [...new Set(selected)], target, dryRun };
+  // sem plataforma: só aceitável no modo --rtk-only (só configura o vínculo do rtk)
+  if (selected.length === 0 && !(rtk.only && rtk.agents)) {
+    throw new Error("Escolha uma plataforma: --opencode, --claude, --codex ou --all; ou use --rtk-only com --rtk-agents.");
+  }
+  return { selected: [...new Set(selected)], target, dryRun, rtk };
 }
 
 async function exists(file) {
@@ -105,6 +174,194 @@ const descriptions = {
 };
 
 const HOOKS_SUPERVISOR_REPO = "tuliomourarocha/module-sdd-commons";
+
+// ── RTK: download e vínculo com o harness escolhido ──────────────────────────
+
+function shRun(command, env) {
+  return spawnSync("/bin/sh", ["-c", command], { stdio: "inherit", env }).status ?? 1;
+}
+
+function shOut(command) {
+  const result = spawnSync("/bin/sh", ["-c", command], { encoding: "utf8" });
+  return result.status === 0 ? (result.stdout ?? "").trim() : null;
+}
+
+async function findRtkBinary() {
+  const onPath = shOut("command -v rtk");
+  if (onPath) return onPath;
+  const home = process.env.HOME ?? "";
+  for (const candidate of [`${home}/.local/bin/rtk`, "/opt/homebrew/bin/rtk", "/usr/local/bin/rtk"]) {
+    if (home && (await exists(candidate))) return candidate;
+  }
+  return null;
+}
+
+async function findBrew() {
+  const onPath = shOut("command -v brew");
+  if (onPath) return onPath;
+  if (process.platform === "darwin") {
+    for (const candidate of ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]) {
+      if (await exists(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+// OpenCode só carrega o plugin TypeScript do rtk a partir de 1.18.29.
+// Retorno: true/false (sabemos) ou null (não dá para saber — deixa o rtk decidir).
+function opencodePluginSupported() {
+  const version = shOut("opencode --version");
+  const match = version?.match(/(\d+)\.(\d+)(?:\.(\d+))?/);
+  if (!match) return null;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3] ?? 0);
+  return major > 1 || (major === 1 && minor > 18) || (major === 1 && minor === 18 && patch >= 29);
+}
+
+const RTK_AGENT_BINARIES = { opencode: "opencode", claude: "claude", codex: "codex" };
+
+// Alvos do vínculo rtk × harness — agnóstico: independem da plataforma da squad.
+// - sem --rtk-agents  → segue as plataformas pedidas (comportamento padrão)
+// - --rtk-agents all  → auto-detecta os CLIs presentes no PATH (opencode, claude, codex)
+// - --rtk-agents a,b  → vínculo explícito; avisa se o CLI do agente não estiver instalado
+async function resolveRtkAgents(platformsRequested, value) {
+  if (!value) return platformsRequested;
+  if (value === "all") {
+    const detected = [];
+    for (const agent of Object.keys(RTK_AGENT_BINARIES)) {
+      if (shOut(`command -v ${RTK_AGENT_BINARIES[agent]} >/dev/null 2>&1`) !== null) detected.push(agent);
+      else console.log(`  ${agent}: CLI não encontrado no PATH — vínculo pulado (instale e rode --rtk-only --rtk-agents ${agent})`);
+    }
+    if (detected.length === 0) console.log("  nenhum harness reconhecido no PATH — nada para vincular");
+    return detected;
+  }
+  const requested = value.split(",").map((item) => item.trim()).filter(Boolean);
+  for (const agent of requested) {
+    if (!RTK_AGENT_BINARIES[agent]) {
+      throw new Error(`harness desconhecido em --rtk-agents: ${agent} (use: opencode, claude, codex ou all)`);
+    }
+    if (shOut(`command -v ${RTK_AGENT_BINARIES[agent]} >/dev/null 2>&1`) === null) {
+      console.log(`  ${agent}: CLI não encontrado no PATH — configurando mesmo assim (aplica quando instalar)`);
+    }
+  }
+  return [...new Set(requested)];
+}
+
+async function installRtkBinary(rtk, dryRun) {
+  if (dryRun) {
+    console.log(`  [dry-run] RTK ausente — baixaria a edição "${rtk.edition}" (brew/winget/install.sh oficial)`);
+    return null;
+  }
+  let installed = false;
+  if (process.platform === "win32") {
+    if (rtk.edition === "oss") console.log("  edição oss não é publicada no winget — instalando full");
+    installed = shRun("winget install --id rtk-ai.rtk --accept-source-agreements --accept-package-agreements") === 0;
+    return installed ? await findRtkBinary() : null;
+  }
+  const brew = await findBrew();
+  if (brew) {
+    const formula = rtk.edition === "oss" ? "rtk-ai/tap/rtk-oss" : "rtk";
+    installed = shRun(`"${brew}" install ${formula}`) === 0;
+  } else {
+    const envVar = rtk.edition === "oss" ? "export RTK_EDITION=oss; " : "";
+    installed = shRun(`${envVar}curl -fsSL ${RTK_INSTALL_URL} | sh`) === 0;
+  }
+  return installed ? await findRtkBinary() : null;
+}
+
+function rtkInitFlags(platform, scope) {
+  const flags = [...(RTK_INIT_FLAGS[platform] ?? [])];
+  if (platform === "opencode") {
+    // o rtk publica o plugin do OpenCode apenas no escopo global
+    if (scope === "project") console.log("  OpenCode só suporta vínculo global — usando --global");
+    return flags;
+  }
+  if (scope === "project") {
+    const globalIndex = flags.indexOf("--global");
+    if (globalIndex >= 0) flags.splice(globalIndex, 1);
+  }
+  return flags;
+}
+
+async function bindRtkToHarness(platform, rtkBinaryPath, { scope, target, dryRun }) {
+  const flags = rtkInitFlags(platform, scope);
+  if (flags.length === 0) {
+    console.error(`✖ RTK: sem integração conhecida para ${platform}`);
+    return false;
+  }
+  if (platform === "opencode") {
+    const supported = opencodePluginSupported();
+    if (supported === false) {
+      console.error("✖ RTK: OpenCode < 1.18.29 não carrega o plugin do rtk — atualize o Opencode e rode --rtk-only de novo");
+      return false;
+    }
+  }
+  if (dryRun) {
+    console.log(`  [dry-run] "${rtkBinaryPath} init ${flags.join(" ")}"`);
+    return true;
+  }
+  // Claude Code: --auto-patch aprova o patch do settings.json sem prompt (um único
+  // comando, sem passo manual). Se esta versão do rtk não conhecer a flag, repetimos
+  // sem ela.
+  const argsList = platform === "claude" ? ["init", ...flags, "--auto-patch"] : ["init", ...flags];
+  let result = spawnSync(rtkBinaryPath, argsList, {
+    stdio: "inherit",
+    cwd: scope === "project" ? target : process.cwd(),
+  });
+  if (result.status !== 0 && platform === "claude") {
+    console.log("  claude: --auto-patch não suportado nesta versão do rtk — repetindo o vínculo padrão");
+    result = spawnSync(rtkBinaryPath, ["init", ...flags], {
+      stdio: "inherit",
+      cwd: scope === "project" ? target : process.cwd(),
+    });
+  }
+  if (result.status !== 0) {
+    console.error(`✖ RTK: "rtk init ${flags.join(" ")}" falhou (exit ${result.status}) — o harness continua sem o proxy de comandos`);
+    return false;
+  }
+  return true;
+}
+
+async function setupRtk(platformsRequested, { rtk, target, dryRun }) {
+  console.log(`\n== RTK — economia de tokens (${rtk.edition}, escopo ${rtk.scope}) ==`);
+  try {
+    // agnóstico: por padrão segue as plataformas da instalação; --rtk-agents all autodetecta todos os harnesses
+    const targets = await resolveRtkAgents(platformsRequested, rtk.agents);
+    if (targets.length === 0) {
+      console.log("✖ RTK: nenhum harness para vincular");
+      return;
+    }
+    if (rtk.agents && rtk.agents !== "all") {
+      console.log(`alvos do vínculo: ${targets.join(", ")}`);
+    }
+    let binaryPath = await findRtkBinary();
+    if (!binaryPath) {
+      console.log("RTK não encontrado — baixando...");
+      binaryPath = await installRtkBinary(rtk, dryRun);
+      if (dryRun && !binaryPath) return;
+      if (!binaryPath) throw new Error("download do rtk não concluiu — verifique a saída acima");
+      if (!shOut("command -v rtk")) {
+        console.log("  rtk instalado fora do PATH (ex.: ~/.local/bin) — adicione 'export PATH=\"$HOME/.local/bin:$PATH\"' ao seu profile");
+      }
+    } else {
+      console.log(`RTK encontrado: ${binaryPath}`);
+    }
+    const version = shOut(`"${binaryPath}" --version`);
+    console.log(`versão do rtk: ${version ?? "desconhecida"}`);
+    let bound = 0;
+    for (const platform of targets) {
+      if (await bindRtkToHarness(platform, binaryPath, { scope: rtk.scope, target, dryRun })) bound += 1;
+    }
+    console.log(
+      bound > 0
+        ? `✓ RTK vinculado a ${bound} harness(es) — reinicie o harness para ativar e acompanhe com "rtk gain"`
+        : "✖ RTK não vinculado a nenhum harness",
+    );
+  } catch (error) {
+    console.error(`✖ RTK: ${error.message}. A squad funciona sem ele — tente novamente com --rtk-only`);
+  }
+}
 
 async function installOpenCode(target, dryRun) {
   const root = path.join(target, ".opencode");
@@ -244,11 +501,22 @@ async function installCodex(target, dryRun) {
 }
 
 async function main() {
-  const { selected, target, dryRun } = parseArgs(process.argv.slice(2));
+  const { selected, target, dryRun, rtk } = parseArgs(process.argv.slice(2));
   console.log(`${dryRun ? "Simulação" : "Instalando"} SDD Harness em ${target}`);
-  for (const platform of selected) {
-    const output = await ({ opencode: installOpenCode, claude: installClaude, codex: installCodex }[platform])(target, dryRun);
-    console.log(`✓ ${platform}: ${output}`);
+
+  if (rtk.only) {
+    console.log("--rtk-only: pulando instalação de artefatos (agents/commands/skills/hooks)");
+  } else {
+    for (const platform of selected) {
+      const output = await ({ opencode: installOpenCode, claude: installClaude, codex: installCodex }[platform])(target, dryRun);
+      console.log(`✓ ${platform}: ${output}`);
+    }
+  }
+
+  if (rtk.enabled) {
+    await setupRtk(selected, { rtk, target, dryRun });
+  } else {
+    console.log("RTK: pulado (--no-rtk) — comandos de shell chegam crus ao LLM");
   }
 }
 

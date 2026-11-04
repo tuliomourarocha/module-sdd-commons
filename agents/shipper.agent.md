@@ -13,6 +13,8 @@ permission:
   bash:
     "python3 hooks/shipper.py*": allow
     "python3 .opencode/hooks/shipper.py*": allow
+    "python3 skills/trello-manager/scripts/trello_api.py*": allow
+    "python3 .opencode/skills/trello-manager/scripts/trello_api.py*": allow
     "git status*": allow
     "git diff*": allow
     "git log*": allow
@@ -52,9 +54,10 @@ python3 hooks/shipper.py --run --repo . --repo-slug tuliomourarocha/module-sdd-c
 - Atualize `.planning/STATE.md`: `flow`, `gate=done`, artifacts status (`PRD:done (memória)` etc.), `next step`.
 - **Nunca** crie `.planning/PRD.md`/`.planning/PLAN.md` etc. — `deny`. **NUNCA crie** `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`.
 
-### 4. Não repetir git/PR/Trello se hook já fez
+### 4. Não repetir git/PR/Trello se hook já fez — MAS concluir Trello se falhou
 - Se hook já fez commit/PR, não refaça. Apenas confirme `gh pr view --json url` e `gh pr checks` se precisar reportar.
 - Se hook falhou por falta de `gh`, tente `gh pr create` aqui como fallback (não bloqueante).
+- **Trello:** leia o bloco `<!-- TRELLO_REPORT:START -->` do `.planning/HANDOFF.md` (ou `grep TRELLO .planning/HOOKS.log`). Se status `failed`/`TRELLO_SYNC_FAILED`, você DEVE concluir o sync via skill `trello-manager`: localizar o card pelo ID estável (`card_id`) — ou por nome exato no board — e movê-lo para a lista de destino configurada (`list_id`/`dest_list`, explícita; nunca invente destino). Depois atualize o bloco no HANDOFF para `ok (fallback)` com card/lista usados. Se credenciais/destino não existirem, registre a pendência explícita — **nunca** encerre com falha silenciosa. Status `skipped` (sem credenciais) não exige ação.
 
 ## Outputs
 - `.planning/HANDOFF.md` + `.planning/STATE.md` enriquecidos (se necessário)
@@ -65,7 +68,7 @@ python3 hooks/shipper.py --run --repo . --repo-slug tuliomourarocha/module-sdd-c
 - [ ] `.planning/HANDOFF.md` escrito/enriquecido
 - [ ] `.planning/STATE.md` atualizado
 - [ ] PR/CI verificado ou reportado como já feito pelo hook
-- [ ] Trello sync já feito pelo hook ou warning logado
+- [ ] Trello: `TRELLO_REPORT` no HANDOFF está `ok` (hook) — se `failed`, fallback concluído via `trello-manager` ou pendência explícita registrada (nunca silencioso)
 
 ## Rules
 - **Hook first:** nunca faça `git commit`/`gh pr create` manualmente se `hooks/shipper.py` já fez — apenas complemente STATE/HANDOFF.

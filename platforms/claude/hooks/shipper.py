@@ -19,12 +19,22 @@ O que faz (determinístico, sem LLM):
   - Git: status, diff, commit conventional, push (se origin existir)
   - PR: `gh pr create` ou atualiza se já existe; `gh pr checks` / `gh run list` para CI
   - STATE/HANDOFF: gera templates em `.planning/STATE.md` e `.planning/HANDOFF.md` a partir de git diff + contexto injetado (se --context-file fornecido)
-  - Trello: se `~/.trello_config.json` existir, move card e comenta PR link (não bloqueante)
+  - Trello: sync REAL via REST API (stdlib urllib, sem `requests`) quando configurado:
+    localiza card por ID estável (`card_id` — preferível) ou por nome exato no board
+    (`card_name` + `board_id`/`board`), move para lista de destino configurada
+    EXPLICITAMENTE (`list_id`/`dest_list_id` por ID, ou nome exato + board) e comenta o
+    link do PR. Aceita `api_key` ou `apiKey` na config, e env `TRELLO_API_KEY`/`TRELLO_KEY`.
+    Regras de honestidade: sem credenciais = `skipped` (pulado); com credenciais, status
+    `ok` SÓ quando o card foi movido de fato (verificado na resposta da API). Qualquer
+    falha (misconfiguração, 401/404/ambiguidade, rede) → `TRELLO_SYNC_FAILED` visível no
+    stdout, bloco `<!-- TRELLO_REPORT -->` no HANDOFF.md, campo `trello` no HOOKS.log e
+    instrução de fallback (`task shipper` minimal + skill `trello-manager`).
+    Não bloqueia o pipeline por padrão; `--fail-on-trello` força exit 2.
 
 Exit codes:
-  0 = shipper ok (commit+PR+HANDOFF/STATE gerados, Trello sync ok ou não configurado)
+  0 = shipper ok (commit+PR+HANDOFF/STATE gerados, Trello sync ok, não configurado ou falho sem --fail-on-trello)
   1 = erro de uso
-  2 = falha crítica (git falhou, gh não autenticado e sem HANDOFF, CI falhou e precisa escalar)
+  2 = falha crítica (git falhou, gh não autenticado e sem HANDOFF, CI falhou e precisa escalar, Trello falhou com --fail-on-trello)
 
 Fallback:
   Se executado via hook e não houver contexto rico (PRD/PLAN + resumo/parecer),
@@ -43,6 +53,10 @@ import re
 import shutil
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
@@ -111,6 +125,17 @@ def load_context(context_file: str | None) -> dict[str, Any]:
     except:
         return {}
 
+def strip_marker_blocks(text: str) -> str:
+    """Remove todos os blocos de marcadores de hooks (CI/TRELLO/SUPERVISOR/ORCHESTRATOR) de um texto."""
+    for start, end in (
+        (TRELLO_HANDOFF_START, TRELLO_HANDOFF_END),
+        ("<!-- CI_REPORT:START -->", "<!-- CI_REPORT:END -->"),
+        ("<!-- SUPERVISOR:START -->", "<!-- SUPERVISOR:END -->"),
+        ("<!-- ORCHESTRATOR:START -->", "<!-- ORCHESTRATOR:END -->"),
+    ):
+        text = re.sub(re.escape(start) + r".*?" + re.escape(end), "", text, flags=re.DOTALL)
+    return text
+
 def generate_handoff(repo: Path, git_info: dict[str, Any], context: dict[str, Any], args) -> str:
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     branch = git_info.get("branch", "main")
@@ -123,11 +148,24 @@ def generate_handoff(repo: Path, git_info: dict[str, Any], context: dict[str, An
     summary = context.get("summary") or context.get("resumo") or context.get("SUMMARY.md") or ""
     review = context.get("review") or context.get("parecer") or context.get("REVIEW.md") or ""
     # tenta ler arquivos existentes em .planning como fallback (quando shipper hook roda isolado)
+    # ATT: extrai só a seção qualitativa e remove cabeçalhos/marcadores do próprio hook
+    # para não embutir o HANDOFF anterior recursivamente (nem TRELLO_REPORT/CI_REPORT)
     if not summary:
-        for cand in [repo / ".planning" / "HANDOFF.md", repo / ".planning" / "STATE.md"]:
-            if cand.exists():
-                summary = read_text(cand)[:2000]
-                break
+        handoff_cand = repo / ".planning" / "HANDOFF.md"
+        state_cand = repo / ".planning" / "STATE.md"
+        base_txt = ""
+        if handoff_cand.exists():
+            txt = strip_marker_blocks(read_text(handoff_cand))
+            if "## O que foi feito" in txt:
+                base_txt = txt.split("## O que foi feito", 1)[1].split("\n## ", 1)[0]
+            else:
+                base_txt = txt
+        elif state_cand.exists():
+            base_txt = strip_marker_blocks(read_text(state_cand))
+        summary = "\n".join(
+            l for l in base_txt.splitlines()
+            if not l.startswith("# HANDOFF — ") and not l.startswith("# STATE — ") and not l.startswith("_Gerado por `hooks/shipper.py`")
+        ).strip()[:2000]
 
     files_list = "\n".join([f"- `{f}`" for f in diff_names[:50]]) if diff_names else "- _nenhum arquivo alterado detectado (ver git status)_"
 
@@ -180,7 +218,7 @@ def generate_handoff(repo: Path, git_info: dict[str, Any], context: dict[str, An
     lines.append("")
     lines.append("- [ ] CI deve estar verde (ver `gh pr checks` / `gh run list`)")
     lines.append("- [ ] Se hook gerou HANDOFF minimal, agente shipper minimal pode complementar com contexto qualitativo (PRD/PLAN + resumo/parecer em memória)")
-    lines.append("- [ ] Trello sync: verificar `~/.trello_config.json` ou `TRELLO_API_KEY`")
+    lines.append("- [ ] Trello sync: ver bloco `TRELLO_REPORT` neste arquivo (ok = card movido; failed = fallback `task shipper` + skill `trello-manager` pendente)")
     lines.append("")
     lines.append("## Artefatos em memória (não em disco)")
     lines.append("")
@@ -193,7 +231,7 @@ def generate_handoff(repo: Path, git_info: dict[str, Any], context: dict[str, An
     lines.append(f"_Gerado por `hooks/shipper.py` em {now} — hook determinístico. Se conteúdo estiver minimal, fallback para `task shipper` minimal para enriquecer STATE/HANDOFF._")
     return "\n".join(lines)
 
-def generate_state(repo: Path, git_info: dict[str, Any], context: dict[str, Any], args, pr_url: str | None) -> str:
+def generate_state(repo: Path, git_info: dict[str, Any], context: dict[str, Any], args, pr_url: str | None, trello: dict[str, Any] | None = None) -> str:
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     branch = git_info.get("branch", "main")
     flow = context.get("flow") or "feature"
@@ -211,6 +249,9 @@ def generate_state(repo: Path, git_info: dict[str, Any], context: dict[str, Any]
     lines.append(f"**Repo:** `{args.repo_slug}` | **Gerado por:** `hooks/shipper.py`")
     if pr_url:
         lines.append(f"**PR:** {pr_url}")
+    trello_status = (trello or {}).get("status", "skipped")
+    trello_icon = {"ok": "✅", "failed": "❌", "skipped": "⏭️", "dry_run": "🧪"}.get(trello_status, "❔")
+    lines.append(f"**Trello:** {trello_icon} `{trello_status}` — {sanitize_trello_text(str((trello or {}).get('message', '')))[:200]}")
     lines.append("")
     lines.append("## Artifacts")
     lines.append("")
@@ -220,6 +261,7 @@ def generate_state(repo: Path, git_info: dict[str, Any], context: dict[str, Any]
     lines.append("- parecer: done (memória, nunca REVIEW.md)")
     lines.append("- `HANDOFF.md`: done (disco — hook)")
     lines.append("- `STATE.md`: done (disco — hook)")
+    lines.append(f"- Trello sync: `{trello_status}` (hook — se `failed`, fallback `task shipper` minimal + skill `trello-manager`; ver HANDOFF.md#TRELLO_REPORT)")
     lines.append("- `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`: proibidos em disco")
     lines.append("")
     lines.append("## Gates")
@@ -313,27 +355,302 @@ def do_ci_check(repo: Path, dry_run: bool) -> tuple[bool | None, str]:
         return None, out2[:1000]
     return None, f"CI check não disponível: {out[:500]}"
 
-def do_trello_sync(repo: Path, pr_url: str | None, dry_run: bool) -> tuple[bool, str]:
-    if dry_run:
-        return True, "dry-run: Trello não sincronizado"
-    # verifica config
-    cfg_paths = [Path.home() / ".trello_config.json", repo / ".trello_config.json"]
-    cfg = None
-    for cp in cfg_paths:
-        if cp.exists():
+# ── Trello — sync real via REST API (stdlib, determinístico, sem LLM) ─────────
+TRELLO_BASE = "https://api.trello.com/1"
+TRELLO_ID_RE = re.compile(r"^[0-9a-f]{24}$", re.IGNORECASE)
+TRELLO_HANDOFF_START = "<!-- TRELLO_REPORT:START -->"
+TRELLO_HANDOFF_END = "<!-- TRELLO_REPORT:END -->"
+
+def sanitize_trello_text(text: str) -> str:
+    """Remove query strings de URLs (podem conter key/token) — nunca vazar credenciais em logs."""
+    return re.sub(r"\?[^ \n\"']*", "?key=***", text or "")
+
+def cfg_get(cfg: dict[str, Any], *keys: str) -> str | None:
+    """Primeiro valor não vazio entre chaves — aceita `api_key` E `apiKey`, snake e camel."""
+    for k in keys:
+        v = cfg.get(k)
+        if v not in (None, ""):
+            return str(v).strip()
+    return None
+
+def load_trello_config(repo: Path, args) -> dict[str, Any]:
+    """Carrega config Trello com precedência: CLI > env > arquivo (~/.trello_config.json ou repo)."""
+    cfg: dict[str, Any] = {}
+    candidates: list[Path] = []
+    if getattr(args, "trello_config", ""):
+        candidates.append(Path(args.trello_config))
+    if os.environ.get("TRELLO_CONFIG", "").strip():
+        candidates.append(Path(os.environ["TRELLO_CONFIG"].strip()))
+    candidates += [Path.home() / ".trello_config.json", repo / ".trello_config.json"]
+    for cp in candidates:
+        try:
+            if cp.exists():
+                loaded = json.loads(cp.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    cfg = loaded
+                    cfg["_config_path"] = str(cp)
+                    break
+        except Exception:
+            continue
+    # env sobrescreve arquivo — aceita TRELLO_API_KEY e TRELLO_KEY
+    env_map = {
+        "api_key": ("TRELLO_API_KEY", "TRELLO_KEY"),
+        "token": ("TRELLO_TOKEN",),
+        "card_id": ("TRELLO_CARD_ID",),
+        "list_id": ("TRELLO_LIST_ID",),
+        "board_id": ("TRELLO_BOARD_ID",),
+    }
+    for key, env_names in env_map.items():
+        val = next((os.environ[n] for n in env_names if os.environ.get(n, "").strip()), None)
+        if val:
+            cfg[key] = val.strip()
+    # CLI tem prioridade máxima
+    for attr, key in (("trello_card", "card_id"), ("trello_list", "list_id"), ("trello_board", "board_id")):
+        val = str(getattr(args, attr, "") or "").strip()
+        if val:
+            cfg[key] = val
+    return cfg
+
+def trello_api(method: str, path: str, auth: dict[str, str], query: dict[str, Any] | None = None, body: dict[str, Any] | None = None, timeout: int = 15) -> tuple[bool, Any, str]:
+    """Chamada REST determinística com retry em 429/5xx. Retorna (ok, json|texto, erro_sanitizado)."""
+    params = {**auth, **(query or {})}
+    url = f"{TRELLO_BASE}{path}?{urllib.parse.urlencode(params)}"
+    data = urllib.parse.urlencode({k: str(v) for k, v in body.items()}).encode() if body else None
+    last_err = "erro desconhecido"
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, data=data, method=method)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+                try:
+                    return True, json.loads(raw), ""
+                except json.JSONDecodeError:
+                    return True, raw, ""
+        except urllib.error.HTTPError as e:
+            detail = ""
             try:
-                cfg = json.loads(cp.read_text(encoding="utf-8"))
-                break
-            except:
+                detail = e.read().decode("utf-8", errors="replace")[:300]
+            except Exception:
                 pass
-    # também verifica env
-    api_key = os.environ.get("TRELLO_API_KEY") or (cfg.get("apiKey") if cfg else None)
-    token = os.environ.get("TRELLO_TOKEN") or (cfg.get("token") if cfg else None)
+            if e.code in (429, 500, 502, 503, 504) and attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            if e.code == 401:
+                return False, None, "HTTP 401 — api_key/token inválidos ou expirados (re-autorize em https://trello.com/1/authorize)"
+            if e.code == 404:
+                return False, None, "HTTP 404 — card/lista/board não encontrado (verifique IDs na config Trello)"
+            return False, None, sanitize_trello_text(f"HTTP {e.code}: {detail or e.reason}")
+        except Exception as e:
+            last_err = sanitize_trello_text(f"{type(e).__name__}: {e}")
+            if attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+    return False, None, last_err
+
+def resolve_trello_board(auth: dict[str, str], ref: str) -> tuple[bool, dict[str, Any] | None, str]:
+    """Aceita ID estável (hex 24) ou nome exato (case-insensitive) de board."""
+    ref = str(ref).strip()
+    if TRELLO_ID_RE.match(ref):
+        ok, b, err = trello_api("GET", f"/boards/{ref}", auth, query={"fields": "name"})
+        if ok and isinstance(b, dict) and b.get("id"):
+            return True, b, ""
+        return False, None, err or f"board `{ref}` não encontrado"
+    ok, boards, err = trello_api("GET", "/members/me/boards", auth, query={"fields": "name", "open": "true"})
+    if not ok:
+        return False, None, err
+    for b in boards or []:
+        if isinstance(b, dict) and str(b.get("name", "")).strip().lower() == ref.lower():
+            return True, b, ""
+    return False, None, f"board '{ref}' não encontrado entre os boards do membro (use board_id estável)"
+
+def resolve_trello_dest(auth: dict[str, str], dest: str, board_ref: str | None) -> tuple[bool, dict[str, Any] | None, str]:
+    """Lista de destino configurada explicitamente: ID estável (preferível) ou nome exato no board."""
+    dest = str(dest).strip()
+    if TRELLO_ID_RE.match(dest):
+        ok, lst, err = trello_api("GET", f"/lists/{dest}", auth, query={"fields": "name,id,closed"})
+        if ok and isinstance(lst, dict) and lst.get("id"):
+            return True, lst, ""
+        return False, None, f"list_id de destino `{dest}` inválido: {err}"
+    if not board_ref:
+        return False, None, f"destino '{dest}' é nome de lista — configure `board_id`/`board` na config para resolvê-lo"
+    ok, board, err = resolve_trello_board(auth, board_ref)
+    if not ok:
+        return False, None, err
+    ok, lists, err = trello_api("GET", f"/boards/{board['id']}/lists", auth, query={"fields": "name,id,closed"})
+    if not ok:
+        return False, None, err
+    matches = [l for l in (lists or []) if isinstance(l, dict) and str(l.get("name", "")).strip().lower() == dest.lower() and not l.get("closed")]
+    if not matches:
+        return False, None, f"lista de destino '{dest}' não encontrada (aberta) no board '{board.get('name')}'"
+    if len(matches) > 1:
+        return False, None, f"{len(matches)} listas chamadas '{dest}' no board — use `list_id` estável para remover ambiguidade"
+    return True, matches[0], ""
+
+def do_trello_sync(repo: Path, pr_url: str | None, dry_run: bool, args) -> dict[str, Any]:
+    """Sync Trello real. `ok` exige card MOVIDO de fato; falha é sempre visível (nunca sucesso silencioso).
+
+    Status: ok | skipped (sem credenciais) | failed (misconfig/API/rede) | dry_run.
+    Garante sanitização final — mensagem jamais contém key/token.
+    """
+    result = _trello_sync(repo, pr_url, dry_run, args)
+    result["message"] = sanitize_trello_text(str(result.get("message", "")))
+    return result
+
+def _trello_sync(repo: Path, pr_url: str | None, dry_run: bool, args) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "status": "skipped", "message": "", "moved": False, "commented": False,
+        "card_id": None, "card_url": None, "card_name": None,
+        "dest_list_id": None, "dest_list_name": None,
+    }
+    cfg = load_trello_config(repo, args)
+    api_key = cfg_get(cfg, "api_key", "apiKey", "API_KEY", "app_key", "key")
+    token = cfg_get(cfg, "token", "auth_token", "accessToken")
+    if not api_key and not token:
+        result["message"] = "Trello não configurado — pulado (crie ~/.trello_config.json com api_key+token ou exporte TRELLO_API_KEY/TRELLO_TOKEN)"
+        return result
     if not api_key or not token:
-        return True, "Trello não configurado — pulado (configure ~/.trello_config.json ou TRELLO_API_KEY/TOKEN)"
-    # se configurado, tenta mover card — implementação minimal via API
-    # Por enquanto, apenas loga que está configurado; ação real pode ser feita por trello-manager skill no agente
-    return True, "Trello configurado — sync deve ser feito via API (hook loga PR link, agente pode complementar)"
+        faltando = "api_key|apiKey" if not api_key else "token"
+        result["status"] = "failed"
+        result["message"] = f"TRELLO_MISCONFIGURED: credenciais parciais — falta `{faltando}` em {cfg.get('_config_path', 'env/CLI')}"
+        return result
+
+    card_id = cfg_get(cfg, "card_id", "cardId", "idCard", "id_card", "idcard")
+    card_name = cfg_get(cfg, "card_name", "cardName", "card")
+    dest = cfg_get(cfg, "list_id", "listId", "dest_list_id", "destListId", "target_list_id", "targetListId", "dest_list", "destList", "target_list", "targetList")
+    board_ref = cfg_get(cfg, "board_id", "boardId", "board")
+
+    problems = []
+    if not card_id and not (card_name and board_ref):
+        problems.append("card não configurado — use `card_id` (ID estável, preferível) ou `card_name` + `board_id`/`board`")
+    if not dest:
+        problems.append("lista de destino não configurada explicitamente — use `list_id`/`dest_list_id` (ID estável) ou nome exato + `board_id`")
+    if problems:
+        result["status"] = "failed"
+        result["message"] = "TRELLO_MISCONFIGURED: " + "; ".join(problems) + f" (config: {cfg.get('_config_path', 'env/CLI')})"
+        return result
+
+    auth = {"key": api_key, "token": token}
+    if dry_run:
+        result["status"] = "dry_run"
+        result["card_id"] = card_id
+        result["message"] = f"dry-run: moveria card {card_id or f'nome={card_name}'} para destino `{dest}`"
+        return result
+
+    # 1. Localizar card — ID estável é preferível; fallback nome exato (aberto) no board
+    card: dict[str, Any] = {}
+    if card_id:
+        ok, data, err = trello_api("GET", f"/cards/{card_id}", auth, query={"fields": "name,id,url,idList,closed"})
+        if not ok or not isinstance(data, dict) or not data.get("id"):
+            result["status"] = "failed"
+            result["message"] = f"Falha ao localizar card estável `{card_id}`: {err or 'resposta inválida'}"
+            return result
+        card = data
+    else:
+        ok, board, err = resolve_trello_board(auth, board_ref)
+        if not ok:
+            result["status"] = "failed"
+            result["message"] = f"Falha ao resolver board '{board_ref}': {err}"
+            return result
+        ok, cards, err = trello_api("GET", f"/boards/{board['id']}/cards", auth, query={"fields": "name,id,url"})
+        if not ok:
+            result["status"] = "failed"
+            result["message"] = f"Falha ao listar cards do board '{board.get('name')}': {err}"
+            return result
+        matches = [c for c in (cards or []) if isinstance(c, dict) and str(c.get("name", "")).strip().lower() == str(card_name).strip().lower()]
+        if not matches:
+            result["status"] = "failed"
+            result["message"] = f"nenhum card aberto com nome exato '{card_name}' no board '{board.get('name')}' (preferível: configurar card_id estável)"
+            return result
+        if len(matches) > 1:
+            result["status"] = "failed"
+            result["message"] = f"{len(matches)} cards abertos chamados '{card_name}' no board '{board.get('name')}' — ambiguidade: configure `card_id` (ID estável)"
+            return result
+        card = matches[0]
+        card_id = card["id"]
+    result["card_id"] = card_id
+    result["card_name"] = card.get("name")
+    result["card_url"] = card.get("url")
+
+    # 2. Resolver lista de destino explícita
+    ok, lst, err = resolve_trello_dest(auth, dest, board_ref)
+    if not ok:
+        result["status"] = "failed"
+        result["message"] = f"Falha ao resolver lista de destino '{dest}': {err}"
+        return result
+    result["dest_list_id"] = lst["id"]
+    result["dest_list_name"] = lst.get("name")
+
+    # 3. MOVER o card (PUT idList) — sucesso só é declarado se a API confirmar o destino
+    pos = cfg_get(cfg, "pos")
+    move_body: dict[str, Any] = {"idList": lst["id"]}
+    if pos:
+        move_body["pos"] = pos
+    ok, moved, err = trello_api("PUT", f"/cards/{card_id}", auth, body=move_body)
+    if not ok:
+        result["status"] = "failed"
+        result["message"] = f"Falha ao mover card `{card_id}` para lista `{lst.get('name') or lst['id']}`: {err}"
+        return result
+    confirmed = isinstance(moved, dict) and moved.get("idList") == lst["id"]
+    if isinstance(moved, dict) and moved.get("idList") and not confirmed:
+        result["status"] = "failed"
+        result["message"] = f"API confirmou idList `{moved.get('idList')}` diferente do destino `{lst['id']}` — movimento não aplicado"
+        return result
+    result["moved"] = True
+
+    # 4. Opcional: arquivar após mover (config `archive: true`)
+    archived = cfg.get("archive") in (True, "true", "1", "yes")
+    if archived:
+        ok_a, _, err_a = trello_api("PUT", f"/cards/{card_id}", auth, body={"closed": "true"})
+        if not ok_a:
+            result["message"] = f"(aviso: movido, mas archive falhou: {err_a})"
+
+    # 5. Opcional: comentar link do PR (config `add_pr_comment`/`comment`, flag --no-trello-comment)
+    add_comment = cfg.get("add_pr_comment", cfg.get("comment", True)) not in (False, "false", "0", "no")
+    if getattr(args, "no_trello_comment", False):
+        add_comment = False
+    comment_note = ""
+    if add_comment and pr_url:
+        ok_c, _, err_c = trello_api("POST", f"/cards/{card_id}/actions", auth, body={"text": f"🚢 Shipper hook: PR entregue — {pr_url}"})
+        result["commented"] = ok_c
+        if not ok_c:
+            comment_note = f" (movido, mas comentário do PR falhou: {err_c})"
+
+    result["status"] = "ok"
+    result["message"] = f"card `{card_id}` movido para lista `{result['dest_list_name'] or result['dest_list_id']}`{comment_note}"
+    return result
+
+def upsert_handoff_trello(handoff_path: Path, result: dict[str, Any]) -> None:
+    """Registra status do sync Trello no HANDOFF.md (marcadores TRELLO_REPORT, idempotente)."""
+    icon = {"ok": "✅", "failed": "❌", "skipped": "⏭️", "dry_run": "🧪"}.get(result.get("status", ""), "❔")
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    card_disp = f"`{result.get('card_id')}`" if result.get("card_id") else "—"
+    url_disp = f" ({result['card_url']})" if result.get("card_url") else ""
+    lines = [
+        TRELLO_HANDOFF_START,
+        f"## Trello sync (hook shipper) — {now}",
+        "",
+        f"- **Status:** {icon} `{result.get('status')}` | moved: `{result.get('moved')}` | commented: `{result.get('commented')}`",
+        f"- **Card:** {card_disp}{url_disp} — {result.get('card_name') or '—'}",
+        f"- **Destino:** `{result.get('dest_list_name') or result.get('dest_list_id') or '—'}`",
+        f"- **Detalhe:** {sanitize_trello_text(str(result.get('message', '')))}",
+    ]
+    if result.get("status") == "failed":
+        lines.append("- **Ação (fallback):** acionar `task shipper` (minimal) com skill `trello-manager` para concluir o movimento do card para a lista de destino configurada; falha registrada em `.planning/HOOKS.log` (campo `trello`) e neste bloco — nunca encerrar o gate com sync falho silencioso")
+    lines.append(TRELLO_HANDOFF_END)
+    block = "\n".join(lines)
+    try:
+        handoff_path.parent.mkdir(parents=True, exist_ok=True)
+        existing = read_text(handoff_path)
+        # remove blocos TRELLO_REPORT existentes (todos) e reaproveita o resto do documento
+        base = existing
+        if TRELLO_HANDOFF_START in base or TRELLO_HANDOFF_END in base:
+            base = strip_marker_blocks(existing)
+            base = base.replace(TRELLO_HANDOFF_START, "").replace(TRELLO_HANDOFF_END, "")
+        base = base.rstrip()
+        new_content = (base + "\n\n" if base else "") + block + "\n"
+        handoff_path.write_text(new_content, encoding="utf-8")
+    except Exception as e:
+        print(f"⚠️ Falha ao registrar TRELLO_REPORT em {handoff_path}: {e}", file=sys.stderr)
 
 def main():
     parser = argparse.ArgumentParser(description="Hook shipper determinístico — git/PR/STATE/HANDOFF/Trello")
@@ -347,6 +664,12 @@ def main():
     parser.add_argument("--fail-on-ci", action="store_true", help="Exit 2 se CI falhar")
     parser.add_argument("--handoff-out", default="", help="Caminho para HANDOFF.md (default .planning/HANDOFF.md)")
     parser.add_argument("--state-out", default="", help="Caminho para STATE.md (default .planning/STATE.md)")
+    parser.add_argument("--trello-config", default="", help="Caminho de config JSON do Trello (default ~/.trello_config.json)")
+    parser.add_argument("--trello-card", default="", help="ID estável do card Trello (sobrescreve config — preferível a nome)")
+    parser.add_argument("--trello-list", default="", help="ID ou nome EXATO da lista de destino do Trello (sobrescreve config)")
+    parser.add_argument("--trello-board", default="", help="ID ou nome do board Trello (resolve card/lista por nome)")
+    parser.add_argument("--no-trello-comment", action="store_true", help="Não comentar link do PR no card Trello")
+    parser.add_argument("--fail-on-trello", action="store_true", help="Exit 2 se sync Trello falhar (por padrão falha é visível mas não bloqueante)")
     args = parser.parse_args()
 
     repo = Path(args.repo).resolve()
@@ -406,8 +729,22 @@ def main():
     if pr_url:
         state_pr_url = pr_url
 
-    # 5. STATE.md (agora com PR url se houver)
-    state_md = generate_state(repo, git_info, context, args, state_pr_url)
+    # 5. Trello — sync real ANTES do STATE (status precisa aparecer em STATE/HANDOFF/HOOKS.log)
+    trello = do_trello_sync(repo, pr_url, args.dry_run, args)
+    trello_status = trello.get("status", "skipped")
+    if trello_status == "ok":
+        print(f"✅ Trello: TRELLO_SYNC_OK — {trello['message']}")
+    elif trello_status == "failed":
+        print(f"❌ Trello: TRELLO_SYNC_FAILED — {trello['message']}")
+        print("   ↪ fallback requerido: harness deve acionar `task shipper` (minimal) com skill `trello-manager` para mover o card; falha registrada em HANDOFF.md#TRELLO_REPORT e .planning/HOOKS.log (campo trello)")
+    elif trello_status == "dry_run":
+        print(f"🧪 Trello: {trello['message']}")
+    else:
+        print(f"⏭️ Trello: {trello['message']}")
+    upsert_handoff_trello(handoff_path, trello)
+
+    # 6. STATE.md (agora com PR url e status Trello)
+    state_md = generate_state(repo, git_info, context, args, state_pr_url, trello)
     try:
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(state_md, encoding="utf-8")
@@ -416,19 +753,15 @@ def main():
         print(f"❌ Falha ao escrever STATE.md: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # 6. CI check
+    # 7. CI check
     ci_pass, ci_out = do_ci_check(repo, args.dry_run)
     ci_label = "pass" if ci_pass else "fail" if ci_pass is False else "unknown"
     print(f"CI check [{ci_label}]: {ci_out[:600]}")
 
-    # 7. Trello
-    trello_ok, trello_out = do_trello_sync(repo, pr_url, args.dry_run)
-    print(f"{'✅' if trello_ok else '⚠️'} Trello: {trello_out}")
-
     # Resumo
     print("\n" + "="*60)
     print(f"🚢 Shipper hook — branch {git_info.get('branch')} — dry-run={args.dry_run}")
-    print(f"  commit: {'ok' if commit_ok else 'fail'} | push: {'ok' if push_ok else 'fail'} | PR: {'ok' if pr_ok else 'fail'} | CI: {ci_label}")
+    print(f"  commit: {'ok' if commit_ok else 'fail'} | push: {'ok' if push_ok else 'fail'} | PR: {'ok' if pr_ok else 'fail'} | CI: {ci_label} | Trello: {trello_status}")
     print(f"  HANDOFF: {handoff_path}")
     print(f"  STATE: {state_path}")
     print("="*60)
@@ -440,6 +773,8 @@ def main():
         status = "success" if commit_ok and pr_ok else "critical" if not commit_ok else "warn"
         if args.fail_on_ci and ci_pass is False:
             status = "critical"
+        if trello_status == "failed" and status == "success":
+            status = "warn"  # Trello falhou — visível como warn (fallback requerido), crítico só com --fail-on-trello
         entry = {
             "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "hook": "shipper",
@@ -451,6 +786,14 @@ def main():
             "pr_ok": pr_ok,
             "pr_url": pr_url,
             "ci": ci_label,
+            "trello": {
+                "status": trello_status,
+                "moved": trello.get("moved"),
+                "card_id": trello.get("card_id"),
+                "dest_list_id": trello.get("dest_list_id"),
+                "dest_list_name": trello.get("dest_list_name"),
+                "message": sanitize_trello_text(str(trello.get("message", "")))[:400],
+            },
             "status": status,
             "handoff": str(handoff_path),
             "state": str(state_path),
@@ -476,6 +819,8 @@ def main():
     if not commit_ok:
         sys.exit(2)
     if args.fail_on_ci and ci_pass is False:
+        sys.exit(2)
+    if args.fail_on_trello and trello_status == "failed":
         sys.exit(2)
     if not pr_ok and not args.dry_run and gh_available():
         if "não autenticado" in pr_out.lower() or "not authenticated" in pr_out.lower():

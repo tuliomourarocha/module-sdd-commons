@@ -4,8 +4,12 @@ set -euo pipefail
 # =============================================================================
 # install.sh — Instala agentes, commands, skills e packs no .opencode/
 #
-# Uso: ./install.sh [<target-dir>]
+# Uso: ./install.sh [<target-dir>] [--no-rtk] [--rtk-edition full|oss]
 #   <target-dir>   Diretório alvo (default: .opencode)
+#
+# RTK: no fim da instalação, baixa o binário rtk (brew ou install.sh oficial)
+# e vincula ao OpenCode com "rtk init --global --opencode" — proxy que comprime
+# a saída de shell antes do LLM ler (economia de tokens). Falha em aberto.
 #
 # Detecta automaticamente a origem:
 #   agents/       → .opencode/agents/       (com conversão tools→permission)
@@ -20,7 +24,27 @@ set -euo pipefail
 #   .github/      → .opencode/.github/      (cópia literal)
 # =============================================================================
 
-TARGET="${1:-.opencode}"
+TARGET=".opencode"
+RTK_ENABLED=1
+RTK_EDITION="${RTK_EDITION:-full}"
+
+usage() {
+  echo "Uso: ./install.sh [<target-dir>] [--no-rtk] [--rtk-edition full|oss]"
+  echo "  <target-dir>           Diretório alvo (default: .opencode)"
+  echo "  --no-rtk               Não baixa nem vincula o rtk"
+  echo "  --rtk-edition <full|>  Edição do rtk: full (padrão) ou oss (Apache-2.0)"
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --no-rtk)      RTK_ENABLED=0 ;;
+    --rtk-edition) shift; RTK_EDITION="${1:-}"; case "$RTK_EDITION" in full|oss) ;; *) echo "✖ RTK: edição inválida ($RTK_EDITION) — use full ou oss" >&2; exit 1;; esac ;;
+    --help|-h)     usage; exit 0 ;;
+    -*)            echo "Argumento desconhecido: $1 (veja ./install.sh --help)" >&2; exit 1 ;;
+    *)             TARGET="$1" ;;
+  esac
+  shift
+done
 SRC_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 info()   { printf "  \033[1;34m➜\033[0m %s\n" "$*"; }
@@ -197,9 +221,15 @@ install_plugins() {
   [ "$count" -gt 0 ] && ok "plugins ($count arquivos)" || skip "plugins: nenhum arquivo encontrado"
 }
 
+# caminho físico real (resolve symlink e "../"); vazio se o diretório não existe
+realdir() {
+  (cd "$1" 2>/dev/null && pwd -P) || true
+}
+
 install_hooks() {
   local src="$1"
   local dst="$TARGET/hooks"
+  local src_real; src_real="$(realdir "$src")"
   mkdir -p "$dst"
   local count=0
   shopt -s nullglob
@@ -211,27 +241,32 @@ install_hooks() {
   done
   shopt -u nullglob
   # também espelha em <target>/hooks quando TARGET é .opencode (para fallback Claude/Codex)
+  # pula quando o destino físico é a própria fonte (install dentro do repo do módulo)
   if [[ "$TARGET" == *.opencode ]]; then
     local alt="$(dirname "$TARGET")/hooks"
-    mkdir -p "$alt"
-    shopt -s nullglob
-    for f in "$src"/*.py "$src"/*.sh "$src"/*.md; do
-      [ -f "$f" ] || continue
-      cp "$f" "$alt/$(basename "$f")"
-      [[ "$f" == *.py || "$f" == *.sh ]] && chmod +x "$alt/$(basename "$f")" 2>/dev/null || true
-    done
-    shopt -u nullglob
+    if [ "$(realdir "$alt")" != "$src_real" ]; then
+      mkdir -p "$alt"
+      shopt -s nullglob
+      for f in "$src"/*.py "$src"/*.sh "$src"/*.md; do
+        [ -f "$f" ] || continue
+        cp "$f" "$alt/$(basename "$f")"
+        [[ "$f" == *.py || "$f" == *.sh ]] && chmod +x "$alt/$(basename "$f")" 2>/dev/null || true
+      done
+      shopt -u nullglob
+    fi
   fi
   # .opencode/hooks também precisa quando TARGET não é .opencode (ex: .claude)
   if [[ "$TARGET" != *.opencode ]] && [ -d "$SRC_ROOT/hooks" ]; then
-    mkdir -p ".opencode/hooks"
-    shopt -s nullglob
-    for f in "$SRC_ROOT"/hooks/*.py "$SRC_ROOT"/hooks/*.sh "$SRC_ROOT"/hooks/*.md; do
-      [ -f "$f" ] || continue
-      cp "$f" ".opencode/hooks/$(basename "$f")"
-      [[ "$f" == *.py || "$f" == *.sh ]] && chmod +x ".opencode/hooks/$(basename "$f")" 2>/dev/null || true
-    done
-    shopt -u nullglob
+    if [ "$(realdir ".opencode/hooks")" != "$src_real" ]; then
+      mkdir -p ".opencode/hooks"
+      shopt -s nullglob
+      for f in "$SRC_ROOT"/hooks/*.py "$SRC_ROOT"/hooks/*.sh "$SRC_ROOT"/hooks/*.md; do
+        [ -f "$f" ] || continue
+        cp "$f" ".opencode/hooks/$(basename "$f")"
+        [[ "$f" == *.py || "$f" == *.sh ]] && chmod +x ".opencode/hooks/$(basename "$f")" 2>/dev/null || true
+      done
+      shopt -u nullglob
+    fi
   fi
   [ "$count" -gt 0 ] && ok "hooks ($count scripts python)" || skip "hooks: nenhum script encontrado"
 }
@@ -242,6 +277,36 @@ install_github() {
   mkdir -p "$dst"
   cp -r "$src"/* "$dst/"
   ok ".github/ ($(find "$src" -type f | wc -l | tr -d ' ') arquivos)"
+}
+
+# ── RTK: baixa o binário e vincula ao OpenCode ────────────────────────────────
+# https://github.com/rtk-ai/rtk — proxy de comandos que comprime a saída de shell
+# antes do LLM ler (economia de 60–90% nos tokens de bash). Falha em aberto:
+# sem o binário, a squad segue funcionando sem compressão.
+
+install_rtk() {
+  if command -v rtk >/dev/null 2>&1; then
+    ok "rtk já instalado ($(rtk --version 2>/dev/null || echo versão desconhecida))"
+  else
+    info "RTK ausente — baixando edição ${RTK_EDITION}..."
+    if command -v brew >/dev/null 2>&1; then
+      if [ "$RTK_EDITION" = "oss" ]; then
+        brew install rtk-ai/tap/rtk-oss
+      else
+        brew install rtk
+      fi
+    else
+      sh -c "export RTK_EDITION=${RTK_EDITION}; curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh"
+    fi
+  fi
+
+  if ! command -v rtk >/dev/null 2>&1; then
+    error "rtk não ficou disponível no PATH (ex.: instalado em ~/.local/bin) — squad segue sem compressão; rode ./install.sh novamente com o PATH ajustado"
+    return 1
+  fi
+
+  rtk init --global --opencode || { error "rtk init --global --opencode falhou — consulte 'rtk init --help'"; return 1; }
+  ok "RTK vinculado ao OpenCode (plugin em ~/.config/opencode/plugins/rtk.ts) — reinicie o OpenCode e acompanhe com 'rtk gain'"
 }
 
 install_claude() {
@@ -380,6 +445,13 @@ p.write_text(json.dumps(j, indent=2) + '\n')
 "
       ok ".opencode/package.json (atualizado com @opencode-ai/plugin)"
     fi
+  fi
+
+  # RTK: download + vínculo com o harness (economia de tokens)
+  if [ "$RTK_ENABLED" = "1" ]; then
+    install_rtk || true
+  else
+    skip "RTK: pulado (--no-rtk)"
   fi
 
   echo ""

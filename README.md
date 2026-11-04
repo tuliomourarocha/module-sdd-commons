@@ -22,6 +22,56 @@ O CLI escreve somente diretórios gerenciados pelo harness:
 | Claude Code | `.claude/agents`, `commands`, `skills`, `CLAUDE.md` | `/sdd-harness <pedido>` |
 | Codex | `.codex/skills/sdd-harness`, `roles`, `skills` | `$sdd-harness <pedido>` |
 
+### RTK — economia de tokens durante a instalação
+
+Por padrão, junto com a squad o instalador também baixa o [rtk](https://github.com/rtk-ai/rtk)
+(proxy de comandos em Rust que reduz em 60–90% os tokens de saída de bash lidos
+pelo LLM) e vincula ao harness escolhido com `rtk init`:
+
+| Harness | Vínculo | O que o rtk instala |
+| --- | --- | --- |
+| OpenCode | `rtk init --global --opencode` | Plugin TS em `~/.config/opencode/plugins/rtk.ts` (requer OpenCode ≥ 1.18.29) |
+| Claude Code | `rtk init --global` | Hook nativo `PreToolUse` + patch no `settings.json` |
+| Codex | `rtk init --global --codex` | Hook `PreToolUse` (`updatedInput`) + `RTK.md` em `~/.codex` |
+
+Instalação do binário: `brew install rtk` (macOS/Linux com brew), `winget install rtk-ai.rtk`
+(Windows) ou o `install.sh` oficial via curl. O rtk falha em aberto: sem o binário,
+os hooks executam o comando original e a squad funciona normalmente.
+
+Opções:
+
+```bash
+--no-rtk                 # não baixa nem vincula o rtk
+--rtk-edition oss        # edição Apache-2.0 (padrão: full)
+--rtk-scope project      # vínculo por projeto (claude/codex); opencode é sempre global
+--rtk-only               # só baixa/vincula o rtk — útil para adicionar depois de uma instalação
+--rtk-agents <csv|all>   # vínculo agnóstico, independente da plataforma da squad:
+                         #   all = detecta e vincula todos os harnesses instalados
+                         #   csv = lista explícita, ex.: --rtk-agents opencode,codex
+```
+
+Um único comando cobre todos os harnesses que você usa (sem executar nada paralelo):
+
+```bash
+# squad installada em OpenCode + rtk vinculado a todo harness presente na máquina
+npx --yes github:tuliomourarocha/module-sdd-commons#main --opencode --rtk-agents all
+
+# so o vínculo do rtk em todos os harnesses detectados (sem reinstalar artefatos)
+npx --yes github:tuliomourarocha/module-sdd-commons#main --rtk-only --rtk-agents all
+```
+
+O padrão (sem `--rtk-agents`) continua vinculado às plataformas pedidas no comando.
+No Claude Code o patch do `settings.json` é aprovado via `--auto-patch` (sem prompt;
+se a versão do rtk não conhecer a flag, cai para o prompt padrão).
+
+A variável `RTK_EDITION=oss` também é respeitada. No OpenCode o vínculo é automático
+(`execute.before`/`tool.execute.before`). No Claude Code, o `rtk init` pergunta uma vez
+se deve inserir o hook no `settings.json` (`[y/N]` — rode `rtk init --global` num
+terminal para aceitar; em scripts segue sem escrever). Depois de instalar, **reinicie o
+harness** e acompanhe a economia com `rtk gain` (dados brutos de um comando duvidoso?
+`rtk bypass <cmd>; RTK_DISABLED=1 <cmd>`). O `install.sh` legado faz o mesmo passo,
+já que ele só instala para OpenCode.
+
 Antes de publicar, é possível testar o binário localmente:
 
 ```bash

@@ -1,6 +1,6 @@
 {
   "name": "@tuliomourarocha/sdd-harness",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Instalador multi-harness para OpenCode, Claude Code e Codex.",
   "type": "module",
   "bin": {
