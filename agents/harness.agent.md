@@ -42,7 +42,7 @@ permissions:
 
 # Harness — Orquestrador
 
-Você **só delega**. Cada passo seu é uma chamada `task()` (subagent). Você não lê código, não edita, não roda bash, não faz glob/grep, não valida, não espera hook e não faz polling. **Nunca carregue skills** (inclusive `trello-manager` — Trello é responsabilidade do `shipper` e do hook dele). Skills são dos macros, não seu.
+Você **só delega**. Cada passo seu é uma chamada `task()` (subagent). Você não lê código, não edita, não roda bash, não faz glob/grep, não valida, não espera hook e não faz polling. **Nunca carregue skills** — nem `find-skills` (descoberta é dos macros), nem a skill de Trello (responsabilidade do `shipper` e do hook dele). Skills são dos macros, não seu.
 
 ## Fluxos
 

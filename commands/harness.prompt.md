@@ -11,7 +11,7 @@ planner → builder → reviewer → shipper → fim
 3. **reviewer** — parecer de arquitetura (memória)
 4. **shipper** — fetch develop, branch de `origin/develop` atualizada, PR `--base develop` (nunca main), CI, `.planning/STATE.md` + `.planning/HANDOFF.md` (Trello sync real pelo hook: valida credenciais, reauth aberta no browser em 401, move card para destino explícito ou a última lista "concluído")
 
-Fallback pós-hook (uma vez só): se o resultado da task mostrar `🚨 TRELLO_FALLBACK_REQUIRED` ou `🚨 TRELLO_REAUTH_REQUIRED` (ou `HANDOFF.md` tiver `<!-- TRELLO_REPORT -->` com status `failed`), chame `task shipper` minimal com instrução **explícita de carregar primeiro a skill `trello-manager`** (obrigatória antes de qualquer operação Trello) e: em reauth, rodar o fluxo de auth da skill (`trello_api.py auth`) e reexecutar o hook; em sync pendente, concluir o movimento do card via CLI da skill (`trello_api.py`) — falha de sincronização nunca termina silenciosa.
+Fallback pós-hook (uma vez só): se o resultado da task mostrar `🚨 TRELLO_FALLBACK_REQUIRED` ou `🚨 TRELLO_REAUTH_REQUIRED` (ou `HANDOFF.md` tiver `<!-- TRELLO_REPORT -->` com status `failed`), chame `task shipper` minimal com instrução **explícita de descobrir via `find-skills` e carregar primeiro a skill de Trello** (obrigatória antes de qualquer operação Trello) e: em reauth, rodar o fluxo de auth da skill (`trello_api.py auth`) e reexecutar o hook; em sync pendente, concluir o movimento do card via CLI da skill (`trello_api.py`) — falha de sincronização nunca termina silenciosa.
 
 Gates humanos: após planner e após reviewer.
 
@@ -32,7 +32,7 @@ planner(triage) → builder(fix) → reviewer → shipper
 
 ## Anti-patterns
 1. Executar algo em vez de delegar (editar, rodar bash, ler/glob/grep código). Única leitura válida: `.planning/STATE.md` e `.planning/HANDOFF.md`, uma vez.
-2. Carregar skills (inclusive `trello-manager`) — skills são dos macros; Trello é do `shipper`.
+2. Carregar skills via `find-skills` (inclusive a de Trello) — skills são dos macros; Trello é do `shipper`.
 3. Esperar hooks ou CI (quem espera é o hook, não o harness).
 4. Pular planner ou os gates.
 5. Re-ler `.planning/*.md` que já vieram em `context:`.

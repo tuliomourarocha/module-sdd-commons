@@ -13,6 +13,7 @@ permission:
     "git diff*": allow
     "git log*": allow
     "git status*": allow
+    "npx skills find*": allow
   webfetch: allow
 ---
 
@@ -22,12 +23,13 @@ You are the Reviewer macro — arquitetura técnica e de software apenas.
 Revisa **arquitetura e qualidade de software**, não guard rails. Lint, typecheck, testes, ruff/pylance/eslint/biome/tsc são responsabilidade exclusiva dos hooks (`hooks/guard_rails.py` + `plugins/guard-rails.ts`). Você NÃO roda `npm run lint`, `npx tsc --noEmit`, `npm run test`, `ruff`, `pylance` ou similares. Você avalia decisões estruturais.
 
 ## Skills
-- `clean-architecture` + `solid` + `clean-code` — Dependency Rule, SOLID, nomes, funções <20 linhas, boundaries
-- `typescript-expert` — arquitetura de tipos (sem rodar tsc), `no any` como princípio, não como lint
-- `nextjs-app-router-patterns` + `react-best-practices` — padrões App Router, Server/Client, composição
-- `mermaid-diagrams` — aderência a diagramas do PLAN
-- `frontend-design` — **apenas escopo arquitetural**: tokens como sistema, coerência design→código, evita defaults templated não justificados; NÃO roda verificação runtime (hooks/supervisor fazem)
-- `web-design-guidelines` — consulta via `WebFetch` quando `[Front]` existe, para auditar decisões arquiteturais de a11y/design, não para lint
+- `find-skills` — **única skill de referência deste agente: não há skills dedicadas fixas.** Para qualquer operação de review, descubra a skill correta: carregue `find-skills` → `npx skills find <query>` → prefira skills com 1K+ installs → siga a skill carregada. Se nada adequado for encontrado, avalie com o critério deste arquivo. Mapeamento operação → query:
+  - Dependency Rule, SOLID, nomes, funções <20 linhas, boundaries → `clean architecture solid clean code`
+  - Arquitetura de tipos (sem rodar tsc), `no any` como princípio → `typescript`
+  - Padrões App Router, Server/Client, composição → `nextjs app router react`
+  - Aderência a diagramas do PLAN → `mermaid diagram`
+  - **Apenas escopo arquitetural** de UI: tokens como sistema, coerência design→código; NÃO roda verificação runtime (hooks/supervisor fazem) → `frontend design`
+  - Auditoria arquitetural de a11y/design (consulta via `WebFetch` quando `[Front]` existe, não lint) → `web design guidelines`
 
 ## Memória e Política de Artefatos
 
@@ -64,7 +66,7 @@ Retorne ao harness: `{parecer}` em memória + `aprovado | warnings | blockers` +
 - [ ] Backend: Dependency Rule, entities puras, DTOs, SOLID
 - [ ] Frontend: React/Next patterns, composition, tokens, a11y arquitetural
 - [ ] Infra: sem secrets conceituais, workflows válidos
-- [ ] Se `frontend-design` ativo: fidelidade arquitetural (sem defaults templated)
+- [ ] Se skill de design (descoberta via `find-skills`) ativa: fidelidade arquitetural (sem defaults templated)
 - [ ] Parecer de arquitetura **retornado em memória** com severidades e princípios — **nenhum** `REVIEW.md`/`SUMMARY.md`/`VALIDATION.md` criado
 
 ## Rules

@@ -21,7 +21,7 @@ Fluxos: `feature` (planner→builder→reviewer→shipper(hook)→ci-watch→sup
 
 - `agents/` — 5 agentes V2 (harness, planner, builder, reviewer, shipper minimal) + `supervisor` (observability via hook)
 - `commands/` — `harness.prompt.md` (fluxos)
-- `skills/` — 28 habilidades carregadas sob demanda pelos macros
+- `skills/` — habilidades instaladas; os arquivos dos macros não têm skills dedicadas — descobrem a skill correta por operação via `find-skills`
 - `packs/` — `agentic-squad` (harness V2)
 - `hooks/` — `guard_rails.py` ( pós-edição), `shipper.py` (git/PR/Trello/STATE), `ci_watch.py` (polling CI + retry), `ci_orchestrator.py` (LangGraph opcional), `supervisor.py` (auditoria)
 - `plugins/` — `guard-rails.ts`, `shipper.ts`, `ci-watch.ts`, `supervisor.ts` (hooks determinísticos)
@@ -31,12 +31,12 @@ Fluxos: `feature` (planner→builder→reviewer→shipper(hook)→ci-watch→sup
 
 1. **Progressive Disclosure** — Agentes são concisos (≤120 linhas); detalhe em `commands/harness.prompt.md`.
 2. **Autossuficiência** — Cada macro incorpora regras e hooks; não busca regras externas.
-3. **Skills > Subagentes** — Especialidade via skill, não via agente folha. Só `harness` usa `task()`.
+3. **Skills > Subagentes** — Especialidade via skill descoberta por `find-skills`, não via agente folha. Só `harness` usa `task()`.
 4. **Estado único** — `shipper`, `ci-watch`, `supervisor` e `orquestrador` atualizam `STATE.md`/`HANDOFF.md` (via marcadores) e fazem Trello/PR/CI; macros retornam artefatos em memória.
 5. **Idioma** — Português padrão para artefatos.
 6. **Validação** — Execute hooks antes de finalizar cada artefato.
 7. **Anti-loop e Single-run** — Apenas `STATE.md`/`HANDOFF.md` persistem em disco (hooks `shipper`, `ci-watch`, `supervisor`, `orquestrador` atualizam esses dois). Demais artefatos (`PRD.md`, `PLAN.md`, `arch/*`) e saídas de builder/reviewer (resumo/parecer) são retornados **em memória** via `task()` e injetados como `context:` pelo `harness`. Proibido criar `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`/`CI_REPORT.md`/`SUPERVISOR_REPORT.md` em disco — bloqueado com `HIGH`. `harness` **só delega e encerra** — não espera hooks, não faz polling, não executa nada. `VALIDATION.md` removido (hook guard_rails).
-8. **Trello exige skill** — Todo agente que acessa o Trello (hoje: `shipper` no fallback; hooks apenas registram) DEVE carregar a skill `trello-manager` **antes** de qualquer operação — autenticação (`trello_api.py auth`), leitura de board/listas/cards e move de card via CLI da skill. Proibido improvisar chamadas cruas à API sem a skill; é isso que faz o agente se perder.
+8. **Trello exige skill (via `find-skills`)** — Todo agente que acessa o Trello (hoje: `shipper` no fallback; hooks apenas registram) DEVE descobrir via `find-skills` e carregar a skill de Trello (hoje `trello-manager`) **antes** de qualquer operação — autenticação (`trello_api.py auth`), leitura de board/listas/cards e move de card via CLI da skill. Proibido improvisar chamadas cruas à API sem a skill; é isso que faz o agente se perder.
 
 ## RTK — economia de tokens (quando instalado)
 
@@ -59,5 +59,5 @@ Fluxos: `feature` (planner→builder→reviewer→shipper(hook)→ci-watch→sup
 - **Permissions por agente:**
   - `harness`: `edit: deny`, `bash: deny`, `skill: deny`, `glob/grep: deny`, `read` allow apenas para `.planning/STATE.md` e `.planning/HANDOFF.md` (só delega — exploração, skills e Trello pertencem aos macros/`shipper`, hooks viram hooks).
   - `planner|builder|reviewer`: `edit: deny` para `.planning/**` (inclui `PRD/PLAN/SUMMARY/REVIEW/VALIDATION/arch`), `allow` apenas para código-fonte do escopo do gate; tentativa de escrita em `.planning/**` é bloqueada (especialmente `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md` → `HIGH`). Guard rails em hooks, não em agents.
-  - `shipper`: `edit: allow` apenas para `.planning/HANDOFF.md` e `.planning/STATE.md` (fallback minimal); `deny` para demais `.planning/**`. Hook `shipper.py` é primário para git/PR/Trello. No fallback, skill `trello-manager` é obrigatória antes de qualquer operação Trello.
+  - `shipper`: `edit: allow` apenas para `.planning/HANDOFF.md` e `.planning/STATE.md` (fallback minimal); `deny` para demais `.planning/**`. Hook `shipper.py` é primário para git/PR/Trello. No fallback, skill de Trello descoberta via `find-skills` é obrigatória antes de qualquer operação Trello.
 - **Violação:** Se um agente tentar `write` em `.planning/PRD.md` etc., o sistema nega por `permission` e o agente deve retornar o conteúdo em memória em vez de persistir. CI/review deve apontar `HIGH` se detectar artefato fora de `STATE`/`HANDOFF` criado em disco. Criação de `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md` é sempre `HIGH`.
