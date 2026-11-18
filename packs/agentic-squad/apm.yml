@@ -43,7 +43,6 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/skills/vercel-cli-with-tokens
 
     - tuliomourarocha/module-sdd-commons/skills/state-manager
-    - tuliomourarocha/module-sdd-commons/skills/trello-manager
     - tuliomourarocha/module-sdd-commons/skills/caveman
     - tuliomourarocha/module-sdd-commons/skills/caveman-review
     - tuliomourarocha/module-sdd-commons/skills/ponytail

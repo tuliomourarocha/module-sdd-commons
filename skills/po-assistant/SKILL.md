@@ -168,21 +168,20 @@ Generate a Product Requirements Document after each discovery cycle. Keep it to 
 - [ ] Sprint 1 planning
 ```
 
-### 7. Trello Integration
+### 7. GitHub Issues Integration
 
-When creating Trello cards via `trello-manager`:
+When creating backlog items via `github-cli` (CLI determinístico `sdd_backlog.py`):
 
-**Standard board lists:** Backlog → Sprint Backlog → In Progress → In Review → Done
+**GitHub Project v2 statuses:** Backlog → In Progress → Done (campo `Status`)
 
-**Card structure:**
-- **Title** — Value-oriented, clear
-- **Description** — Full user story (As a… I want… So that…)
-- **Checklist** — Acceptance criteria as checklist items ONLY (business AC / Gherkin — never technical subtasks)
-- **Labels** — Type: story / feature / bug / spike; Priority: Alta (`red`) / Média (`orange`) / Baixa (`sky`)
-- **Members** — Assignees
-- **Due date** — When applicable
+**Issue structure:**
+- **Title** — Value-oriented, clear (épico: `[EPIC] nome`)
+- **Body** — Full user story (As a… I want… So that…) + acceptance criteria como **tasklist** (`- [ ]` business AC / Gherkin — nunca subtasks técnicas)
+- **Labels (separadas)** — Prioridade: `P0-critical` / `P1-high` / `P2-medium` / `P3-low`; Tipo: `epic` / `feature` / `bug` / `chore` / `docs`; Domínio: labels livres (ex.: `auth`, `checkout`)
+- **Assignees** — via `gh issue edit <n> --add-assignee @me`
+- **Milestone** — sprint (`Sprint 1`, `Sprint 2`, …)
 
-> **Papéis no Harness V2:** o `planner` é o **único que cria** no Trello (cards/epics, labels, sprints = listas). O `builder` só move o card para *In Progress* (execução); o `shipper` só encerra (move para *Done*). Use sempre o CLI da skill (`trello_api.py`) — `labels`/`create-label`/`add-label` para prioridade, `create-list` para sprints, `create-card` para épics (`[EPIC] nome`) e stories.
+> **Papéis no Harness V2:** o `planner` é o **único que cria** no GitHub (issues, labels, milestones e adição ao Project com Status `Backlog`). O `builder` só move a issue para *In Progress* (execução); o `shipper` só encerra (fecha + Status `Done`). Use sempre o `gh` CLI / helper (`sdd_backlog.py`: `ensure-labels`/`ensure-milestone`/`create-issue`/`move-issue`/`close-issue`) — `gh auth status` é o gate antes de qualquer operação.
 
 ---
 

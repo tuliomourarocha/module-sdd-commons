@@ -5,7 +5,7 @@ Indexa skills/*/SKILL.md (nome + description) e rankeia pela query.
 Busca 100% offline: nenhum npx, nenhum skills.sh, nenhum install externo.
 
 Uso:
-  find_skill.py "trello"                  # busca por termos
+  find_skill.py "github issues"           # busca por termos
   find_skill.py --all                     # lista todas as skills locais
 Saída: "<caminho do SKILL.md>  <nome> — <descrição>" por relevância.
 Exit 0 = encontrou; 1 = nada encontrado.

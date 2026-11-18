@@ -174,14 +174,36 @@ O `harness` (V2) orquestra 3 fluxos com 4 macros + hooks (`planner`, `builder`, 
 | Agente/Hook | Papel | Skills principais |
 |--------|-------|-------------------|
 | `harness` | Orquestra `feature/project/bugfix` via `task()` | — |
-| `planner` | Planeja — PRD, PLAN, arquitetura + cria o backlog no Trello (cards/epics, tags de prioridade, sprints) | `po-assistant`, `grill-me`, `mermaid-diagrams`, `clean-architecture`, `trello-manager` |
+| `planner` | Planeja — PRD, PLAN, arquitetura + cria o backlog no GitHub (issues/épics, labels de prioridade, milestones de sprints) | `po-assistant`, `grill-me`, `mermaid-diagrams`, `clean-architecture`, `github-cli` |
 | `builder` | Implementa — full-stack + infra mínima + move o card para execução (nunca cria) | `clean-architecture`, `nextjs-app-router-patterns`, `supabase-postgres-best-practices` |
 | `reviewer` | Revisa — só arquitetura técnica/software | `clean-architecture`, `solid`, `clean-code` |
-| `shipper` (hook) | Finaliza — branch de `origin/develop` atualizada, PR `--base develop` (nunca main), git/CI/Trello-close (encerra o card, nunca cria)/STATE/HANDOFF via `hooks/shipper.py` + `plugins/shipper.ts` (fallback minimal) | `state-manager`, `git-commit`, `github-cli`, `trello-manager` **obrigatória no fallback** (carregar antes de qualquer operação Trello) |
+| `shipper` (hook) | Finaliza — branch de `origin/develop` atualizada, PR `--base develop` (nunca main), git/CI/issue-close (encerra a issue, nunca cria)/STATE/HANDOFF via `hooks/shipper.py` + `plugins/shipper.ts` (fallback minimal) | `state-manager`, `git-commit`, `github-cli` **obrigatória no fallback** (carregar antes de qualquer operação de issues) |
 
 > **Guard rails** (lint, testes, ruff/pylance/eslint/biome, tsc) são hooks determinísticos (`hooks/guard_rails.py`) — `checker` removido.
 
 Fluxo `feature`: `planner → builder → reviewer → shipper(hook)` (2 gates humanos, hooks validam per-file).
+
+### Backlog no GitHub (issues + Projects)
+
+O backlog do harness vive no **GitHub** (issues + Projects v2) — sem board externo. Mapeamento:
+
+| Conceito | GitHub |
+|---|---|
+| Board | **GitHub Project v2** — campo `Status`: `Backlog` / `In Progress` / `Done` |
+| Card | **Issue** (épico = issue com label `epic` + tasklist no corpo) |
+| Lista (execução/concluído) | **Status do Project** (`Backlog` → `In Progress` → `Done`) |
+| **Prioridade (tag separada)** | labels `P0-critical` / `P1-high` / `P2-medium` / `P3-low` (escolha UMA) |
+| **Tipo (tag separada)** | labels `epic` / `feature` / `bug` / `chore` / `docs` |
+| Domínio/tags | labels livres (ex.: `auth`, `checkout`, `infra`) |
+| Sprint | **milestone** (`Sprint 1`, `Sprint 2`, …) |
+
+Donos por gate (escopo fechado):
+
+- **`planner` — único que CRIA**: `ensure-labels` (labels padrão de prioridade/tipo, idempotente), `ensure-milestone "Sprint N"`, `create-issue` (com labels `P1-high,feature,<domínio>`, milestone e adição ao Project com Status `Backlog`) via `skills/github-cli/scripts/sdd_backlog.py`.
+- **`builder` — só move/atualiza**: `move-issue <n> --project "<Project>" --status "In Progress" --assign-me`.
+- **`shipper` (hook) — só encerra**: localiza a issue (`--issue`/`SDD_GITHUB_ISSUE`, `Closes #N` no body do PR ou prefixo numérico do branch ex. `123-slug`) e fecha (`gh issue close` + comentário do PR + Status `Done` no Project — env `SDD_GITHUB_PROJECT`).
+
+Gate de auth: `gh auth status` é o 1º comando de qualquer operação de issues (falhou → `gh auth login`). CLI determinístico completo: `python3 skills/github-cli/scripts/sdd_backlog.py --help`.
 
 ### Pré-requisitos
 
@@ -197,10 +219,10 @@ Para adicionar funcionalidades em projeto existente:
 ```
 
 O orquestrador executa:
-1. **Planner** → discovery + `PRD.md` + `PLAN.md` + `arch/` (memória — nunca em disco) + cria o backlog no Trello (cards/epics, tags de prioridade, sprints; IDs em memória)
-2. **Builder** → implementa + resumo em memória (nunca `SUMMARY.md` em disco) + move o card para a lista de execução (nunca cria card) — `hooks/guard_rails.py` valida per-file e bloqueia `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`
+1. **Planner** → discovery + `PRD.md` + `PLAN.md` + `arch/` (memória — nunca em disco) + cria o backlog no GitHub (issues/épics, labels de prioridade, milestones de sprints; números em memória)
+2. **Builder** → implementa + resumo em memória (nunca `SUMMARY.md` em disco) + move a issue para execução (Status `In Progress`; nunca cria issue) — `hooks/guard_rails.py` valida per-file e bloqueia `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`
 3. **Reviewer** → parecer de arquitetura em memória (nunca `REVIEW.md`/`VALIDATION.md` em disco, sem lint — hooks fazem)
-4. **Shipper(hook)** → fetch develop + branch de `origin/develop` atualizada + commit + PR `--base develop` (nunca main) + CI check + `.planning/STATE.md`/`HANDOFF.md` + Trello close (encerra o card → última lista "concluído"; reauth automático em 401; nunca cria card) (via `hooks/shipper.py`)
+4. **Shipper(hook)** → fetch develop + branch de `origin/develop` atualizada + commit + PR `--base develop` (nunca main) + CI check + `.planning/STATE.md`/`HANDOFF.md` + issue close (encerra a issue → comentário do PR + Status `Done` no Project; instrução de `gh auth login` se sem auth; nunca cria issue) (via `hooks/shipper.py`)
 
 ### Fluxo 2: Novo Projeto (`project`)
 

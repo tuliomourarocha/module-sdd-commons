@@ -25,7 +25,7 @@ essa decisão, sem exigir escolha do usuário.
 | `planner` | `opencode-go/glm-5.3-flash` | `high` | PRD e arquitetura com raciocínio elevado a $0,15/$0,5 — o reasoner premium do plano custa 13x mais por token | $0,15 / $0,50 |
 | `builder` | `opencode-go/claude-haiku-5-5` | `medium` | Volume alto de código com muito contexto reaproveitado — cache de $0,01/M pesa mais que o modelo bruto | $0,10 / $0,50 |
 | `reviewer` | `opencode-go/claude-haiku-5-5` | `high` | Mesmo modelo do builder com raciocínio elevado: parecer estrutural sem trocar de família | $0,10 / $0,50 |
-| `shipper` | `opencode-go/gpt-6-luna` | `medium` | Procedimento exato (hook, PR em `develop`, card Trello); variantes acima de `low` reduzem desvio sem custo extra | $0,10 / $0,50 |
+| `shipper` | `opencode-go/gpt-6-luna` | `medium` | Procedimento exato (hook, PR em `develop`, issue GitHub); variantes acima de `low` reduzem desvio sem custo extra | $0,10 / $0,50 |
 | `supervisor` | `opencode-go/glm-5.3-flash` | `low` | Auditoria com saída longa e repetitiva; o `low` no flash segura o preço do relatório | $0,15 / $0,50 |
 
 Ajustes que valem a pena conhecer:

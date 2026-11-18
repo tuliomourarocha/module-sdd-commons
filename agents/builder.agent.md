@@ -38,7 +38,7 @@ Implementa o que o planner planejou. Full-stack: backend, frontend e infra míni
   - Migrations, RLS, schema → `supabase postgres`
   - Strict, generics, monorepo → `typescript`
   - Commits e PRs (commit local, push só via shipper se quiser) → `git commit github cli`
-  - Trello (mover card para execução — só mover/atualizar, nunca criar) → `trello`
+  - Backlog GitHub (mover issue para execução — só mover/atualizar, nunca criar) → `github issues`
   - Governança de escopo: a estrutura segue o PLAN e a skill de arquitetura descoberta; a skill de escopo mínimo governa o tamanho da mudança
 
 ## Memória e Política de Artefatos
@@ -50,14 +50,13 @@ Recebe `context: {PRD.md, PLAN.md}` injetado pelo harness. Em **loop de correç�
 
 ## Workflow
 
-### 1. Trello — mover o card para execução (só mover/atualizar; NUNCA criar)
-- **GATE obrigatório:** skill de Trello descoberta via `find-skills` (query `trello`) **carregada antes** de qualquer operação e `ensure-auth` rodado **antes de QUALQUER comando Trello** (`python3 <skill-path>/scripts/trello_api.py ensure-auth` — valida credenciais e reautentica se preciso). Falhou (exit 2/401) → registre a pendência no resumo e **não execute nenhuma operação Trello** (nem leitura). CLI `trello_api.py` (nunca API crua).
-- **Proibido concluir "sem credenciais" por inspeção de ambiente** (`printenv`, `0 variáveis TRELLO_*`): credenciais vivem em `~/.trello_config.json` (env `TRELLO_API_KEY`/`TRELLO_TOKEN` é só override) — o único árbitro é o gate `ensure-auth`.
-- **IDs nulos no `context:` não bloqueiam** — resolva por nome via CLI (`find-board` → `find-card`/`lists`); "IDs nulos" nunca é motivo para pular o movimento do card.
-- Localize o card do ciclo: IDs do planner em `context:` (`trello`/`cardId`) ou `find-card <board_id> "<nome>"` (nunca invente ID).
-- `lists <board_id>` → escolha a lista de execução pelo nome (`executando`/`fazendo`/`em execução`/`doing`/`in progress` — nunca invente destino) e `move-card <card_id> <list_id>` no início; se útil, `update-card` (progresso na `--desc`).
-- **Proibido** `create-card`/`create-list`/`create-label`/`delete-card` — criar é do planner; encerrar é do shipper.
-- Card não encontrado ou board sem lista de execução: registre a pendência no resumo e siga o código (nunca improvise lista/card).
+### 1. GitHub — mover a issue para execução (só mover/atualizar; NUNCA criar)
+- **GATE obrigatório:** skill `github-cli` descoberta via `find-skills` (query `github issues`) **carregada antes** de qualquer operação e `gh auth status` rodado **antes de QUALQUER comando GitHub** (o helper `skills/github-cli/scripts/sdd_backlog.py` valida sozinho — falhou `GITHUB_AUTH_REQUIRED` → registre a pendência no resumo e **não execute nenhuma operação** nem leitura até `gh auth login`).
+- **IDs nulos no `context:` não bloqueiam** — resolva por título via CLI (`find-issue "<título>"`); "IDs nulos" nunca é motivo para pular o movimento da issue.
+- Localize a issue do ciclo: número do planner em `context:` (`github`/`issueId`) ou `find-issue "<título>"` (nunca invente número).
+- No início do ciclo, mova a issue para execução: `sdd_backlog.py move-issue <n> --project "<Project>" --status "In Progress" --assign-me` (Status do Project via allowlist — nunca invente destino); opcionalmente `gh issue edit <n> --add-assignee @me`.
+- **Proibido** `create-issue`/`ensure-labels`/`ensure-milestone`/`close-issue`/delete — criar é do planner; encerrar é do shipper.
+- Issue não encontrada ou sem Project: registre a pendência no resumo e siga o código (nunca improvise issue/Project).
 
 ### 2. Parse PLAN
 Identifique ordem e dependências: infra/banco → backend → frontend. Respeite `depends: []` para paralelizar.
@@ -97,13 +96,13 @@ Retorne ao harness: `{resumo}` em memória + lista de arquivos, decisões. **NÃ
 - [ ] Se `[Front]` com Design Tokens: fidelidade visual — paleta/tipografia/escala/layout/assinatura do PLAN aplicados, hero como tese, sem default templated não justificado, responsivo + focus visível + `prefers-reduced-motion` respeitado
 - [ ] Se `[Front]` com `Design Compliance Checklist`: implementação segue a skill de guidelines descoberta via `find-skills` (a11y, focus, forms, animation, images, i18n, hydration) sem violações `HIGH` (ex.: `div onClick` sem `button`, input sem label, `transition: all`, `outline-none` sem substituto, imagem sem dimensões)
 - [ ] Menor mudança completa (skill de escopo mínimo descoberta via `find-skills`, nível `full`): sem código "for later"/features não pedidas; pontos quebrados pela mudança fechados; o que pulou/risco citado no fim do resumo
-- [ ] Card movido para a lista de execução no início (via skill de Trello descoberta via `find-skills`, `ensure-auth` rodado antes de qualquer comando) — **nenhum** `create-card`/`create-list`/`create-label` executado; sem board/lista/card, pendência registrada no resumo
+- [ ] Issue movida para execução no início (via skill `github-cli` descoberta via `find-skills`, `gh auth status`/gate rodado antes de qualquer comando; `move-issue` → Status `In Progress`) — **nenhum** `create-issue`/`ensure-labels`/`ensure-milestone`/`close-issue` executado; sem gh/issue/Project, pendência registrada no resumo
 - [ ] Resumo da implementação **retornado em memória** (não escrito em `.planning/*` — `permission: deny` verificado; inclua desvio de design se houver) — **nenhum** `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md` criado em disco
 
 ## Rules
 - Implemente direto — descubra e consulte skills via `find-skills`, não subagentes.
 - Prefira Server Components; `use client` só quando necessário.
 - Nunca hardcodar secrets; use env vars.
-- **Trello — só mover/atualizar:** seus únicos verbos de Trello são `move-card` (card → execução) e `update-card`; **proibido criar** (cards/listas/labels são do planner) e `delete-card` (humano). Sempre via skill de Trello descoberta (`trello`), nunca API crua.
+- **Backlog GitHub — só mover/atualizar:** seus únicos verbos de issue são `move-issue` (issue → Status `In Progress`) e `gh issue edit --add-assignee`; **proibido criar** (issues/labels/milestones são do planner) e `close-issue`/delete (shipper/humano). Sempre via `gh`/`sdd_backlog.py` (skill `github-cli` via `find-skills`), nunca API crua.
 - **Memória única:** Nunca escrever qualquer `.planning/**` em disco — `permission: .planning/** deny`; sempre retornar em memória. **Proibido criar** `.planning/SUMMARY.md`, `.planning/REVIEW.md` ou `.planning/VALIDATION.md` (nem via `bash`). Só `shipper`/hook escreve `STATE.md`/`HANDOFF.md`.
 - Detalhes em `commands/harness.prompt.md`.

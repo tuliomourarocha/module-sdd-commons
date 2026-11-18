@@ -180,7 +180,7 @@ const descriptions = {
   planner: "Planeja produto e arquitetura; gera PRD, PLAN e diagramas (memória).",
   builder: "Implementa full-stack a partir de um PLAN aprovado (retorna resumo em memória, nunca SUMMARY.md).",
   reviewer: "Revisa arquitetura técnica e de software; gera parecer em memória (nunca REVIEW.md/VALIDATION.md, sem lint — hooks fazem).",
-  shipper: "Finaliza via hook determinístico (git/PR/CI/Trello/STATE/HANDOFF); fallback minimal só STATE/HANDOFF.",
+  shipper: "Finaliza via hook determinístico (git/PR/CI/issue GitHub/STATE/HANDOFF); fallback minimal só STATE/HANDOFF.",
   supervisor: "Audita ciclo completo, mede performance/alucinações/tokens e cria Issue. Acionado por hook final.",
 };
 

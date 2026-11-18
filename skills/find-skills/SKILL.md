@@ -41,13 +41,13 @@ grep  "<termo>"   path="skills"  include="*/SKILL.md"   (caseSensitive: false)
 
 ### 3. Ler e seguir
 
-Abra o `SKILL.md` da skill escolhida e **siga-a** — ela manda no fluxo da operação (ex.: trello-manager manda em auth, caminhos do CLI e tratamento de erros).
+Abra o `SKILL.md` da skill escolhida e **siga-a** — ela manda no fluxo da operação (ex.: github-cli manda em auth (`gh auth status`), caminhos do CLI e tratamento de erros).
 
 ## Catálogo local (não exaustivo — o script é a fonte da verdade)
 
 | Query típica | Skill local |
 |--------------|-------------|
-| `trello` (auth, criar/mover/excluir cards) | `trello-manager` |
+| `github issues` (issues/labels/milestones/Projects, backlog) | `github-cli` |
 | `state manager handoff` (STATE/HANDOFF) | `state-manager` |
 | `clean architecture solid` | `clean-architecture`, `solid` |
 | `clean code` | `clean-code` |

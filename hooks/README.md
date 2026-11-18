@@ -33,7 +33,7 @@ python3 hooks/guard_rails.py --file src/page.tsx --format text --fail-on HIGH
 }
 ```
 
-## 2. Shipper — finalização determinística (git/PR/Trello/STATE/HANDOFF)
+## 2. Shipper — finalização determinística (git/PR/Issues GitHub/STATE/HANDOFF)
 
 **Trigger:** após `reviewer` concluir (arquitetura aprovada) ou `session.idle` após review.
 
@@ -42,11 +42,11 @@ python3 hooks/guard_rails.py --file src/page.tsx --format text --fail-on HIGH
 | **Script** | `hooks/shipper.py` |
 | **Plugin OpenCode** | `plugins/shipper.ts` → `tool.execute.after` (task reviewer) + `event: session.idle` |
 | **Claude** | `.claude/settings.json` → `hooks.PostToolUse` (opcional) |
-| **O que faz** | `git fetch origin <base>`, branch de trabalho criada a partir de `origin/<base>` **atualizada** (default `develop` — `--pr-base`/`SDD_PR_BASE`; nunca a main), `git commit` conventional, `git push`, `gh pr create --base <base> --head <branch>`/`view` (corrige base de PR existente para `<base>`), `gh pr checks`, gera `.planning/HANDOFF.md` + `STATE.md` minimal, **Trello sync real via REST API (stdlib)**: valida credenciais (`GET /members/me` — 401 → recarrega config e, persistindo, abre a página de autorização e marca `TRELLO_REAUTH_REQUIRED`), localiza card por **ID estável** (`card_id`, preferível), nome exato no board ou **auto** (hints do branch/PR: ID 24-hex, shortlink `trello.com/c/`, slug do branch), **move para lista de destino configurada explicitamente** (`list_id`/`dest_list`) ou **AUTO = última lista "concluído" do board** (concluído/done/shipped/entregue/finalizado/homologado/produção/deployed — nunca inventa fora disso) e comenta link do PR — status `ok` só quando o card foi movido de fato |
-| **Determinismo** | Sem LLM para git/PR/Trello; HANDOFF minimal via template + `git diff --stat`; enriquecimento qualitativo via fallback `shipper` minimal (agente só STATE/HANDOFF) |
-| **Exit** | `0` = ok (HANDOFF/STATE gerados), `2` = falha crítica (git/gh; Trello só com `--fail-on-trello`) |
-| **Trello honesto** | Sem credenciais = `skipped`. Com credenciais, qualquer falha (misconfig de card/destino, 401/404, ambiguidade de nome, rede) → `TRELLO_SYNC_FAILED` no stdout + bloco `<!-- TRELLO_REPORT -->` no HANDOFF + campo `trello` no HOOKS.log + entrada `shipper:trello` pelo plugin + instrução de fallback (`task shipper` minimal com skill `trello-manager`). Em 401 → `TRELLO_REAUTH_REQUIRED` com instrução de reauth (`trello_api.py auth`) e browser aberto. **Nunca** retorna sucesso sem mover o card e **nunca inventa** card/destino |
-| **Fallback** | Se HANDOFF minimal, `agents/shipper.agent.md` (minimal) complementa com `PRD/PLAN + resumo/parecer` em memória (nunca SUMMARY/REVIEW como arquivos); se `TRELLO_REPORT` está `failed`, o mesmo agente conclui o movimento (ou a reauth) via skill `trello-manager` |
+| **O que faz** | `git fetch origin <base>`, branch de trabalho criada a partir de `origin/<base>` **atualizada** (default `develop` — `--pr-base`/`SDD_PR_BASE`; nunca a main), `git commit` conventional, `git push`, `gh pr create --base <base> --head <branch>`/`view` (corrige base de PR existente para `<base>`), `gh pr checks`, gera `.planning/HANDOFF.md` + `STATE.md` minimal, **Issue GitHub sync real via `gh` CLI**: valida autenticação (`gh auth status` — sem auth → `GITHUB_AUTH_REQUIRED` com instrução de `gh auth login`), localiza a issue do ciclo por **`--issue`/`SDD_GITHUB_ISSUE` (preferível)**, `Closes #N` no body do PR ou **auto** (prefixo numérico do branch ex. `123-slug` — validado via `gh issue view`, nunca chuta), **fecha a issue** (`gh issue close --reason completed`) verificando o estado `CLOSED` na resposta, comenta o link do PR e, se `--project`/`SDD_GITHUB_PROJECT` configurado, move o **Status do GitHub Project** para `Done` (best-effort) — status `ok` só quando a issue foi fechada de fato |
+| **Determinismo** | Sem LLM para git/PR/issues; HANDOFF minimal via template + `git diff --stat`; enriquecimento qualitativo via fallback `shipper` minimal (agente só STATE/HANDOFF) |
+| **Exit** | `0` = ok (HANDOFF/STATE gerados), `2` = falha crítica (git/gh; issue só com `--fail-on-issue`) |
+| **Issue honesta** | Sem `gh` = `skipped`. Com `gh`, qualquer falha (sem auth, issue não localizada/ambígua, API/rede) → `GITHUB_SYNC_FAILED` no stdout + bloco `<!-- GITHUB_REPORT -->` no HANDOFF + campo `github` no HOOKS.log + entrada `shipper:github` pelo plugin + instrução de fallback (`task shipper` minimal com skill `github-cli`). Sem auth → `GITHUB_AUTH_REQUIRED` com instrução de `gh auth login`. **Nunca** retorna sucesso sem fechar a issue de fato e **nunca inventa** issue/destino |
+| **Fallback** | Se HANDOFF minimal, `agents/shipper.agent.md` (minimal) complementa com `PRD/PLAN + resumo/parecer` em memória (nunca SUMMARY/REVIEW como arquivos); se `GITHUB_REPORT` está `failed`, o mesmo agente conclui o encerramento (localizar + `close-issue`) via skill `github-cli` |
 
 **Uso manual:**
 ```bash
@@ -54,24 +54,16 @@ python3 hooks/shipper.py --run --repo . --repo-slug tuliomourarocha/module-sdd-c
 python3 hooks/shipper.py --run --dry-run --context-file /tmp/context.json
 # base de PR/branch: --pr-base develop (default) ou env SDD_PR_BASE; use main só se o repo não tiver develop
 python3 hooks/shipper.py --run --pr-base develop
-# overrides Trello por execução:
-python3 hooks/shipper.py --run --trello-card <card_id_estável> --trello-list <list_id> [--fail-on-trello] [--no-trello-comment]
-# reauth manual (token expirado — o hook também abre o browser sozinho em 401):
-python3 skills/trello-manager/scripts/trello_api.py auth
+# overrides de issue por execução:
+python3 hooks/shipper.py --run --issue 123 --project "SDD Backlog" [--fail-on-issue] [--no-issue-comment]
+# auth manual (gh não autenticado — o hook também instrui o `gh auth login` sozinho):
+gh auth login
 ```
 
-**Config Trello** (`~/.trello_config.json`, repo `.trello_config.json`, `TRELLO_CONFIG` ou env): aceita **`api_key` ou `apiKey`** (e env `TRELLO_API_KEY`/`TRELLO_KEY`); card por **ID estável (preferível)**, nome, ou deixo em branco para **auto** (hints do branch/PR); destino **explícito** ou em branco para **auto = última lista "concluído" do board**:
-```json
-{
-  "api_key": "...",            // ou "apiKey"
-  "token": "...",
-  "card_id": "64a0...",        // ID estável — preferível
-  "list_id": "64b0...",        // lista de destino explícita — ou "dest_list": "Done" + "board_id"
-  "board_id": "64c0...",       // opcional: permite card_name/dest_list por nome e resolve board por nome também
-  "pos": "top",                // opcional
-  "add_pr_comment": true,      // opcional: comenta link do PR no card
-  "archive": false             // opcional: arquiva após mover
-}
+**Config issue GitHub** (env `SDD_GITHUB_ISSUE`, flag `--issue` ou contexto `issueId` — preferível; vazio = **auto** via `Closes #N` do PR ou prefixo numérico do branch); **Project opcional** (env `SDD_GITHUB_PROJECT` ou `--project`, título/número/URL) para mover Status → `Done`:
+```bash
+export SDD_GITHUB_ISSUE=123          # opcional: fixa a issue do ciclo
+export SDD_GITHUB_PROJECT="SDD Backlog"  # opcional: move Status → Done no Project
 ```
 
 ## 3. Supervisor — auditoria final + Issue GitHub
@@ -191,8 +183,8 @@ Todos os hooks escrevem **log de garantia** em dois lugares para redundância:
 **Exemplo linha:**
 ```json
 {"ts":"2026-09-17T21:15:02Z","hook":"guard-rails","file":"src/app.ts","duration_ms":45,"exit_code":2,"blocked":true,"high":1,"med":0,"status":"blocked"}
-{"ts":"2026-09-17T21:15:04Z","hook":"shipper","trigger":"task:reviewer","duration_ms":1200,"exit_code":0,"status":"success","pr_url":"https://github.com/.../pull/12","trello":{"status":"ok","moved":true,"card_id":"64a0...","dest_list_name":"Done"}}
-{"ts":"2026-09-17T21:15:05Z","hook":"shipper:trello","trigger":"task:reviewer","status":"failed","fallback_required":true,"message":"TRELLO_SYNC_FAILED — card não movido (fallback: task shipper + skill trello-manager)"}
+{"ts":"2026-09-17T21:15:04Z","hook":"shipper","trigger":"task:reviewer","duration_ms":1200,"exit_code":0,"status":"success","pr_url":"https://github.com/.../pull/12","github":{"status":"ok","closed":true,"issue":123,"project_status":"Done"}}
+{"ts":"2026-09-17T21:15:05Z","hook":"shipper:github","trigger":"task:reviewer","status":"failed","fallback_required":true,"message":"GITHUB_SYNC_FAILED — issue não fechada (fallback: task shipper + skill github-cli)"}
 {"ts":"2026-09-17T21:15:06Z","hook":"ci-watch","branch":"feat/auth","pr_number":42,"status":"fail","exit_code":2,"retries":1,"message":"CI falhou"}
 {"ts":"2026-09-17T21:15:06Z","hook":"ci-orchestrator","status":"fail","retries":1,"branch":"feat/auth"}
 {"ts":"2026-09-17T21:15:08Z","hook":"supervisor","files_changed":12,"hallu_high":0,"guard_high":0,"status":"success"}
@@ -210,7 +202,7 @@ cat .opencode/hooks/hook-audit.jsonl        # mesmo audit no OpenCode
 - `guard-rails` HIGH → `throw GUARD_RAILS_BLOCKED` — builder recebe erro como `tool result` e corrige (max 2 iterações) — visível no TUI como `⛔`
 - `guard-rails` infra (hook não encontrado, python erro, timeout) → `throw HOOK_GUARD_RAILS_INFRA_ERROR` — builder/reviewer vê `🚨` no meio da execução + log em `.planning/HOOKS.log` com `status: infra_error`
 - `shipper` crítico (git falhou, exit 2) → `throw HOOK_SHIPPER_CRITICAL` — harness (mesma run) vê e escala para builder/humano — também logado com `status: critical`
-- `shipper` Trello (`TRELLO_SYNC_FAILED` no stdout) → log `level:error` + entrada `.planning/HOOKS.log` `hook: shipper:trello, status: failed, fallback_required: true` + bloco `HANDOFF.md#TRELLO_REPORT` — harness deve acionar `task shipper` minimal com skill `trello-manager` para mover o card (não bloqueia git/PR já feitos, salvo `--fail-on-trello`)
+- `shipper` Issue GitHub (`GITHUB_SYNC_FAILED` no stdout) → log `level:error` + entrada `.planning/HOOKS.log` `hook: shipper:github, status: failed, fallback_required: true` + bloco `HANDOFF.md#GITHUB_REPORT` — harness deve acionar `task shipper` minimal com skill `github-cli` para localizar e fechar a issue (não bloqueia git/PR já feitos, salvo `--fail-on-issue`)
 - `ci-watch` falha (CI fail, exit 2) → `throw 🚨 CI_FAILED_NEEDS_FIX` — harness **single-run** reinicia `task builder` com contexto extraído de `HANDOFF.md#CI_REPORT:START` + `STATE.md#CI_STATE` (max 2) → `reviewer` → `shipper` → `ci-watch` re-polla; se retries esgotados → `throw 🚨 CI_RETRIES_EXHAUSTED` → escalar humano (sem re-invocar harness)
 - `ci-watch` pending timeout (exit 3) → warn (harness permanece bloqueante, re-poll via `session.idle` sem encerrar)
 - `supervisor` crítico (hallucination HIGH) → `throw HOOK_SUPERVISOR_CRITICAL` — não bloqueia shipper (observability), mas alerta com `🚨`; harness só finaliza após `HOOKS.log` registrar `supervisor status=success|critical`

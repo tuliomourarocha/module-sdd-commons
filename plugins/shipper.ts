@@ -1,5 +1,5 @@
 /**
- * plugins/shipper.ts — Hook determinístico para shipper (git/PR/Trello/STATE/HANDOFF)
+ * plugins/shipper.ts — Hook determinístico para shipper (git/PR/Issues GitHub/STATE/HANDOFF)
  *
  * Conceito: middleware fora do LLM que finaliza o ciclo deterministicamente.
  * Complementa hooks/guard_rails.py (per-file) e hooks/supervisor.py (pós-shipper).
@@ -8,14 +8,15 @@
  * ATUALIZADA (default `develop`, fetch antes) e abre o PR com `--base develop --head
  * <branch>` — nunca para a main (override via env `SDD_PR_BASE`).
  *
- * Trello: `hooks/shipper.py` valida credenciais (GET /members/me) e, em 401, recarrega
- * a config e abre a página de autorização (TRELLO_REAUTH_REQUIRED); localiza card por
- * ID estável / nome / hints auto (branch/PR) e move para lista de destino explícita ou
- * para a ÚLTIMA lista "concluído" do board (auto; nunca inventa). Se stdout contiver
- * `TRELLO_REAUTH_REQUIRED`, instrui reauth via skill trello-manager; se contiver
- * `TRELLO_SYNC_FAILED`, registra a falha (HOOKS.log `hook: shipper:trello`, level
- * error) e instrui o fallback — harness deve acionar `task shipper` minimal com a
- * skill `trello-manager` **carregada antes de qualquer operação Trello** (obrigatória).
+ * Issue GitHub: `hooks/shipper.py` valida autenticação (`gh auth status`) e, sem auth,
+ * marca GITHUB_AUTH_REQUIRED (instrução de `gh auth login`); localiza a issue do ciclo
+ * por `--issue`/contexto `issueId` ou AUTO (hints do branch/PR: `Closes #N`, prefixo
+ * numérico do branch) e a ENCERRA — comentário do PR + `gh issue close` + Status `Done`
+ * no GitHub Project (se configurado). Se stdout contiver `GITHUB_AUTH_REQUIRED`, instrui
+ * `gh auth login`; se contiver `GITHUB_SYNC_FAILED`, registra a falha (HOOKS.log
+ * `hook: shipper:github`, level error) e instrui o fallback — harness deve acionar
+ * `task shipper` minimal com a skill `github-cli` **carregada antes de qualquer
+ * operação de issues** (obrigatória; CLI `skills/github-cli/scripts/sdd_backlog.py`).
  *
  * Acionamento (determinístico, sem depender de LLM decidir):
  *   - Trigger primário: `tool.execute.after` quando `task` com agent `reviewer` completa (após parecer de arquitetura em memória)
@@ -150,48 +151,48 @@ async function runShipper($: any, directory: string, client: any, trigger: strin
     });
   }
 
-  // ── GARANTIA: registro explícito do sync Trello (falha é SEMPRE visível + aciona fallback) ──
-  if (out.includes("TRELLO_REAUTH_REQUIRED")) {
-    const reauthMsg = `TRELLO_REAUTH_REQUIRED via ${trigger} — api_key/token inválidos ou expirados; o hook abriu a página de autorização no browser. Fallback: carregar primeiro a skill \`trello-manager\` (obrigatória antes de qualquer operação Trello), concluir autorização e salvar o token (ex.: \`python3 skills/trello-manager/scripts/trello_api.py auth\` → ~/.trello_config.json), depois reexecutar \`python3 ${hook} --run\`. Falha visível em HANDOFF.md#TRELLO_REPORT e .planning/HOOKS.log.`;
+  // ── GARANTIA: registro explícito do sync de issue GitHub (falha é SEMPRE visível + aciona fallback) ──
+  if (out.includes("GITHUB_AUTH_REQUIRED")) {
+    const reauthMsg = `GITHUB_AUTH_REQUIRED via ${trigger} — gh não autenticado. Fallback: rode \`gh auth login\` e reexecute \`python3 ${hook} --run\`. Falha visível em HANDOFF.md#GITHUB_REPORT e .planning/HOOKS.log.`;
     await client.app.log({
       body: { service: "shipper", level: "error", message: `🔑 ${reauthMsg}` },
     });
     await writeGuaranteeLog($, directory, {
       ts: new Date().toISOString(),
-      hook: "shipper:trello",
+      hook: "shipper:github",
       trigger,
-      status: "reauth_required",
+      status: "auth_required",
       fallback_required: true,
       message: reauthMsg,
     });
-    throw new Error(`🚨 TRELLO_REAUTH_REQUIRED: ${reauthMsg}`);
-  } else if (out.includes("TRELLO_SYNC_FAILED")) {
-    const trelloMsg = `TRELLO_SYNC_FAILED via ${trigger} — hook NÃO moveu o card. Fallback obrigatório: harness deve acionar \`task shipper\` (minimal) com a skill \`trello-manager\` carregada ANTES de qualquer operação Trello (autenticação e movimento de cards seguem o fluxo da skill — nada de API crua improvisada) para localizar o card (ID estável preferível) e movê-lo para a lista de destino configurada. Detalhe em HANDOFF.md#TRELLO_REPORT e .planning/HOOKS.log (campo trello).`;
+    throw new Error(`🚨 GITHUB_AUTH_REQUIRED: ${reauthMsg}`);
+  } else if (out.includes("GITHUB_SYNC_FAILED")) {
+    const githubMsg = `GITHUB_SYNC_FAILED via ${trigger} — hook NÃO fechou a issue. Fallback obrigatório: harness deve acionar \`task shipper\` (minimal) com a skill \`github-cli\` carregada ANTES de qualquer operação de issues (via \`find-skills\`, query \`github issues\`; localizar e fechar a issue seguem o fluxo da skill/CLI \`sdd_backlog.py\` — nada de API crua improvisada) para localizar a issue (\`--issue\`/\`SDD_GITHUB_ISSUE\` preferível) e encerrá-la (\`close-issue <n> --comment "🚢 PR entregue — <url>"\`). Detalhe em HANDOFF.md#GITHUB_REPORT e .planning/HOOKS.log (campo github).`;
     await client.app.log({
-      body: { service: "shipper", level: "error", message: `🚨 ${trelloMsg}` },
+      body: { service: "shipper", level: "error", message: `🚨 ${githubMsg}` },
     });
     await writeGuaranteeLog($, directory, {
       ts: new Date().toISOString(),
-      hook: "shipper:trello",
+      hook: "shipper:github",
       trigger,
       status: "failed",
       fallback_required: true,
-      message: trelloMsg,
+      message: githubMsg,
     });
     // aciona o fallback de forma visível ao harness na mesma run (padrão CI_FAILED_NEEDS_FIX):
-    // git/PR já concluídos — harness deve chamar `task shipper` minimal com a skill `trello-manager` carregada primeiro
-    throw new Error(`🚨 TRELLO_FALLBACK_REQUIRED: ${trelloMsg}`);
-  } else if (out.includes("TRELLO_SYNC_OK")) {
+    // git/PR já concluídos — harness deve chamar `task shipper` minimal com a skill `github-cli` carregada primeiro
+    throw new Error(`🚨 GITHUB_FALLBACK_REQUIRED: ${githubMsg}`);
+  } else if (out.includes("GITHUB_SYNC_OK")) {
     await writeGuaranteeLog($, directory, {
       ts: new Date().toISOString(),
-      hook: "shipper:trello",
+      hook: "shipper:github",
       trigger,
       status: "ok",
-      message: `Trello sync ok via ${trigger} — card movido para a lista de destino (ver HANDOFF.md#TRELLO_REPORT)`,
+      message: `Issue GitHub fechada via ${trigger} (ver HANDOFF.md#GITHUB_REPORT)`,
     });
-  } else if (out.includes("Trello não configurado")) {
+  } else if (out.includes("GitHub issue sync não configurado")) {
     await client.app.log({
-      body: { service: "shipper", level: "info", message: `Trello não configurado — sync pulado via ${trigger} (configure api_key/token + card_id + list_id para ativar)` },
+      body: { service: "shipper", level: "info", message: `Issue GitHub não configurada — sync pulado via ${trigger} (instale gh e rode \`gh auth login\` para ativar)` },
     });
   }
 

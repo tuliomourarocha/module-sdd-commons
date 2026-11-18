@@ -31,7 +31,7 @@ Planeja antes de construir. Cobre produto (discovery, PRD) e técnica (arquitetu
   - UI/estética (**condicional** `[Front]`/UI visível) → `frontend design`
   - DoD técnico de UI (**condicional** `[Front]`/UI visível) → `web design guidelines`
   - Protocolo STATE/HANDOFF (só leitura; escrita é do shipper) → `state manager handoff`
-  - Trello (criação do backlog: cards/epics, tags de prioridade, sprints) → `trello`
+  - Backlog GitHub (criação do backlog: issues/épics, labels de prioridade, sprints) → `github issues`
 
 ## Memória e Política de Artefatos
 
@@ -66,22 +66,24 @@ Gere `PRD.md` **em memória** (max 1 página, progressive disclosure, NÃO escre
 5. Quebre em subtasks com labels `[Front]/[Back]/[Infra]`, estimativa P/M/G e dependências.
 6. Gere `PLAN.md` **em memória** (NÃO escreva `.planning/PLAN.md` em disco): o que será construído, por camada, ordem, critérios de aceite técnico.
 
-### Fase D — Backlog no Trello (ÚNICO agente que CRIA no Trello)
-Sincronize o backlog ao Trello usando a skill de Trello descoberta via `find-skills` (query `trello`) **carregada antes** de qualquer operação — sempre via CLI (`trello_api.py`), nunca API crua:
-1. **GATE obrigatório — carregue a skill e rode `ensure-auth` antes de QUALQUER comando Trello** (`python3 <skill-path>/scripts/trello_api.py ensure-auth`): valida credenciais e reautentica se preciso. Falhou (exit 2/401) → registre a pendência no resumo e **não execute nenhuma operação Trello** (nem leitura). **Proibido concluir "sem credenciais" por inspeção de ambiente** (`printenv`, `0 variáveis TRELLO_*`) — credenciais vivem em `~/.trello_config.json` (env `TRELLO_API_KEY`/`TRELLO_TOKEN` é só override); o único árbitro é o gate.
-2. `find-board "<board>"` — resolva o board pelo nome (nunca invente ID; CLI aceita nome, full ID, shortLink ou URL).
-3. **Monte o plano JSON** do backlog (listas, labels com cor, cards com lista/labels) e crie TUDO com **um único `batch <board> --plan-file -`** (plano via stdin/heredoc — a skill documenta o formato). O batch é idempotente por nome (reusa lista/label/card existentes — re-rodar após erro parcial é seguro) e retorna `{board_id, listas, labels, cards}`.
-4. **NUNCA escreva script intermediário** (bash/python) que agrupe comandos do CLI — um comando por card ou `batch`, nada de args posicionais (`$6: unbound variable` já quebrou assim); **valor vazio nunca vira argumento** (label/lista não resolvida → resolva pelo nome ou reporte pendência); sempre quote argumentos.
-5. Preferência por comandos individuais (ex.: 1 card avulso): `create-list`/`create-label` (reutilize existentes via `lists`/`labels`) → `create-card` → `add-label` com o ID real do label.
-6. Registre os IDs retornados e inclua `trello: {board_id, listas, labels, cards: [{id, name, list}]}` no retorno em memória (builder usa para mover o card; hook do shipper usa `cardId` como hint para encerrar).
-- NUNCA mova/atualize cards aqui (mover é do builder; encerrar é do shipper) — seu escopo é **só criação**. `delete-card`/`archive-card` são operações humanas, nunca suas.
-- Sem board/credenciais Trello: registre a pendência no resumo e siga (backlog vive no PRD/PLAN em memória).
+### Fase D — Backlog no GitHub (ÚNICO agente que CRIA issues/labels/milestones)
+Sincronize o backlog ao GitHub usando a skill `github-cli` descoberta via `find-skills` (query `github issues`) **carregada antes** de qualquer operação — sempre via `gh` CLI (determinístico, preferencialmente o helper `skills/github-cli/scripts/sdd_backlog.py`), nunca API crua improvisada:
+
+**Mapeamento conceitual:** board = **GitHub Project v2** (campo `Status`: `Backlog`/`In Progress`/`Done`); card = **issue**; lista = Status do Project; prioridade = **labels separadas** (`P0-critical`/`P1-high`/`P2-medium`/`P3-low`); tipo = **labels separadas** (`epic`/`feature`/`bug`/`chore`/`docs`); domínio/tags = labels livres (ex. `auth`, `checkout`); sprints = **milestones** (`Sprint 1`…).
+
+1. **GATE obrigatório — rode `gh auth status` antes de QUALQUER comando GitHub** (o helper `sdd_backlog.py` valida sozinho e falha com `GITHUB_AUTH_REQUIRED`): falhou → registre a pendência no resumo e **não execute nenhuma operação** (nem leitura) até `gh auth login`.
+2. **Garanta o vocabulário uma vez:** `sdd_backlog.py ensure-labels` (idempotente — cria as labels de prioridade e tipo acima) e `sdd_backlog.py ensure-milestone "Sprint N"` por sprint do plano.
+3. **Crie o backlog como issues** — um `create-issue` por épico/story, ex.: `sdd_backlog.py create-issue --title "[EPIC] checkout" --labels "P1-high,epic,checkout" --milestone "Sprint 1" --project "<Project>"`; épico recebe label `epic` + corpo com **tasklist** (`- [ ] #12` sub-issues); stories recebem labels `feature|bug|chore` + prioridade + domínio. Se ainda não houver GitHub Project, peça ao humano ou registre pendência (nunca invente nome de Project).
+4. **NUNCA escreva script intermediário** que agrupe comandos — um comando `gh`/`sdd_backlog.py` por chamada; **valor vazio nunca vira argumento** (label/milestone/Project não resolvido → resolva pelo nome (`find-issue`) ou reporte pendência); sempre quote argumentos.
+5. Registre os números/URLs retornados e inclua `github: {issues: [{number, title, labels, milestone, url}]}` no retorno em memória (builder usa para mover a issue; hook do shipper usa `issueId` como hint para encerrar).
+- NUNCA mova/atualize/feche issues aqui (mover é do builder; encerrar é do shipper) — seu escopo é **só criação**. `gh issue close`/`delete`/lock são operações humanas ou do shipper, nunca suas.
+- Sem `gh` autenticado: registre a pendência no resumo e siga (backlog vive no PRD/PLAN em memória).
 
 ## Outputs (memória — nunca em disco)
 - `PRD.md` (em memória → `harness` injeta no builder)
 - `PLAN.md` (em memória → `harness` injeta no builder)
 - `arch/epic-XX/*.md` (em memória)
-- `trello: {board_id, listas, labels, cards: [{id, name, list}]}` (em memória → `harness` injeta no builder e no shipper)
+- `github: {issues: [{number, title, labels, milestone, url}]}` (em memória → `harness` injeta no builder e no shipper)
 
 Retorne ao harness: `{PRD.md, PLAN.md, arch/*}` em memória + resumo, decisões, pendências. **NÃO escreva** `.planning/PRD.md`/`.planning/PLAN.md`/`.planning/arch/**` nem `STATE.md`/`HANDOFF.md` (shipper faz no final) — se tentar `write` será negado por `permission`.
 
@@ -91,7 +93,7 @@ Retorne ao harness: `{PRD.md, PLAN.md, arch/*}` em memória + resumo, decisões,
 - [ ] Arquitetura com diagramas Mermaid em `arch/` (em memória, não em disco)
 - [ ] Dependency Rule e boundaries validados (self-review via skill de arquitetura descoberta via `find-skills`)
 - [ ] Subtasks com labels de camada e estimativa P/M/G
-- [ ] Backlog no Trello sincronizado (se board configurado): `ensure-auth` rodado **antes** de qualquer comando, epics/stories criados, prioridade via label, sprints como listas — IDs retornados em memória; sem Trello/credenciais, pendência registrada no resumo
+- [ ] Backlog no GitHub sincronizado (se `gh` autenticado): `gh auth status`/gate rodado **antes** de qualquer comando, `ensure-labels` + `ensure-milestone` idempotentes, épics/stories criados como issues, prioridade via label separada (P0..P3), sprints como milestones, issues no Project com Status `Backlog` — números retornados em memória; sem gh/autenticação, pendência registrada no resumo
 - [ ] `PRD.md` e `PLAN.md` **retornados em memória** (não escritos em `.planning/*` — `permission: deny` verificado)
 - [ ] Se `[Front]` existe: `PLAN.md` contém Design Tokens (paleta, tipografia, layout, assinatura) validados contra a skill de design descoberta via `find-skills` (sem default templated não justificado)
 - [ ] Se `[Front]` existe: `PLAN.md` contém `Design Compliance Checklist` derivado da skill de guidelines descoberta via `find-skills` (via WebFetch) cobrindo a11y, focus, forms, animation, images, performance
@@ -99,7 +101,7 @@ Retorne ao harness: `{PRD.md, PLAN.md, arch/*}` em memória + resumo, decisões,
 ## Rules
 - Nunca propor código antes de PRD+PLAN aprovados.
 - Nunca criar PRDs paralelos (só `PRD.md` oficial em memória, injetado via `context:`).
-- **Trello — só você cria:** único agente que cria no Trello (cards/epics, tags de prioridade, sprints como listas). Builder só move/atualiza; shipper só encerra. Sempre via skill de Trello descoberta (`trello`), nunca API crua; `delete-card`/`archive-card` são operações humanas, nunca suas.
+- **Backlog GitHub — só você cria:** único agente que cria issues, labels (prioridade/tipo/tags) e milestones (sprints) e adiciona issues ao Project (`Backlog`). Builder só move/atualiza (→ `In Progress`); shipper só encerra (fecha + `Done`). Sempre via `gh`/`sdd_backlog.py` (skill `github-cli` via `find-skills`), nunca API crua; `close-issue`/`delete`/lock são operações humanas ou do shipper, nunca suas.
 - **Memória única:** Nunca escrever `.planning/PRD.md`/`.planning/PLAN.md`/`.planning/arch/**` em disco — `permission: .planning/** deny`; sempre retornar em memória. **NUNCA crie** `.planning/SUMMARY.md`, `.planning/REVIEW.md` ou `.planning/VALIDATION.md`. Só `shipper` escreve `STATE.md`/`HANDOFF.md`.
 - Português padrão.
 - Detalhes em `commands/harness.prompt.md`.
