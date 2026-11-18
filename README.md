@@ -72,6 +72,50 @@ harness** e acompanhe a economia com `rtk gain` (dados brutos de um comando duvi
 `rtk bypass <cmd>; RTK_DISABLED=1 <cmd>`). O `install.sh` legado faz o mesmo passo,
 já que ele só instala para OpenCode.
 
+**Prova visível de que o rtk está rodando:** a reescrita do rtk é silenciosa por
+natureza, então a squad instala também o plugin `rtk-visibility.ts` em
+`.opencode/plugins/`: todo comando reescrito recebe um rodapé na própria saída —
+
+```
+⟐ rtk ✓ — saída comprimida pelo proxy RTK antes do LLM ler (economia de tokens de shell)
+```
+
+Você e os agentes veem esse marcador no transcript sempre que o proxy atuar
+(a primeira marcação da sessão lembra o comando `rtk gain`). `RTK_VISIBILITY=0`
+desliga só o marcador; `RTK_DISABLED=1` desliga o rtk inteiro.
+
+### CodeGraph + ast-grep — inteligência semântica durante a instalação
+
+Junto com o rtk, o instalador configura a pilha de análise de código — mesmos
+princípios: binários baixados na hora, vínculo com o harness escolhido e
+falha em aberto (sem os binários, a squad funciona só com leitura de arquivos).
+
+| Componente | Papel | Instalação |
+| --- | --- | --- |
+| `codegraph` | Índice semântico do repositório (símbolos, callers, call paths, impacto) exposto como MCP | npm `@colbymchenry/codegraph` (versão exata) |
+| `ast-grep` | Busca estrutural de sintaxe (AST) via CLI | `brew install ast-grep` ou npm `@ast-grep/cli` |
+| MCP `codegraph` | Servidor MCP (`codegraph serve --mcp`) registrado no harness | `opencode mcp add codegraph --env CODEGRAPH_TELEMETRY=0 -- codegraph serve --mcp` |
+| Índice do projeto | `.codegraph/` (estado gerado, vai para o `.gitignore`) | `codegraph init <projeto>` |
+
+Por harness, o registro do MCP segue o formato nativo de cada um:
+
+| Harness | Config | Vínculo |
+| --- | --- | --- |
+| OpenCode | `opencode.json` (`mcp.servers.codegraph`) | `opencode mcp add` (CLI nativa; fallback: merge JSON) |
+| Claude Code | `.mcp.json` (`mcpServers.codegraph`) | `claude mcp add-json --scope project` (fallback: merge JSON) |
+| Codex | `.codex/config.toml` (`[mcp_servers.codegraph]`) | bloco TOML appended pelo instalador |
+
+A telemetria do codegraph fica desligada (`CODEGRAPH_TELEMETRY=0`) e a versão
+instalada é sempre exata (resolvida do registro npm no momento da instalação).
+Setup, update ou diagnóstico da pilha depois da instalação seguem a skill
+`codegraph-ast-grep` (instalada em `skills/`, descoberta via `find-skills`).
+
+Opções:
+
+```bash
+--no-codegraph            # não instala codegraph/ast-grep nem registra o MCP
+```
+
 Antes de publicar, é possível testar o binário localmente:
 
 ```bash
@@ -130,10 +174,10 @@ O `harness` (V2) orquestra 3 fluxos com 4 macros + hooks (`planner`, `builder`, 
 | Agente/Hook | Papel | Skills principais |
 |--------|-------|-------------------|
 | `harness` | Orquestra `feature/project/bugfix` via `task()` | — |
-| `planner` | Planeja — PRD, PLAN, arquitetura | `po-assistant`, `grill-me`, `mermaid-diagrams`, `clean-architecture` |
-| `builder` | Implementa — full-stack + infra mínima | `clean-architecture`, `nextjs-app-router-patterns`, `supabase-postgres-best-practices` |
+| `planner` | Planeja — PRD, PLAN, arquitetura + cria o backlog no Trello (cards/epics, tags de prioridade, sprints) | `po-assistant`, `grill-me`, `mermaid-diagrams`, `clean-architecture`, `trello-manager` |
+| `builder` | Implementa — full-stack + infra mínima + move o card para execução (nunca cria) | `clean-architecture`, `nextjs-app-router-patterns`, `supabase-postgres-best-practices` |
 | `reviewer` | Revisa — só arquitetura técnica/software | `clean-architecture`, `solid`, `clean-code` |
-| `shipper` (hook) | Finaliza — branch de `origin/develop` atualizada, PR `--base develop` (nunca main), git/CI/Trello/STATE/HANDOFF via `hooks/shipper.py` + `plugins/shipper.ts` (fallback minimal) | `state-manager`, `git-commit`, `github-cli`, `trello-manager` **obrigatória no fallback** (carregar antes de qualquer operação Trello) |
+| `shipper` (hook) | Finaliza — branch de `origin/develop` atualizada, PR `--base develop` (nunca main), git/CI/Trello-close (encerra o card, nunca cria)/STATE/HANDOFF via `hooks/shipper.py` + `plugins/shipper.ts` (fallback minimal) | `state-manager`, `git-commit`, `github-cli`, `trello-manager` **obrigatória no fallback** (carregar antes de qualquer operação Trello) |
 
 > **Guard rails** (lint, testes, ruff/pylance/eslint/biome, tsc) são hooks determinísticos (`hooks/guard_rails.py`) — `checker` removido.
 
@@ -153,10 +197,10 @@ Para adicionar funcionalidades em projeto existente:
 ```
 
 O orquestrador executa:
-1. **Planner** → discovery + `PRD.md` + `PLAN.md` + `arch/` (memória — nunca em disco)
-2. **Builder** → implementa + resumo em memória (nunca `SUMMARY.md` em disco) — `hooks/guard_rails.py` valida per-file e bloqueia `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`
+1. **Planner** → discovery + `PRD.md` + `PLAN.md` + `arch/` (memória — nunca em disco) + cria o backlog no Trello (cards/epics, tags de prioridade, sprints; IDs em memória)
+2. **Builder** → implementa + resumo em memória (nunca `SUMMARY.md` em disco) + move o card para a lista de execução (nunca cria card) — `hooks/guard_rails.py` valida per-file e bloqueia `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`
 3. **Reviewer** → parecer de arquitetura em memória (nunca `REVIEW.md`/`VALIDATION.md` em disco, sem lint — hooks fazem)
-4. **Shipper(hook)** → fetch develop + branch de `origin/develop` atualizada + commit + PR `--base develop` (nunca main) + CI check + `.planning/STATE.md`/`HANDOFF.md` + Trello close (card → última lista "concluído"; reauth automático em 401) (via `hooks/shipper.py`)
+4. **Shipper(hook)** → fetch develop + branch de `origin/develop` atualizada + commit + PR `--base develop` (nunca main) + CI check + `.planning/STATE.md`/`HANDOFF.md` + Trello close (encerra o card → última lista "concluído"; reauth automático em 401; nunca cria card) (via `hooks/shipper.py`)
 
 ### Fluxo 2: Novo Projeto (`project`)
 

@@ -13,7 +13,8 @@ permission:
     "git diff*": allow
     "git log*": allow
     "git status*": allow
-    "npx skills find*": allow
+    "python3 skills/find-skills/scripts/find_skill.py*": allow
+    "python3 .opencode/skills/find-skills/scripts/find_skill.py*": allow
   webfetch: allow
 ---
 
@@ -23,7 +24,7 @@ You are the Reviewer macro — arquitetura técnica e de software apenas.
 Revisa **arquitetura e qualidade de software**, não guard rails. Lint, typecheck, testes, ruff/pylance/eslint/biome/tsc são responsabilidade exclusiva dos hooks (`hooks/guard_rails.py` + `plugins/guard-rails.ts`). Você NÃO roda `npm run lint`, `npx tsc --noEmit`, `npm run test`, `ruff`, `pylance` ou similares. Você avalia decisões estruturais.
 
 ## Skills
-- `find-skills` — **única skill de referência deste agente: não há skills dedicadas fixas.** Para qualquer operação de review, descubra a skill correta: carregue `find-skills` → `npx skills find <query>` → prefira skills com 1K+ installs → siga a skill carregada. Se nada adequado for encontrado, avalie com o critério deste arquivo. Mapeamento operação → query:
+- `find-skills` — **única skill de referência deste agente: não há skills dedicadas fixas.** Para qualquer operação de review, descubra a skill correta: carregue `find-skills` → busque **só na pasta local `skills/`** (`python3 skills/find-skills/scripts/find_skill.py '<query>'` — sem rede) → leia e siga o `SKILL.md` da skill encontrada. Se nada adequado for encontrado, avalie com o critério deste arquivo. **Proibido** `npx skills`/busca externa. Mapeamento operação → query:
   - Dependency Rule, SOLID, nomes, funções <20 linhas, boundaries → `clean architecture solid clean code`
   - Arquitetura de tipos (sem rodar tsc), `no any` como princípio → `typescript`
   - Padrões App Router, Server/Client, composição → `nextjs app router react`

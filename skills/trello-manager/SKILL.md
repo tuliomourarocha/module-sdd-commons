@@ -9,125 +9,106 @@ description: >-
   kanban boards, or task tracking that involves Trello.
 license: MIT
 metadata:
-  version: "1.0.0"
+  version: "1.2.0"
 ---
 
 # Trello Manager
 
-You help the user manage their Trello boards, lists, and cards programmatically using the Trello REST API. You have Python scripts in `scripts/` that handle authentication and API calls.
+Você gerencia boards, listas e cards do Trello **exclusivamente via o CLI da skill** (`trello_api.py`). Não faça chamadas cruas à API (curl/urllib/requests improvisados) — é isso que faz o agente se perder. O CLI usa apenas stdlib (sem dependências), imprime JSON e erros com orientação acionável.
 
-## Important: Authentication First
+## Path da skill
 
-Before any API operation, check if the user is authenticated. If not, guide them through the flow:
-
-1. **Check `~/.trello_config.json`** — if it has `api_key` and `token`, proceed.
-2. **If not authenticated**, run the auth script:
-   ```bash
-   python <skill-path>/scripts/trello_auth.py
-   ```
-   This will:
-   - Prompt the user for their Trello API Key (from https://trello.com/power-ups/admin)
-   - Open the Trello authorization page in their browser
-   - Ask them to paste the token back
-   - Save credentials securely to `~/.trello_config.json` (permissions 600)
-
-3. **If the auth script fails**, fall back to manually:
-   - Ask the user to visit https://trello.com/power-ups/admin to get an API Key
-   - Open https://trello.com/1/authorize?expiration=never&scope=read,write,account&response_type=token&name=TrelloManager&key={api_key} in their browser
-   - Have them paste the token back
-   - Save both to `~/.trello_config.json` yourself
-
-**Security:** Never expose the API key or token in output. Mask them (e.g., `key: abc123...`). Never commit credentials.
-
-## CLI Usage (Prefer for Deterministic Operations)
-
-The `scripts/trello_api.py` script has a CLI interface. Prefer running these commands over making raw API calls — they handle auth checking and error handling automatically.
+O script vive em `scripts/` dentro desta pasta da skill. Use o caminho relativo à raiz do repositório onde estiver rodando:
 
 ```bash
-# Authenticate
-python <skill-path>/scripts/trello_api.py auth
-
-# List all boards
-python <skill-path>/scripts/trello_api.py boards
-
-# List lists in a board
-python <skill-path>/scripts/trello_api.py lists <board_id>
-
-# Create a list
-python <skill-path>/scripts/trello_api.py create-list <board_id> "List Name"
-
-# List cards in a list
-python <skill-path>/scripts/trello_api.py cards <list_id>
-
-# Create a card
-python <skill-path>/scripts/trello_api.py create-card <list_id> "Card Name" --desc "Description"
-
-# Move a card to another list
-python <skill-path>/scripts/trello_api.py move-card <card_id> <list_id>
-
-# Delete a card
-python <skill-path>/scripts/trello_api.py delete-card <card_id>
+# fonte do módulo:
+python3 skills/trello-manager/scripts/trello_api.py <comando> ...
+# projeto instalado (mirror .opencode):
+python3 .opencode/skills/trello-manager/scripts/trello_api.py <comando> ...
 ```
 
-## Direct API Access (Use When CLI Is Insufficient)
+## Autenticação (sempre primeiro)
 
-You can also call the Trello REST API directly. The auth credentials are available after the first auth flow.
+O CLI verifica as credenciais automaticamente antes de qualquer comando. Se quiser validar explicitamente:
 
-**Base URL:** `https://api.trello.com/1`
+1. **Confere `~/.trello_config.json`** — se tem `api_key` e `token`, prossegue.
+2. **Sem credenciais**, inicia o fluxo: pede a API Key (de https://trello.com/power-ups/admin), abre a página de autorização no browser, pede o token de volta e salva em `~/.trello_config.json` (permissões 600).
+3. **Para forçar/renovar** (token expirado, 401): rode `trello_api.py auth`.
 
-**Authentication:** Pass `key` and `token` as query parameters on every request.
+```bash
+python3 <skill-path>/scripts/trello_api.py auth      # (re)autenticar
+python3 <skill-path>/scripts/trello_api.py whoami    # validar credenciais → username
+```
 
-### API Endpoints Reference
+**Segurança:** nunca exponha api_key/token na saída (mascare, ex. `key: abc123...`). Nunca faça commit de credenciais.
 
-#### Boards
-| Action | Method | Endpoint |
-|--------|--------|----------|
-| List boards | GET | `/members/me/boards` |
-| Get board | GET | `/boards/{id}` |
+## Catálogo de comandos
 
-#### Lists
-| Action | Method | Endpoint |
-|--------|--------|----------|
-| List lists on board | GET | `/boards/{boardId}/lists` |
-| Create list | POST | `/boards/{boardId}/lists` |
-| Update list | PUT | `/lists/{id}` |
-| Archive list | PUT | `/lists/{id}` (closed=true) |
+Substitua `<skill-path>` por `skills/trello-manager/scripts` (ou `.opencode/skills/trello-manager/scripts`).
 
-#### Cards
-| Action | Method | Endpoint |
-|--------|--------|----------|
-| List cards in list | GET | `/lists/{listId}/cards` |
-| Get card | GET | `/cards/{id}` |
-| Create card | POST | `/cards` |
-| Update card | PUT | `/cards/{id}` |
-| Move card | PUT | `/cards/{id}` (idList) |
-| Archive card | PUT | `/cards/{id}` (closed=true) |
-| Delete card | DELETE | `/cards/{id}` |
+| Comando | Uso |
+|---------|-----|
+| `auth` | (Re)autenticar → `~/.trello_config.json` |
+| `whoami` | Validar credenciais → id/username |
+| `boards` | Listar todos os boards (JSON) |
+| `find-board <nome-ou-id>` | **Resolver board por nome** (sem acentos) ou ID |
+| `lists <board_id>` | Listar listas do board |
+| `create-list <board_id> "Nome"` | Criar lista |
+| `cards <list_id>` | Listar cards da lista |
+| `find-card <board_id> <nome-ou-id>` | **Buscar card por nome** (ou ID/shortlink) no board inteiro |
+| `create-card <list_id> "Nome" --desc "..."` | Criar card |
+| `labels <board_id>` | Listar labels (tags) do board |
+| `create-label <board_id> "Nome" --color red` | Criar label (tag de prioridade/epic) |
+| `add-label <card_id> <label_id>` | Adicionar label ao card (ex.: prioridade Alta) |
+| `remove-label <card_id> <label_id>` | Remover label do card |
+| `move-card <card_id> <list_id>` | Mover card para outra lista |
+| `update-card <card_id> --name/--desc/--due` | Atualizar card |
+| `archive-card <card_id>` | Arquivar card |
+| `unarchive-card <card_id>` | Restaurar card arquivado |
+| `delete-card <card_id>` | Excluir card (permanente) |
 
-### Common Card Fields
-- `name` — Card title
-- `desc` — Description (supports Markdown)
-- `due` — Due date (ISO 8601: `2026-07-15T17:00:00Z`)
-- `pos` — Position: `top`, `bottom`, or a positive number
-- `idLabels` — Comma-separated label IDs
-- `idMembers` — Comma-separated member IDs
-- `start` — Start date (ISO 8601)
+Exemplo:
 
-## Workflow Guidance
+```bash
+python3 <skill-path>/scripts/trello_api.py find-board "squad x"
+python3 <skill-path>/scripts/trello_api.py lists <board_id>
+python3 <skill-path>/scripts/trello_api.py find-card <board_id> "cadastro 2fa"
+python3 <skill-path>/scripts/trello_api.py move-card <card_id> <list_id>
+```
 
-When the user gives a high-level request ("organize my backlog", "move done cards", "set up a sprint board"), do not just run one command. Plan the workflow:
+## Papéis no Harness V2 (quem faz o quê)
 
-1. First list boards to find the right one
-2. Then list lists to understand the structure
-3. Then perform the requested operations
-4. Show a summary of what was done
+O Trello é operado pelos macros do Harness V2 — cada um com escopo fechado. Sempre via este CLI (nunca API crua):
 
-**Always confirm before destructive operations** (deleting cards, archiving lists). When creating cards, ask for at minimum: list, name, and optionally description/due date.
+| Agente | Escopo | Comandos permitidos | Proibido |
+|--------|--------|---------------------|----------|
+| `planner` | **Criar** backlog: cards/epics, tags de prioridade, sprints | `auth`, `whoami`, `boards`, `find-board`, `lists`, `create-list` (sprint/backlog), `create-card` (epic/story), `labels`, `create-label`, `add-label` | `move-card`, `delete-card`, `archive-card` (encerrar é do shipper) |
+| `builder` | **Mover/atualizar** — card entra em execução | `auth`, `whoami`, `find-board`, `lists`, `find-card`, `move-card` (→ lista de execução), `update-card` | `create-card`, `create-list`, `create-label`, `delete-card` (criar é do planner) |
+| `shipper` | **Encerrar** — card vai para "concluído" | `auth`, `whoami`, `find-board`, `lists`, `find-card`, `move-card` (→ conclusão), `update-card`, `archive-card` | `create-card`, `create-list`, `create-label`, `delete-card` (criar é do planner; exclusão é humana) |
 
-## Error Handling
+Sprint = **lista** no board (ex.: `Sprint 1 — tema`); prioridade = **label** (sugestão: `Alta`=`red`, `Média`=`orange`, `Baixa`=`sky`); épico = card com nome `[EPIC] nome` na lista de backlog.
 
-If an API call returns an error:
-- **401** — Token expired or invalid. Re-run authentication.
-- **404** — Board/list/card not found. Check the ID.
-- **429** — Rate limited. Wait and retry.
-- **Other** — Show the error message to the user and suggest alternatives.
+## Fluxo padrão (operação por nome)
+
+Quando o pedido é de alto nível ("mova o card X para concluído", "crie card da task Y"), resolva nomes → IDs **sempre via CLI**:
+
+1. `whoami` — valida credenciais (diagnóstico rápido de 401).
+2. `find-board "<nome>"` — resolve `board_id` pelo nome (nunca invente ID).
+3. `lists <board_id>` — vê as listas e escolhe a destino pelo **nome** (`concluído`/`done`/`shipped`/... — nunca invente destino).
+4. `find-card <board_id> "<nome do card>"` — resolve `card_id` (ambíguo? use `cards <list_id>` para desambiguar).
+5. Execute a operação: `create-card` / `move-card` / `update-card` / `delete-card`.
+6. Mostre resumo: card(s) afetados (id + nome) e lista de destino.
+
+**Confirme antes de operações destrutivas** (`delete-card`, `archive-card`). Para criar card, no mínimo: lista, nome; descrição/prazo opcionais.
+
+## Tratamento de erros
+
+O CLI imprime `ERRO TRELLO [<status>]: <detalhe>` + linha `→ <orientação>` e sai com código 2:
+
+- **401** — token inválido/expirado → rode `trello_api.py auth` e repita a operação.
+- **404** — board/lista/card não encontrado → confira o ID (descubra com `find-board`/`lists`/`find-card`; IDs Trello têm 24 hex).
+- **429** — rate limit → aguarde e tente novamente.
+- **rede** — falha de conectividade → verifique a rede.
+- **Outros** — leia a mensagem e ajuste os parâmetros.
+
+Nunca contorne um erro chamando a API diretamente.

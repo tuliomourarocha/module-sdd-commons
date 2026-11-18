@@ -1,118 +1,200 @@
+"""trello_api.py — CLI determinístico do Trello (skill trello-manager).
+
+Toda operação de Trello passa por aqui — nunca faça chamadas cruas à API
+(curl/urllib/requests improvisados). Usa apenas stdlib (sem dependências).
+
+- Saída de dados: JSON (parse direto pelo agente).
+- Erros: mensagem curta com status + orientação acionável (401 → auth,
+  404 → confira o ID, 429 → aguarde). Exit code 2 em erro de API.
+"""
+import argparse
 import json
 import sys
+import unicodedata
+import urllib.error
+import urllib.parse
+import urllib.request
 
-import requests
-
-from trello_auth import get_auth, is_authenticated, authenticate
+from trello_auth import authenticate, get_auth, is_authenticated, validate
 
 BASE_URL = "https://api.trello.com/1"
 
 
-def _ensure_auth():
+class TrelloCliError(Exception):
+    """Erro de API com status HTTP e orientação acionável."""
+
+    def __init__(self, status, message, guidance=None):
+        super().__init__(message)
+        self.status = status
+        self.message = message
+        self.guidance = guidance
+
+
+def _guidance(status):
+    if status == 401:
+        return "credencial inválida/expirada → rode: trello_api.py auth"
+    if status == 404:
+        return "ID não encontrado → descubra com find-board / lists / cards / find-card"
+    if status == 429:
+        return "rate limit → aguarde alguns segundos e tente novamente"
+    return "confira os parâmetros do comando"
+
+
+def _request(method, path, params=None):
+    """Chamada HTTP ao Trello com auth embutida na query string."""
     if not is_authenticated():
-        print("Not authenticated. Starting authentication flow...")
+        print("Sem credenciais (~/.trello_config.json). Iniciando autenticação...", file=sys.stderr)
         if not authenticate():
-            sys.exit(1)
-    return get_auth()
+            raise TrelloCliError(401, "autenticação não concluída", "rode: trello_api.py auth")
+    api_key, token = get_auth()
+    qs = urllib.parse.urlencode({"key": api_key, "token": token, **(params or {})})
+    req = urllib.request.Request(f"{BASE_URL}{path}?{qs}", method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode()
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace").strip()
+        raise TrelloCliError(e.code, detail or e.reason) from None
+    except urllib.error.URLError as e:
+        raise TrelloCliError(0, f"falha de rede: {e.reason}") from None
+    return json.loads(body) if body else {}
 
 
-def _get(url, params=None):
-    api_key, token = _ensure_auth()
-    p = {"key": api_key, "token": token, **(params or {})}
-    resp = requests.get(f"{BASE_URL}{url}", params=p)
-    resp.raise_for_status()
-    return resp.json()
+def _norm(text):
+    """Normaliza para busca: minúsculas e sem acentos."""
+    text = unicodedata.normalize("NFKD", text or "")
+    return "".join(c for c in text if not unicodedata.combining(c)).lower().strip()
 
 
-def _post(url, data=None):
-    api_key, token = _ensure_auth()
-    d = {"key": api_key, "token": token, **(data or {})}
-    resp = requests.post(f"{BASE_URL}{url}", data=d)
-    resp.raise_for_status()
-    return resp.json()
+# --- Members ---
 
-
-def _put(url, data=None):
-    api_key, token = _ensure_auth()
-    d = {"key": api_key, "token": token, **(data or {})}
-    resp = requests.put(f"{BASE_URL}{url}", data=d)
-    resp.raise_for_status()
-    return resp.json()
-
-
-def _delete(url, params=None):
-    api_key, token = _ensure_auth()
-    p = {"key": api_key, "token": token, **(params or {})}
-    resp = requests.delete(f"{BASE_URL}{url}", params=p)
-    resp.raise_for_status()
-    return resp.json()
+def whoami():
+    """Valida credenciais e retorna o membro autenticado."""
+    member, err = validate()
+    if err:
+        status = 401 if "HTTP 401" in err else 0
+        raise TrelloCliError(status, err, "rode: trello_api.py auth")
+    return {"id": member.get("id"), "username": member.get("username"),
+            "fullName": member.get("fullName")}
 
 
 # --- Boards ---
 
 def list_boards():
-    return _get("/members/me/boards")
+    return _request("GET", "/members/me/boards", {"fields": "id,name,url,closed"})
+
+
+def find_board(query):
+    """Resolve board(s) por nome (sem acentos) ou ID."""
+    q = _norm(query)
+    hits = []
+    for b in list_boards():
+        if b.get("closed"):
+            continue
+        hay = f"{_norm(b.get('name', ''))} {b.get('id', '').lower()}"
+        if q and q in hay:
+            hits.append({"id": b["id"], "name": b["name"], "url": b.get("url")})
+    return hits
 
 
 # --- Lists ---
 
 def list_lists(board_id):
-    return _get(f"/boards/{board_id}/lists")
+    return _request("GET", f"/boards/{board_id}/lists", {"fields": "id,name,closed"})
 
 
 def create_list(board_id, name, pos="bottom"):
-    return _post(f"/boards/{board_id}/lists", {
-        "name": name,
-        "pos": pos,
-    })
+    return _request("POST", f"/boards/{board_id}/lists", {"name": name, "pos": pos})
 
 
 def update_list(list_id, **kwargs):
-    return _put(f"/lists/{list_id}", kwargs)
+    return _request("PUT", f"/lists/{list_id}", kwargs)
 
 
 def archive_list(list_id):
-    return _put(f"/lists/{list_id}", {"closed": True})
+    return _request("PUT", f"/lists/{list_id}", {"closed": "true"})
 
 
 # --- Cards ---
 
 def list_cards(list_id):
-    return _get(f"/lists/{list_id}/cards")
+    return _request("GET", f"/lists/{list_id}/cards",
+                    {"fields": "id,name,idList,closed,shortUrl,labels"})
 
 
 def get_card(card_id):
-    return _get(f"/cards/{card_id}")
+    return _request("GET", f"/cards/{card_id}",
+                    {"fields": "id,name,idList,closed,shortUrl,labels"})
 
 
-def create_card(list_id, name, desc="", pos="bottom", due=None, labels=None):
-    data = {
-        "idList": list_id,
-        "name": name,
-        "desc": desc,
-        "pos": pos,
-    }
+def find_card(board_id, query):
+    """Busca cards por nome (sem acentos), ID ou shortlink em todo o board."""
+    q = _norm(query)
+    hits = []
+    for lst in list_lists(board_id):
+        if lst.get("closed"):
+            continue
+        for card in list_cards(lst["id"]):
+            hay = " ".join([_norm(card.get("name", "")), card.get("id", "").lower(),
+                            (card.get("shortUrl") or "").lower()])
+            if q and q in hay:
+                hits.append({"id": card["id"], "name": card["name"],
+                             "list": lst["name"], "idList": lst["id"],
+                             "shortUrl": card.get("shortUrl"),
+                             "labels": [l.get("name") or l.get("color") for l in (card.get("labels") or [])]})
+    return hits
+
+
+def create_card(list_id, name, desc="", pos="bottom", due=None):
+    data = {"idList": list_id, "name": name, "desc": desc, "pos": pos}
     if due:
         data["due"] = due
-    if labels:
-        data["idLabels"] = ",".join(labels)
-    return _post("/cards", data)
+    return _request("POST", "/cards", data)
 
 
-def update_card(card_id, **kwargs):
-    return _put(f"/cards/{card_id}", kwargs)
+def update_card(card_id, name=None, desc=None, due=None):
+    data = {k: v for k, v in {"name": name, "desc": desc, "due": due}.items() if v is not None}
+    if not data:
+        raise TrelloCliError(None, "update-card exige ao menos --name, --desc ou --due",
+                             "ex.: update-card <card_id> --name \"Novo nome\"")
+    return _request("PUT", f"/cards/{card_id}", data)
 
 
 def move_card(card_id, list_id):
-    return _put(f"/cards/{card_id}", {"idList": list_id})
+    return _request("PUT", f"/cards/{card_id}", {"idList": list_id})
 
 
 def archive_card(card_id):
-    return _put(f"/cards/{card_id}", {"closed": True})
+    return _request("PUT", f"/cards/{card_id}", {"closed": "true"})
+
+
+def unarchive_card(card_id):
+    return _request("PUT", f"/cards/{card_id}", {"closed": "false"})
 
 
 def delete_card(card_id):
-    return _delete(f"/cards/{card_id}")
+    return _request("DELETE", f"/cards/{card_id}")
+
+
+# --- Labels (tags/prioridade) ---
+
+def list_labels(board_id):
+    return _request("GET", f"/boards/{board_id}/labels", {"fields": "id,name,color"})
+
+
+def create_label(board_id, name, color=None):
+    data = {"name": name, "idBoard": board_id}
+    if color:
+        data["color"] = color
+    return _request("POST", "/labels", data)
+
+
+def add_label(card_id, label_id):
+    return _request("POST", f"/cards/{card_id}/idLabels", {"value": label_id})
+
+
+def remove_label(card_id, label_id):
+    return _request("DELETE", f"/cards/{card_id}/idLabels/{label_id}")
 
 
 # --- CLI ---
@@ -121,55 +203,134 @@ def _print_json(data):
     print(json.dumps(data, indent=2, ensure_ascii=False))
 
 
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Trello Manager CLI")
+def _build_parser():
+    parser = argparse.ArgumentParser(
+        prog="trello_api.py",
+        description="CLI do Trello — auth, boards, listas, cards e labels (criar/mover/excluir etc.)",
+    )
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("auth", help="Authenticate with Trello")
-    sub.add_parser("boards", help="List all boards")
+    sub.add_parser("auth", help="Autenticar (abre browser, salva ~/.trello_config.json)")
+    sub.add_parser("whoami", help="Validar credenciais (GET /members/me)")
+    sub.add_parser("boards", help="Listar todos os boards")
 
-    list_parser = sub.add_parser("lists", help="List lists of a board")
-    list_parser.add_argument("board_id")
+    p = sub.add_parser("find-board", help="Resolver board por nome (ou ID)")
+    p.add_argument("query")
 
-    create_list_parser = sub.add_parser("create-list", help="Create a list")
-    create_list_parser.add_argument("board_id")
-    create_list_parser.add_argument("name")
+    p = sub.add_parser("lists", help="Listar listas de um board")
+    p.add_argument("board_id")
 
-    cards_parser = sub.add_parser("cards", help="List cards in a list")
-    cards_parser.add_argument("list_id")
+    p = sub.add_parser("create-list", help="Criar lista")
+    p.add_argument("board_id")
+    p.add_argument("name")
 
-    create_card_parser = sub.add_parser("create-card", help="Create a card")
-    create_card_parser.add_argument("list_id")
-    create_card_parser.add_argument("name")
-    create_card_parser.add_argument("--desc", default="")
-    create_card_parser.add_argument("--due")
+    p = sub.add_parser("cards", help="Listar cards de uma lista")
+    p.add_argument("list_id")
 
-    move_card_parser = sub.add_parser("move-card", help="Move a card to another list")
-    move_card_parser.add_argument("card_id")
-    move_card_parser.add_argument("list_id")
+    p = sub.add_parser("find-card", help="Buscar card por nome (ou ID/shortlink) no board inteiro")
+    p.add_argument("board_id")
+    p.add_argument("query")
 
-    delete_card_parser = sub.add_parser("delete-card", help="Delete a card")
-    delete_card_parser.add_argument("card_id")
+    p = sub.add_parser("create-card", help="Criar card")
+    p.add_argument("list_id")
+    p.add_argument("name")
+    p.add_argument("--desc", default="")
+    p.add_argument("--due")
 
-    args = parser.parse_args()
+    p = sub.add_parser("update-card", help="Atualizar card (--name/--desc/--due)")
+    p.add_argument("card_id")
+    p.add_argument("--name")
+    p.add_argument("--desc")
+    p.add_argument("--due")
 
+    p = sub.add_parser("labels", help="Listar labels (tags) de um board")
+    p.add_argument("board_id")
+
+    p = sub.add_parser("create-label", help="Criar label (tag) no board")
+    p.add_argument("board_id")
+    p.add_argument("name")
+    p.add_argument("--color",
+                   choices=["yellow", "purple", "blue", "red", "green", "orange", "sky", "lime", "pink", "black"],
+                   default=None)
+
+    p = sub.add_parser("add-label", help="Adicionar label (tag/prioridade) a um card")
+    p.add_argument("card_id")
+    p.add_argument("label_id")
+
+    p = sub.add_parser("remove-label", help="Remover label de um card")
+    p.add_argument("card_id")
+    p.add_argument("label_id")
+
+    p = sub.add_parser("move-card", help="Mover card para outra lista")
+    p.add_argument("card_id")
+    p.add_argument("list_id")
+
+    p = sub.add_parser("archive-card", help="Arquivar card")
+    p.add_argument("card_id")
+
+    p = sub.add_parser("unarchive-card", help="Restaurar card arquivado")
+    p.add_argument("card_id")
+
+    p = sub.add_parser("delete-card", help="Excluir card (permanente)")
+    p.add_argument("card_id")
+
+    return parser
+
+
+def _dispatch(args):
     if args.command == "auth":
         authenticate()
-    elif args.command == "boards":
-        _print_json(list_boards())
-    elif args.command == "lists":
-        _print_json(list_lists(args.board_id))
-    elif args.command == "create-list":
-        _print_json(create_list(args.board_id, args.name))
-    elif args.command == "cards":
-        _print_json(list_cards(args.list_id))
-    elif args.command == "create-card":
-        _print_json(create_card(args.list_id, args.name, args.desc))
-    elif args.command == "move-card":
-        _print_json(move_card(args.card_id, args.list_id))
-    elif args.command == "delete-card":
-        _print_json(delete_card(args.card_id))
-    else:
-        parser.print_help()
+        return {"status": "ok", "config": "~/.trello_config.json"}
+    if args.command == "whoami":
+        return whoami()
+    if args.command == "boards":
+        return list_boards()
+    if args.command == "find-board":
+        return find_board(args.query)
+    if args.command == "lists":
+        return list_lists(args.board_id)
+    if args.command == "create-list":
+        return create_list(args.board_id, args.name)
+    if args.command == "cards":
+        return list_cards(args.list_id)
+    if args.command == "find-card":
+        return find_card(args.board_id, args.query)
+    if args.command == "create-card":
+        return create_card(args.list_id, args.name, args.desc, due=args.due)
+    if args.command == "update-card":
+        return update_card(args.card_id, name=args.name, desc=args.desc, due=args.due)
+    if args.command == "labels":
+        return list_labels(args.board_id)
+    if args.command == "create-label":
+        return create_label(args.board_id, args.name, color=args.color)
+    if args.command == "add-label":
+        return add_label(args.card_id, args.label_id)
+    if args.command == "remove-label":
+        return remove_label(args.card_id, args.label_id)
+    if args.command == "move-card":
+        return move_card(args.card_id, args.list_id)
+    if args.command == "archive-card":
+        return archive_card(args.card_id)
+    if args.command == "unarchive-card":
+        return unarchive_card(args.card_id)
+    if args.command == "delete-card":
+        return delete_card(args.card_id)
+    return None
+
+
+def main(argv=None):
+    args = _build_parser().parse_args(argv)
+    try:
+        out = _dispatch(args)
+    except TrelloCliError as e:
+        label = e.status if e.status else ("uso" if e.status is None else "rede")
+        print(f"ERRO TRELLO [{label}]: {e.message}", file=sys.stderr)
+        print(f"→ {e.guidance or _guidance(e.status or 0)}", file=sys.stderr)
+        return 2
+    if out is not None:
+        _print_json(out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

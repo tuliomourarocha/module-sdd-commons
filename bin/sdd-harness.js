@@ -48,12 +48,21 @@ Opções:     --target <diretório-do-projeto>   (padrão: diretório atual)
              --rtk-edition <full|oss>          (padrão: full; oss = Apache-2.0, sem motor BUSL)
              --rtk-scope <global|project>      (padrão: global; opencode é sempre global)
              --rtk-only                        (só baixa/vincula o rtk, sem artefatos)
+             --no-codegraph                    (não instala codegraph/ast-grep nem registra o MCP)
              --help
 
 Sobre o rtk: proxy de comandos (https://github.com/rtk-ai/rtk) que comprime a
 saída de shell antes do LLM ler. Durante a instalação o binário é baixado
 (brew / winget / install.sh oficial) e vinculado ao harness escolhido com
-"rtk init". Saída estranha? "rtk bypass <cmd>" roda sem filtro.
+"rtk init". Saída estranha? "rtk bypass <cmd>" roda sem filtro. Durante a
+execução, o plugin rtk-visibility.ts marca cada comando reescrito com
+"⟐ rtk ✓" na saída — prova visível de que o proxy está rodando.
+
+Sobre o codegraph: CLI semântico (https://github.com/colbymchenry/codegraph) que
+indexa o repositório e o expõe como MCP ("codegraph serve --mcp"); ast-grep
+complementa com busca estrutural de sintaxe (AST). Durante a instalação ambos
+os binários são baixados (npm/brew), o MCP codegraph é registrado no harness
+escolhido e o projeto é indexado ("codegraph init", telemetria desligada).
 
 --rtk-agents: por padrão o vínculo segue as plataformas da instalação;
   "all" detecta e vincula todos os harnesses instalados (opencode, claude,
@@ -79,12 +88,14 @@ function parseArgs(args) {
     scope: "global",
     agents: null,
   };
+  const codegraph = { enabled: true };
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === "--help" || argument === "-h") usage();
     if (argument === "--dry-run") { dryRun = true; continue; }
     if (argument === "--no-rtk") { rtk.enabled = false; continue; }
+    if (argument === "--no-codegraph") { codegraph.enabled = false; continue; }
     if (argument === "--rtk-only") { rtk.enabled = true; rtk.only = true; continue; }
     if (argument === "--rtk-edition") {
       const value = args[index + 1];
@@ -130,7 +141,7 @@ function parseArgs(args) {
   if (selected.length === 0 && !(rtk.only && rtk.agents)) {
     throw new Error("Escolha uma plataforma: --opencode, --claude, --codex ou --all; ou use --rtk-only com --rtk-agents.");
   }
-  return { selected: [...new Set(selected)], target, dryRun, rtk };
+  return { selected: [...new Set(selected)], target, dryRun, rtk, codegraph };
 }
 
 async function exists(file) {
@@ -363,6 +374,241 @@ async function setupRtk(platformsRequested, { rtk, target, dryRun }) {
   }
 }
 
+// ── CodeGraph + ast-grep — inteligência semântica ───────────────────────────
+// codegraph — https://github.com/colbymchenry/codegraph — indexa o repositório
+// e o expõe como MCP ("codegraph serve --mcp"); ast-grep — busca estrutural de
+// sintaxe (AST). Mesma filosofia do rtk: baixa os binários, vincula ao harness
+// escolhido e indexa o projeto. Falha em aberto: sem os binários a squad
+// funciona só com leitura de arquivos. Telemetria desligada por padrão
+// (CODEGRAPH_TELEMETRY=0); versões exatas resolvidas do registro npm.
+
+const CODEGRAPH_NPM_PKG = "@colbymchenry/codegraph";
+const AST_GREP_NPM_PKG = "@ast-grep/cli";
+
+async function findNpm() {
+  return shOut("command -v npm");
+}
+
+async function npmLatestVersion(pkg) {
+  if (!(await findNpm())) return null;
+  return shOut(`npm view ${pkg} version`);
+}
+
+async function installCodegraphCli(dryRun) {
+  const onPath = shOut("command -v codegraph");
+  if (onPath) {
+    console.log(`codegraph encontrado: ${onPath} (${shOut("codegraph --version") ?? "versão desconhecida"})`);
+    return onPath;
+  }
+  const version = await npmLatestVersion(CODEGRAPH_NPM_PKG);
+  if (!version) throw new Error("npm não encontrado ou falha ao resolver a versão de @colbymchenry/codegraph");
+  if (dryRun) {
+    console.log(`  [dry-run] npm install -g ${CODEGRAPH_NPM_PKG}@${version}`);
+    return null;
+  }
+  console.log(`codegraph não encontrado — instalando ${CODEGRAPH_NPM_PKG}@${version} (npm global, versão exata)...`);
+  if (shRun(`npm install -g ${CODEGRAPH_NPM_PKG}@${version}`) !== 0) {
+    throw new Error("npm install do codegraph falhou — verifique a saída acima");
+  }
+  const binary = shOut("command -v codegraph");
+  if (!binary) throw new Error("codegraph não ficou disponível no PATH após a instalação");
+  console.log(`✓ codegraph instalado: ${binary} (${shOut("codegraph --version") ?? "versão desconhecida"})`);
+  return binary;
+}
+
+async function installAstGrepCli(dryRun) {
+  const onPath = shOut("command -v ast-grep || command -v sg");
+  if (onPath) {
+    console.log(`ast-grep encontrado: ${onPath} (${shOut("ast-grep --version") ?? "versão desconhecida"})`);
+    return onPath;
+  }
+  if (dryRun) {
+    console.log("  [dry-run] baixaria o ast-grep (brew ast-grep, com fallback npm @ast-grep/cli)");
+    return null;
+  }
+  const brew = await findBrew();
+  if (brew && process.platform !== "win32") {
+    console.log("ast-grep não encontrado — tentando brew (ast-grep)...");
+    if (shRun(`"${brew}" install ast-grep`) === 0 && shOut("command -v ast-grep")) {
+      const binary = shOut("command -v ast-grep");
+      console.log(`✓ ast-grep instalado via brew: ${binary}`);
+      return binary;
+    }
+    console.log("  brew falhou — tentando npm antes de desistir");
+  }
+  const version = await npmLatestVersion(AST_GREP_NPM_PKG);
+  if (!version) throw new Error("npm não encontrado ou falha ao resolver a versão de @ast-grep/cli");
+  if (dryRun) {
+    console.log(`  [dry-run] npm install -g ${AST_GREP_NPM_PKG}@${version}`);
+    return null;
+  }
+  console.log(`instalando ${AST_GREP_NPM_PKG}@${version} (npm global)...`);
+  if (shRun(`npm install -g ${AST_GREP_NPM_PKG}@${version}`) !== 0) {
+    throw new Error("npm install do ast-grep falhou — verifique a saída acima");
+  }
+  const binary = shOut("command -v ast-grep || command -v sg");
+  if (!binary) throw new Error("ast-grep não ficou disponível no PATH após a instalação");
+  console.log(`✓ ast-grep instalado: ${binary}`);
+  return binary;
+}
+
+// Config MCP do codegraph — uma entrada por harness; sempre com telemetria off.
+const CODEGRAPH_MCP_ENV = { CODEGRAPH_TELEMETRY: "0" };
+const CODEGRAPH_LOCAL_SERVER = {
+  type: "local",
+  command: ["codegraph", "serve", "--mcp"],
+  environment: CODEGRAPH_MCP_ENV,
+};
+
+async function bindCodegraphToHarness(platform, { target, dryRun }) {
+  if (dryRun) {
+    console.log(`  [dry-run] registraria o MCP "codegraph" (codegraph serve --mcp) no ${platform}`);
+    return true;
+  }
+
+  // opencode: CLI nativa escreve no opencode.json do projeto; fallback merge JSON
+  if (platform === "opencode") {
+    if (shOut("command -v opencode")) {
+      if (shRun(`cd ${JSON.stringify(target)} && opencode mcp add codegraph --env CODEGRAPH_TELEMETRY=0 -- codegraph serve --mcp`) === 0) {
+        console.log('  ✓ MCP "codegraph" registrado no OpenCode do projeto ("opencode mcp list" para conferir)');
+        return true;
+      }
+      console.log("  opencode mcp add falhou — tentando merge manual no opencode.json");
+    }
+    const configPath = path.join(target, "opencode.json");
+    let config = {};
+    if (await exists(configPath)) {
+      try { config = JSON.parse(await readFile(configPath, "utf8")); } catch {
+        console.log("  ✖ opencode.json não é JSON puro — registre o MCP manualmente");
+        return false;
+      }
+    } else {
+      config = { $schema: "https://opencode.ai/config.json" };
+    }
+    const servers = config.mcp?.servers ?? (config.mcp = { servers: {} }).servers;
+    if (servers.codegraph?.type === "local") {
+      console.log("  MCP \"codegraph\" já registrado no opencode.json");
+    } else {
+      servers.codegraph = CODEGRAPH_LOCAL_SERVER;
+      await mkdir(path.dirname(configPath), { recursive: true });
+      await writeFile(configPath, JSON.stringify(config, null, 2) + "\n");
+      console.log('  ✓ opencode.json atualizado com o MCP "codegraph"');
+    }
+    return true;
+  }
+
+  // claude: CLI nativa (--scope project escreve .mcp.json); fallback merge JSON
+  if (platform === "claude") {
+    const json = JSON.stringify({ type: "stdio", command: "codegraph", args: ["serve", "--mcp"], env: CODEGRAPH_MCP_ENV });
+    if (shOut("command -v claude")) {
+      if (shRun(`cd ${JSON.stringify(target)} && claude mcp add-json codegraph ${JSON.stringify(json)} --scope project`) === 0) {
+        console.log('  ✓ MCP "codegraph" registrado no Claude Code do projeto (.mcp.json)');
+        return true;
+      }
+      console.log("  claude mcp add-json falhou — tentando merge manual no .mcp.json");
+    }
+    const configPath = path.join(target, ".mcp.json");
+    let config = {};
+    if (await exists(configPath)) {
+      try { config = JSON.parse(await readFile(configPath, "utf8")); } catch {
+        console.log("  ✖ .mcp.json não é JSON puro — registre o MCP manualmente");
+        return false;
+      }
+    }
+    config.mcpServers = config.mcpServers ?? {};
+    if (config.mcpServers.codegraph?.command) {
+      console.log('  MCP "codegraph" já registrado no .mcp.json');
+    } else {
+      config.mcpServers.codegraph = { command: "codegraph", args: ["serve", "--mcp"], env: CODEGRAPH_MCP_ENV };
+      await mkdir(target, { recursive: true });
+      await writeFile(configPath, JSON.stringify(config, null, 2) + "\n");
+      console.log('  ✓ .mcp.json atualizado com o MCP "codegraph"');
+    }
+    return true;
+  }
+
+  // codex: bloco TOML no .codex/config.toml do projeto (sem CLI de MCP project-scope estável)
+  if (platform === "codex") {
+    const configPath = path.join(target, ".codex", "config.toml");
+    const block = [
+      "",
+      "[mcp_servers.codegraph]",
+      'command = "codegraph"',
+      'args = ["serve", "--mcp"]',
+      `env = { CODEGRAPH_TELEMETRY = "0" }`,
+      "",
+    ].join("\n");
+    if (await exists(configPath)) {
+      const content = await readFile(configPath, "utf8");
+      if (/\[mcp_servers\.codegraph\]/.test(content)) {
+        console.log('  MCP "codegraph" já registrado no .codex/config.toml');
+        return true;
+      }
+      await writeFile(configPath, `${content.replace(/\s*$/, "")}\n${block}`);
+      console.log('  ✓ .codex/config.toml atualizado com o MCP "codegraph"');
+    } else {
+      await mkdir(path.dirname(configPath), { recursive: true });
+      await writeFile(configPath, block);
+      console.log('  ✓ .codex/config.toml criado com o MCP "codegraph"');
+    }
+    return true;
+  }
+
+  console.error(`✖ CodeGraph: sem integração conhecida para ${platform}`);
+  return false;
+}
+
+// Índice semântico do projeto + .gitignore (estado gerado, nunca versionado)
+async function initCodegraphIndex(target, dryRun) {
+  if (dryRun) {
+    console.log(`  [dry-run] CODEGRAPH_TELEMETRY=0 codegraph init ${target}`);
+    return;
+  }
+  const gitignorePath = path.join(target, ".gitignore");
+  if (await exists(gitignorePath)) {
+    const content = await readFile(gitignorePath, "utf8");
+    if (!/^\.codegraph\/?$/m.test(content)) {
+      await writeFile(gitignorePath, `${content.replace(/\s*$/, "")}\n\n# CodeGraph (índice semântico gerado)\n.codegraph/\n`);
+      console.log("  ✓ .codegraph/ adicionado ao .gitignore (índice é estado gerado)");
+    }
+  } else {
+    await writeFile(gitignorePath, "# CodeGraph (índice semântico gerado)\n.codegraph/\n");
+    console.log("  ✓ .gitignore criado com .codegraph/");
+  }
+  if (shOut("command -v codegraph")) {
+    console.log(`construindo o índice semântico do projeto (codegraph init, telemetria desligada)...`);
+    if (shRun(`CODEGRAPH_TELEMETRY=0 codegraph init ${JSON.stringify(target)}`) !== 0) {
+      console.log("  codegraph init falhou — rode 'CODEGRAPH_TELEMETRY=0 codegraph init' manualmente; a squad funciona sem o índice");
+    } else {
+      console.log("  ✓ índice criado (diretório .codegraph/)");
+    }
+  }
+}
+
+async function setupCodegraph(platformsRequested, { target, dryRun }) {
+  console.log("\n== CodeGraph + ast-grep — inteligência semântica ==");
+  try {
+    if (platformsRequested.length === 0) {
+      console.log("✖ CodeGraph: nenhuma plataforma para configurar");
+      return;
+    }
+    await installCodegraphCli(dryRun);
+    await installAstGrepCli(dryRun);
+    let bound = 0;
+    for (const platform of platformsRequested) {
+      if (await bindCodegraphToHarness(platform, { target, dryRun })) bound += 1;
+    }
+    await initCodegraphIndex(target, dryRun);
+    console.log(
+      bound > 0
+        ? `✓ CodeGraph configurado em ${bound} harness(es) — reinicie o harness para ativar o MCP "codegraph"`
+        : "✖ CodeGraph não vinculado a nenhum harness",
+    );
+  } catch (error) {
+    console.error(`✖ CodeGraph: ${error.message}. A squad funciona sem ele — rode o instalador novamente para reconciliar`);
+  }
+}
+
 async function installOpenCode(target, dryRun) {
   const root = path.join(target, ".opencode");
   await copyDirectory(path.join(sourceRoot, "agents"), path.join(root, "agents"), dryRun);
@@ -501,7 +747,7 @@ async function installCodex(target, dryRun) {
 }
 
 async function main() {
-  const { selected, target, dryRun, rtk } = parseArgs(process.argv.slice(2));
+  const { selected, target, dryRun, rtk, codegraph } = parseArgs(process.argv.slice(2));
   console.log(`${dryRun ? "Simulação" : "Instalando"} SDD Harness em ${target}`);
 
   if (rtk.only) {
@@ -517,6 +763,12 @@ async function main() {
     await setupRtk(selected, { rtk, target, dryRun });
   } else {
     console.log("RTK: pulado (--no-rtk) — comandos de shell chegam crus ao LLM");
+  }
+
+  if (codegraph.enabled) {
+    await setupCodegraph(selected, { target, dryRun });
+  } else {
+    console.log("CodeGraph: pulado (--no-codegraph) — agentes seguem só com leitura de arquivos");
   }
 }
 

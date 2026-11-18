@@ -1,6 +1,6 @@
 name: agentic-squad
-version: 2.0.0
-description: Harness V2 — 4 macros + hooks (planner/builder/reviewer/shipper) + harness orchestrator — checker removido, guard rails em hooks
+version: 2.1.0
+description: Harness V2 — 4 macros + hooks (planner/builder/reviewer/shipper) + harness orchestrator — checker removido, guard rails em hooks; codegraph + rtk configurados pelo instalador
 author: tuliomourarocha
 targets:
   - opencode
@@ -47,6 +47,9 @@ dependencies:
     - tuliomourarocha/module-sdd-commons/skills/caveman
     - tuliomourarocha/module-sdd-commons/skills/caveman-review
     - tuliomourarocha/module-sdd-commons/skills/ponytail
+
+    # Inteligência semântica do repositório (setup/update/doctor de codegraph + ast-grep)
+    - tuliomourarocha/module-sdd-commons/skills/codegraph-ast-grep
   includes: auto
 mcp:
   supabase:
@@ -58,3 +61,6 @@ scripts:
     echo "=== Supabase MCP Setup ==="
     echo "1. Autentique via: opencode mcp auth supabase"
     echo "2. Instale agent skills: npx skills add supabase/agent-skills"
+    echo "=== RTK + CodeGraph (configure via instalador do módulo) ==="
+    echo "3. Execute o install.sh do módulo: baixa o rtk (proxy de shell) e o codegraph/ast-grep,"
+    echo "   registra o MCP 'codegraph' no OpenCode e indexa o projeto (CODEGRAPH_TELEMETRY=0)."

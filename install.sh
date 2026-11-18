@@ -4,12 +4,19 @@ set -euo pipefail
 # =============================================================================
 # install.sh — Instala agentes, commands, skills e packs no .opencode/
 #
-# Uso: ./install.sh [<target-dir>] [--no-rtk] [--rtk-edition full|oss]
+# Uso: ./install.sh [<target-dir>] [--no-rtk] [--rtk-edition full|oss] [--no-codegraph]
 #   <target-dir>   Diretório alvo (default: .opencode)
 #
 # RTK: no fim da instalação, baixa o binário rtk (brew ou install.sh oficial)
 # e vincula ao OpenCode com "rtk init --global --opencode" — proxy que comprime
 # a saída de shell antes do LLM ler (economia de tokens). Falha em aberto.
+# Durante a execução, o plugin rtk-visibility.ts marca cada comando reescrito
+# com "⟐ rtk ✓" na saída — prova visível de que o proxy está rodando.
+#
+# CodeGraph + ast-grep: no fim da instalação, instala o CLI semântico codegraph
+# (npm @colbymchenry/codegraph) e o ast-grep (brew/npm), registra o MCP codegraph
+# no OpenCode ("opencode mcp add"), indexa o projeto ("codegraph init") e desliga
+# a telemetria (CODEGRAPH_TELEMETRY=0). Falha em aberto.
 #
 # Detecta automaticamente a origem:
 #   agents/       → .opencode/agents/       (com conversão tools→permission)
@@ -27,18 +34,21 @@ set -euo pipefail
 TARGET=".opencode"
 RTK_ENABLED=1
 RTK_EDITION="${RTK_EDITION:-full}"
+CODEGRAPH_ENABLED=1
 
 usage() {
-  echo "Uso: ./install.sh [<target-dir>] [--no-rtk] [--rtk-edition full|oss]"
+  echo "Uso: ./install.sh [<target-dir>] [--no-rtk] [--rtk-edition full|oss] [--no-codegraph]"
   echo "  <target-dir>           Diretório alvo (default: .opencode)"
   echo "  --no-rtk               Não baixa nem vincula o rtk"
   echo "  --rtk-edition <full|>  Edição do rtk: full (padrão) ou oss (Apache-2.0)"
+  echo "  --no-codegraph         Não instala codegraph/ast-grep nem registra o MCP"
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-rtk)      RTK_ENABLED=0 ;;
     --rtk-edition) shift; RTK_EDITION="${1:-}"; case "$RTK_EDITION" in full|oss) ;; *) echo "✖ RTK: edição inválida ($RTK_EDITION) — use full ou oss" >&2; exit 1;; esac ;;
+    --no-codegraph) CODEGRAPH_ENABLED=0 ;;
     --help|-h)     usage; exit 0 ;;
     -*)            echo "Argumento desconhecido: $1 (veja ./install.sh --help)" >&2; exit 1 ;;
     *)             TARGET="$1" ;;
@@ -307,6 +317,153 @@ install_rtk() {
 
   rtk init --global --opencode || { error "rtk init --global --opencode falhou — consulte 'rtk init --help'"; return 1; }
   ok "RTK vinculado ao OpenCode (plugin em ~/.config/opencode/plugins/rtk.ts) — reinicie o OpenCode e acompanhe com 'rtk gain'"
+  ok "Visibilidade do RTK: plugins/rtk-visibility.ts marca cada comando reescrito com '⟐ rtk ✓' na saída (RTK_VISIBILITY=0 desliga só o marcador)"
+}
+
+# ── CodeGraph + ast-grep: instala os CLIs e vincula o MCP ao OpenCode ────────
+# CodeGraph (github.com/colbymchenry/codegraph) — índice semântico do repositório
+# exposto como MCP (`codegraph serve --mcp`); ast-grep — busca estrutural de
+# sintaxe (AST). Mesma filosofia do RTK: baixa os binários, vincula ao harness
+# e indexa o projeto. Falha em aberto: sem os binários, a squad segue funcionando
+# só com leitura de arquivos.
+# Telemetria do codegraph fica desligada (CODEGRAPH_TELEMETRY=0) por padrão.
+
+CODEGRAPH_NPM_PKG="@colbymchenry/codegraph"
+AST_GREP_NPM_PKG="@ast-grep/cli"
+
+npm_latest_version() {
+  command -v npm >/dev/null 2>&1 || return 1
+  npm view "$1" version 2>/dev/null || return 1
+}
+
+ensure_npm() {
+  if ! command -v npm >/dev/null 2>&1; then
+    error "npm não encontrado no PATH — necessário para o CodeGraph; instale Node.js e rode ./install.sh novamente"
+    return 1
+  fi
+}
+
+install_codegraph_cli() {
+  if command -v codegraph >/dev/null 2>&1; then
+    ok "codegraph já instalado ($(codegraph --version 2>/dev/null || echo versão desconhecida))"
+    return 0
+  fi
+  ensure_npm || return 1
+  local version
+  version="$(npm_latest_version "$CODEGRAPH_NPM_PKG")" || {
+    error "não foi possível resolver a versão estável de $CODEGRAPH_NPM_PKG (npm view falhou — rede?) — squad segue sem CodeGraph"
+    return 1
+  }
+  info "CodeGraph ausente — instalando $CODEGRAPH_NPM_PKG@$version (npm global, versão exata)..."
+  npm install -g "$CODEGRAPH_NPM_PKG@$version" || {
+    error "npm install -g $CODEGRAPH_NPM_PKG falhou — squad segue sem CodeGraph"
+    return 1
+  }
+  command -v codegraph >/dev/null 2>&1 || {
+    error "codegraph não ficou disponível no PATH após a instalação — squad segue sem CodeGraph"
+    return 1
+  }
+  ok "codegraph instalado ($(codegraph --version 2>/dev/null || echo versão desconhecida))"
+}
+
+install_ast_grep() {
+  if command -v ast-grep >/dev/null 2>&1 || command -v sg >/dev/null 2>&1; then
+    ok "ast-grep já instalado ($(ast-grep --version 2>/dev/null || sg --version 2>/dev/null || echo versão desconhecida))"
+    return 0
+  fi
+  if command -v brew >/dev/null 2>&1; then
+    info "ast-grep ausente — instalando via brew (ast-grep)..."
+    if brew install ast-grep >/dev/null 2>&1 && command -v ast-grep >/dev/null 2>&1; then
+      ok "ast-grep instalado via brew ($(ast-grep --version 2>/dev/null | head -1))"
+      return 0
+    fi
+    skip "brew install ast-grep falhou — tentando npm antes de desistir"
+  fi
+  ensure_npm || return 1
+  local version
+  version="$(npm_latest_version "$AST_GREP_NPM_PKG")" || {
+    error "não foi possível resolver a versão estável de $AST_GREP_NPM_PKG — squad segue sem ast-grep"
+    return 1
+  }
+  info "instalando $AST_GREP_NPM_PKG@$version (npm global)..."
+  npm install -g "$AST_GREP_NPM_PKG@$version" || {
+    error "npm install -g $AST_GREP_NPM_PKG falhou — squad segue sem ast-grep"
+    return 1
+  }
+  command -v ast-grep >/dev/null 2>&1 || {
+    error "ast-grep não ficou disponível no PATH — squad segue sem ast-grep"
+    return 1
+  }
+  ok "ast-grep instalado ($(ast-grep --version 2>/dev/null | head -1))"
+}
+
+# Registra o MCP codegraph no OpenCode do projeto (equivalente do 'rtk init'
+# para o codegraph): tenta a CLI nativa e cai para merge manual no opencode.json.
+bind_codegraph_mcp() {
+  local project_root="$1"
+  if command -v opencode >/dev/null 2>&1; then
+    if (cd "$project_root" && opencode mcp add codegraph --env CODEGRAPH_TELEMETRY=0 -- codegraph serve --mcp >/dev/null 2>&1); then
+      ok "MCP codegraph registrado no OpenCode do projeto ('opencode mcp list' para conferir)"
+      return 0
+    fi
+    skip "opencode mcp add falhou — tentando merge manual no opencode.json"
+  fi
+  command -v python3 >/dev/null 2>&1 || { error "python3 ausente — não consigo escrever o opencode.json; registre manualmente"; return 1; }
+  python3 - "$project_root" <<'PYEOF'
+import json, pathlib, sys
+
+root = pathlib.Path(sys.argv[1])
+target = root / "opencode.json"
+server = {
+    "type": "local",
+    "command": ["codegraph", "serve", "--mcp"],
+    "environment": {"CODEGRAPH_TELEMETRY": "0"},
+}
+
+if not target.exists():
+    target.write_text(json.dumps({"$schema": "https://opencode.ai/config.json", "mcp": {"servers": {"codegraph": server}}}, indent=2) + "\n")
+    print("  opencode.json criado com o MCP codegraph")
+    sys.exit(0)
+
+try:
+    config = json.loads(target.read_text())
+except Exception as exc:
+    print(f"  ✖ opencode.json não é JSON puro ({exc}) — registre o MCP manualmente", file=sys.stderr)
+    sys.exit(1)
+
+servers = config.setdefault("mcp", {}).setdefault("servers", {})
+if "codegraph" in servers and servers["codegraph"].get("type") == "local":
+    print("  MCP codegraph já registrado no opencode.json")
+else:
+    servers["codegraph"] = server
+    target.write_text(json.dumps(config, indent=2) + "\n")
+    print("  opencode.json atualizado com o MCP codegraph")
+PYEOF
+}
+
+# Índice semântico do projeto + .gitignore (estado gerado, nunca versionado)
+init_codegraph_index() {
+  local project_root="$1"
+  if command -v git >/dev/null 2>&1 && git -C "$project_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if ! grep -qs '^\.codegraph/\?$' "$project_root/.gitignore" 2>/dev/null; then
+      printf '\n# CodeGraph (índice semântico gerado)\n.codegraph/\n' >> "$project_root/.gitignore"
+      ok ".codegraph/ adicionado ao .gitignore (índice é estado gerado)"
+    fi
+  fi
+  info "Construindo índice semântico do projeto (codegraph init, telemetria desligada)..."
+  if CODEGRAPH_TELEMETRY=0 codegraph init "$project_root" >/dev/null 2>&1; then
+    ok "índice criado em $project_root/.codegraph/"
+  else
+    skip "codegraph init falhou — rode 'CODEGRAPH_TELEMETRY=0 codegraph init' manualmente; a squad funciona sem o índice"
+  fi
+}
+
+install_codegraph() {
+  install_codegraph_cli || return 1
+  install_ast_grep || return 1
+  bind_codegraph_mcp "$PROJECT_ROOT"
+  init_codegraph_index "$PROJECT_ROOT"
+  ok "CodeGraph + ast-grep prontos — semantic scope via MCP codegraph, evidência estrutural via 'ast-grep' (skill: codegraph-ast-grep)"
 }
 
 install_claude() {
@@ -356,6 +513,8 @@ main() {
   echo ""
   info "Instalando módulo sdd-commons em $TARGET/"
   echo ""
+
+  PROJECT_ROOT="$(pwd)"
 
   mkdir -p "$TARGET"
 
@@ -454,11 +613,20 @@ p.write_text(json.dumps(j, indent=2) + '\n')
     skip "RTK: pulado (--no-rtk)"
   fi
 
+  # CodeGraph + ast-grep: CLIs semânticos + MCP codegraph no OpenCode + índice do projeto
+  if [ "$CODEGRAPH_ENABLED" = "1" ]; then
+    install_codegraph || true
+  else
+    skip "CodeGraph: pulado (--no-codegraph)"
+  fi
+
   echo ""
   ok "Instalação concluída!"
   echo ""
   info "Para verificar os arquivos instalados: ls -la $TARGET/"
   info "Hooks determinísticos: .opencode/plugins/guard-rails.ts (pós-edição) + supervisor.ts (final) → Ver hooks/README.md"
+  info "RTK: comandos reescritos aparecem com '⟐ rtk ✓' na saída (economia acumulada: rtk gain)"
+  info "CodeGraph: MCP 'codegraph' ativo no projeto — 'opencode mcp list' para conferir; ast-grep para busca estrutural"
 }
 
 main

@@ -23,7 +23,7 @@ You are the Planner macro.
 Planeja antes de construir. Cobre produto (discovery, PRD) e técnica (arquitetura, quebra de tasks). Você é o único que escreve `PRD.md` e `PLAN.md`.
 
 ## Skills
-- `find-skills` — **única skill de referência deste agente: não há skills dedicadas fixas.** Para qualquer operação, descubre a skill correta: carregue `find-skills` → `npx skills find <query>` → prefira skills com 1K+ installs → instale (`npx skills add <pkg>`) e siga a skill carregada. Se nada adequado for encontrado, execute a operação com o critério deste arquivo. Mapeamento operação → query:
+- `find-skills` — **única skill de referência deste agente: não há skills dedicadas fixas.** Para qualquer operação, descubra a skill correta: carregue `find-skills` → busque **só na pasta local `skills/`** (`python3 skills/find-skills/scripts/find_skill.py '<query>'` — sem rede) → leia e siga o `SKILL.md` da skill encontrada. Se nada adequado for encontrado, execute a operação com o critério deste arquivo. **Proibido** `npx skills`/busca ou instalação externa. Mapeamento operação → query:
   - Discovery/entrevista → `discovery interview`
   - PRD, backlog, user stories, priorização → `product owner prd backlog`
   - Diagramas (C4, sequência, ERD) → `mermaid diagram`
@@ -31,6 +31,7 @@ Planeja antes de construir. Cobre produto (discovery, PRD) e técnica (arquitetu
   - UI/estética (**condicional** `[Front]`/UI visível) → `frontend design`
   - DoD técnico de UI (**condicional** `[Front]`/UI visível) → `web design guidelines`
   - Protocolo STATE/HANDOFF (só leitura; escrita é do shipper) → `state manager handoff`
+  - Trello (criação do backlog: cards/epics, tags de prioridade, sprints) → `trello`
 
 ## Memória e Política de Artefatos
 
@@ -65,10 +66,21 @@ Gere `PRD.md` **em memória** (max 1 página, progressive disclosure, NÃO escre
 5. Quebre em subtasks com labels `[Front]/[Back]/[Infra]`, estimativa P/M/G e dependências.
 6. Gere `PLAN.md` **em memória** (NÃO escreva `.planning/PLAN.md` em disco): o que será construído, por camada, ordem, critérios de aceite técnico.
 
+### Fase D — Backlog no Trello (ÚNICO agente que CRIA no Trello)
+Sincronize o backlog ao Trello usando a skill de Trello descoberta via `find-skills` (query `trello`) **carregada antes** de qualquer operação — sempre via CLI (`trello_api.py`), nunca API crua:
+1. `whoami` (401 → `auth`) e `find-board "<board>"` — resolva o board pelo nome (nunca invente ID).
+2. **Sprints/backlog (listas):** `lists <board_id>` — reutilize as listas existentes; se não houver, `create-list` (ex.: `Backlog`, `Sprint N — <tema>`). Sprint = lista.
+3. **Tags de prioridade (labels):** `labels <board_id>` — reutilize as existentes; se ausentes, `create-label` (sugestão: `Alta`=`red`, `Média`=`orange`, `Baixa`=`sky`).
+4. **Cards:** `create-card` na lista destino — 1 card por épico (`[EPIC] nome`, desc = resumo do escopo do PRD) e 1 card por feature/subtask do PLAN (desc = critérios de aceite); `add-label` da prioridade em cada card.
+5. Registre os IDs retornados e inclua `trello: {board_id, listas, labels, cards: [{id, name, list}]}` no retorno em memória (builder usa para mover o card; hook do shipper usa `cardId` como hint para encerrar).
+- NUNCA mova/atualize cards aqui (mover é do builder; encerrar é do shipper) — seu escopo é **só criação**. `delete-card`/`archive-card` são operações humanas, nunca suas.
+- Sem board/credenciais Trello: registre a pendência no resumo e siga (backlog vive no PRD/PLAN em memória).
+
 ## Outputs (memória — nunca em disco)
 - `PRD.md` (em memória → `harness` injeta no builder)
 - `PLAN.md` (em memória → `harness` injeta no builder)
 - `arch/epic-XX/*.md` (em memória)
+- `trello: {board_id, listas, labels, cards: [{id, name, list}]}` (em memória → `harness` injeta no builder e no shipper)
 
 Retorne ao harness: `{PRD.md, PLAN.md, arch/*}` em memória + resumo, decisões, pendências. **NÃO escreva** `.planning/PRD.md`/`.planning/PLAN.md`/`.planning/arch/**` nem `STATE.md`/`HANDOFF.md` (shipper faz no final) — se tentar `write` será negado por `permission`.
 
@@ -78,6 +90,7 @@ Retorne ao harness: `{PRD.md, PLAN.md, arch/*}` em memória + resumo, decisões,
 - [ ] Arquitetura com diagramas Mermaid em `arch/` (em memória, não em disco)
 - [ ] Dependency Rule e boundaries validados (self-review via skill de arquitetura descoberta via `find-skills`)
 - [ ] Subtasks com labels de camada e estimativa P/M/G
+- [ ] Backlog no Trello sincronizado (se board configurado): epics/stories criados, prioridade via label, sprints como listas — IDs retornados em memória; sem Trello, pendência registrada no resumo
 - [ ] `PRD.md` e `PLAN.md` **retornados em memória** (não escritos em `.planning/*` — `permission: deny` verificado)
 - [ ] Se `[Front]` existe: `PLAN.md` contém Design Tokens (paleta, tipografia, layout, assinatura) validados contra a skill de design descoberta via `find-skills` (sem default templated não justificado)
 - [ ] Se `[Front]` existe: `PLAN.md` contém `Design Compliance Checklist` derivado da skill de guidelines descoberta via `find-skills` (via WebFetch) cobrindo a11y, focus, forms, animation, images, performance
@@ -85,6 +98,7 @@ Retorne ao harness: `{PRD.md, PLAN.md, arch/*}` em memória + resumo, decisões,
 ## Rules
 - Nunca propor código antes de PRD+PLAN aprovados.
 - Nunca criar PRDs paralelos (só `PRD.md` oficial em memória, injetado via `context:`).
+- **Trello — só você cria:** único agente que cria no Trello (cards/epics, tags de prioridade, sprints como listas). Builder só move/atualiza; shipper só encerra. Sempre via skill de Trello descoberta (`trello`), nunca API crua; `delete-card`/`archive-card` são operações humanas, nunca suas.
 - **Memória única:** Nunca escrever `.planning/PRD.md`/`.planning/PLAN.md`/`.planning/arch/**` em disco — `permission: .planning/** deny`; sempre retornar em memória. **NUNCA crie** `.planning/SUMMARY.md`, `.planning/REVIEW.md` ou `.planning/VALIDATION.md`. Só `shipper` escreve `STATE.md`/`HANDOFF.md`.
 - Português padrão.
 - Detalhes em `commands/harness.prompt.md`.

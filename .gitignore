@@ -1,1 +1,4 @@
 .opencode/
+
+# CodeGraph (índice semântico gerado)
+.codegraph/

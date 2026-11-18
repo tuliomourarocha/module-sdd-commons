@@ -1,142 +1,63 @@
 ---
 name: find-skills
-description: Helps users discover and install agent skills when they ask questions like "how do I do X", "find a skill for X", "is there a skill that can...", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.
+description: >-
+  Helps users discover agent skills for a task by searching ONLY the local
+  skills/ folder of this repository. Deterministic offline search via
+  scripts/find_skill.py — no network, no npx, no external installs. Use when
+  the user or an agent needs a skill for any domain or asks "is there a skill
+  for X". This skill itself is a locator, not a domain skill.
 ---
 
-# Find Skills
+# Find Skills — busca local
 
-This skill helps you discover and install skills from the open agent skills ecosystem.
+Ajuda a descobrir a skill certa para uma operação, buscando **apenas na pasta `skills/` deste repositório**. Nada de rede: o catálogo é o que está instalado aqui.
 
-## When to Use This Skill
+## Regra de ouro — SOMENTE local
 
-Use this skill when the user:
+- **Proibido:** `npx skills find`, `npx skills add`, skills.sh, GitHub, qualquer busca/install externo.
+- **Fonte da verdade:** os `skills/*/SKILL.md` locais.
+- Não encontrou skill local? Reporte "nenhuma skill local para X" e execute a operação com o critério do próprio agente. **Nunca instale de fora.**
 
-- Asks "how do I do X" where X might be a common task with an existing skill
-- Says "find a skill for X" or "is there a skill for X"
-- Asks "can you do X" where X is a specialized capability
-- Expresses interest in extending agent capabilities
-- Wants to search for tools, templates, or workflows
-- Mentions they wish they had help with a specific domain (design, testing, deployment, etc.)
+## Como buscar (determinístico)
 
-## What is the Skills CLI?
-
-The Skills CLI (`npx skills`) is the package manager for the open agent skills ecosystem. Skills are modular packages that extend agent capabilities with specialized knowledge, workflows, and tools.
-
-**Key commands:**
-
-- `npx skills find [query]` - Search for skills interactively or by keyword
-- `npx skills add <package>` - Install a skill from GitHub or other sources
-- `npx skills check` - Check for skill updates
-- `npx skills update` - Update all installed skills
-
-**Browse skills at:** https://skills.sh/
-
-## How to Help Users Find Skills
-
-### Step 1: Understand What They Need
-
-When a user asks for help with something, identify:
-
-1. The domain (e.g., React, testing, design, deployment)
-2. The specific task (e.g., writing tests, creating animations, reviewing PRs)
-3. Whether this is a common enough task that a skill likely exists
-
-### Step 2: Check the Leaderboard First
-
-Before running a CLI search, check the [skills.sh leaderboard](https://skills.sh/) to see if a well-known skill already exists for the domain. The leaderboard ranks skills by total installs, surfacing the most popular and battle-tested options.
-
-For example, top skills for web development include:
-- `vercel-labs/agent-skills` — React, Next.js, web design (100K+ installs each)
-- `anthropics/skills` — Frontend design, document processing (100K+ installs)
-
-### Step 3: Search for Skills
-
-If the leaderboard doesn't cover the user's need, run the find command:
+### 1. Script de busca (preferido)
 
 ```bash
-npx skills find [query]
+python3 skills/find-skills/scripts/find_skill.py "<termos>"
+# projeto instalado (mirror):
+python3 .opencode/skills/find-skills/scripts/find_skill.py "<termos>"
 ```
 
-For example:
+- Saída: `<caminho do SKILL.md>  <nome> — <descrição>`, ordenado por relevância.
+- `--all` lista todas as skills locais.
+- Exit 0 = encontrou; 1 = nada encontrado.
 
-- User asks "how do I make my React app faster?" → `npx skills find react performance`
-- User asks "can you help me with PR reviews?" → `npx skills find pr review`
-- User asks "I need to create a changelog" → `npx skills find changelog`
+### 2. Fallback com ferramentas nativas (sem bash)
 
-### Step 4: Verify Quality Before Recommending
-
-**Do not recommend a skill based solely on search results.** Always verify:
-
-1. **Install count** — Prefer skills with 1K+ installs. Be cautious with anything under 100.
-2. **Source reputation** — Official sources (`vercel-labs`, `anthropics`, `microsoft`) are more trustworthy than unknown authors.
-3. **GitHub stars** — Check the source repository. A skill from a repo with <100 stars should be treated with skepticism.
-
-### Step 5: Present Options to the User
-
-When you find relevant skills, present them to the user with:
-
-1. The skill name and what it does
-2. The install count and source
-3. The install command they can run
-4. A link to learn more at skills.sh
-
-Example response:
-
-```
-I found a skill that might help! The "react-best-practices" skill provides
-React and Next.js performance optimization guidelines from Vercel Engineering.
-(185K installs)
-
-To install it:
-npx skills add vercel-labs/agent-skills@react-best-practices
-
-Learn more: https://skills.sh/vercel-labs/agent-skills/react-best-practices
+```text
+glob  "skills/*/SKILL.md"
+grep  "<termo>"   path="skills"  include="*/SKILL.md"   (caseSensitive: false)
 ```
 
-### Step 6: Offer to Install
+### 3. Ler e seguir
 
-If the user wants to proceed, you can install the skill for them:
+Abra o `SKILL.md` da skill escolhida e **siga-a** — ela manda no fluxo da operação (ex.: trello-manager manda em auth, caminhos do CLI e tratamento de erros).
 
-```bash
-npx skills add <owner/repo@skill> -g -y
-```
+## Catálogo local (não exaustivo — o script é a fonte da verdade)
 
-The `-g` flag installs globally (user-level) and `-y` skips confirmation prompts.
+| Query típica | Skill local |
+|--------------|-------------|
+| `trello` (auth, criar/mover/excluir cards) | `trello-manager` |
+| `state manager handoff` (STATE/HANDOFF) | `state-manager` |
+| `clean architecture solid` | `clean-architecture`, `solid` |
+| `clean code` | `clean-code` |
+| `git commit github cli` | `git-commit`, `github-cli` |
+| `frontend design`, `web design guidelines` | `frontend-design`, `web-design-guidelines` |
+| `react nextjs typescript` | `nextjs-react-typescript`, `react-best-practices`, `typescript-expert` |
+| `deploy vercel` | `deploy-to-vercel`, `vercel-cli-with-tokens` |
 
-## Common Skill Categories
+## Sem skill local
 
-When searching, consider these common categories:
-
-| Category        | Example Queries                          |
-| --------------- | ---------------------------------------- |
-| Web Development | react, nextjs, typescript, css, tailwind |
-| Testing         | testing, jest, playwright, e2e           |
-| DevOps          | deploy, docker, kubernetes, ci-cd        |
-| Documentation   | docs, readme, changelog, api-docs        |
-| Code Quality    | review, lint, refactor, best-practices   |
-| Design          | ui, ux, design-system, accessibility     |
-| Productivity    | workflow, automation, git                |
-
-## Tips for Effective Searches
-
-1. **Use specific keywords**: "react testing" is better than just "testing"
-2. **Try alternative terms**: If "deploy" doesn't work, try "deployment" or "ci-cd"
-3. **Check popular sources**: Many skills come from `vercel-labs/agent-skills` or `ComposioHQ/awesome-claude-skills`
-
-## When No Skills Are Found
-
-If no relevant skills exist:
-
-1. Acknowledge that no existing skill was found
-2. Offer to help with the task directly using your general capabilities
-3. Suggest the user could create their own skill with `npx skills init`
-
-Example:
-
-```
-I searched for skills related to "xyz" but didn't find any matches.
-I can still help you with this task directly! Would you like me to proceed?
-
-If this is something you do often, you could create your own skill:
-npx skills init my-xyz-skill
-```
+1. Diga explicitamente: "nenhuma skill local encontrada para <termos>".
+2. Execute a operação com o critério do agente/arquivo que a pediu.
+3. Se a operação é recorrente, sugira criar a skill **dentro de `skills/`** (não fora).

@@ -1,5 +1,8 @@
 import json
 import os
+import urllib.error
+import urllib.parse
+import urllib.request
 import webbrowser
 from pathlib import Path
 
@@ -40,7 +43,10 @@ def authenticate():
         print("\nYou need a Trello API Key.")
         print("Get one at: https://trello.com/power-ups/admin")
         print("(Create a Power-Up if you haven't, then go to the API Key tab)\n")
-        api_key = input("Paste your API Key: ").strip()
+        try:
+            api_key = input("Paste your API Key: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            api_key = ""
         if not api_key:
             print("No API Key provided. Aborting.")
             return False
@@ -55,7 +61,10 @@ def authenticate():
     webbrowser.open(auth_url)
 
     print("\nAfter authorizing, Trello will show you a token (a long string of letters and numbers).")
-    token = input("Paste the token here: ").strip()
+    try:
+        token = input("Paste the token here: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        token = ""
     if not token:
         print("No token provided. Aborting.")
         return False
@@ -69,6 +78,26 @@ def authenticate():
 def get_auth():
     config = load_config()
     return config.get("api_key"), config.get("token")
+
+
+def validate():
+    """Valida as credenciais salvas contra GET /members/me.
+
+    Retorna (member, None) em caso de sucesso ou (None, motivo) em falha.
+    """
+    api_key, token = get_auth()
+    if not (api_key and token):
+        return None, f"sem credenciais em {CONFIG_PATH}"
+    url = "https://api.trello.com/1/members/me?" + urllib.parse.urlencode(
+        {"key": api_key, "token": token, "fields": "id,username,fullName"}
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            return json.loads(resp.read().decode()), None
+    except urllib.error.HTTPError as e:
+        return None, f"HTTP {e.code} ({e.reason}) — token inválido ou expirado"
+    except urllib.error.URLError as e:
+        return None, f"falha de rede: {e.reason}"
 
 
 if __name__ == "__main__":

@@ -7,10 +7,10 @@ Regras globais que se aplicam a todos os agentes neste projeto.
 | Agente | Papel | Quando |
 |--------|-------|--------|
 | `harness` | Orquestra 3 fluxos via `task()` | Sempre primeiro |
-| `planner` | **Planeja** — PRD, PLAN, arquitetura | Gate 1 |
-| `builder` | **Implementa** — full-stack + infra mínima | Gate 2 |
+| `planner` | **Planeja** — PRD, PLAN, arquitetura; **cria o backlog no Trello** (cards/epics, tags de prioridade, sprints) — único que cria | Gate 1 |
+| `builder` | **Implementa** — full-stack + infra mínima; **move o card para execução** (nunca cria) | Gate 2 |
 | `reviewer` | **Revisa** — só arquitetura técnica/software (sem lint/testes) | Gate 3 |
-| `shipper` | **Finaliza (hook)** — git/PR/CI/Trello via `hooks/shipper.py` + `plugins/shipper.ts`; fallback minimal só STATE/HANDOFF | Gate 4 (hook) |
+| `shipper` | **Finaliza (hook)** — git/PR/CI/Trello (**encerra o card** — move para concluído; nunca cria) via `hooks/shipper.py` + `plugins/shipper.ts`; fallback minimal só STATE/HANDOFF | Gate 4 (hook) |
 | `ci-watch` | **Verifica CI (hook)** — polling `gh pr checks` + `gh run list` via `hooks/ci_watch.py` + `plugins/ci-watch.ts`; se falhar, inicia loop builder (max 2); orquestrador opcional `hooks/ci_orchestrator.py` com LangGraph | Pós-shipper (Gate 4+) |
 
 > **Guard rails** (lint, typecheck, testes, ruff/pylance/eslint/biome, secrets, size) são **hooks determinísticos** (`hooks/guard_rails.py` + `plugins/guard-rails.ts`) — single source of truth. `checker` removido. **CI watch** é hook determinístico pós-shipper (`hooks/ci_watch.py` + `plugins/ci-watch.ts`) que aguarda conclusão do CI e dispara loop de correção; orquestração avançada opcional via `hooks/ci_orchestrator.py` (LangGraph StateGraph) sem dependência obrigatória.
@@ -21,7 +21,7 @@ Fluxos: `feature` (planner→builder→reviewer→shipper(hook)→ci-watch→sup
 
 - `agents/` — 5 agentes V2 (harness, planner, builder, reviewer, shipper minimal) + `supervisor` (observability via hook)
 - `commands/` — `harness.prompt.md` (fluxos)
-- `skills/` — habilidades instaladas; os arquivos dos macros não têm skills dedicadas — descobrem a skill correta por operação via `find-skills`
+- `skills/` — habilidades instaladas; os arquivos dos macros não têm skills dedicadas — descobrem a skill correta por operação via `find-skills` (busca **local** nesta pasta, sem rede)
 - `packs/` — `agentic-squad` (harness V2)
 - `hooks/` — `guard_rails.py` ( pós-edição), `shipper.py` (git/PR/Trello/STATE), `ci_watch.py` (polling CI + retry), `ci_orchestrator.py` (LangGraph opcional), `supervisor.py` (auditoria)
 - `plugins/` — `guard-rails.ts`, `shipper.ts`, `ci-watch.ts`, `supervisor.ts` (hooks determinísticos)
@@ -31,12 +31,15 @@ Fluxos: `feature` (planner→builder→reviewer→shipper(hook)→ci-watch→sup
 
 1. **Progressive Disclosure** — Agentes são concisos (≤120 linhas); detalhe em `commands/harness.prompt.md`.
 2. **Autossuficiência** — Cada macro incorpora regras e hooks; não busca regras externas.
-3. **Skills > Subagentes** — Especialidade via skill descoberta por `find-skills`, não via agente folha. Só `harness` usa `task()`.
-4. **Estado único** — `shipper`, `ci-watch`, `supervisor` e `orquestrador` atualizam `STATE.md`/`HANDOFF.md` (via marcadores) e fazem Trello/PR/CI; macros retornam artefatos em memória.
+3. **Skills > Subagentes** — Especialidade via skill descoberta por `find-skills` (busca **local** na pasta `skills/` — `python3 skills/find-skills/scripts/find_skill.py '<query>'`; sem rede, sem `npx skills`), não via agente folha. Só `harness` usa `task()`.
+4. **Estado único** — `shipper`, `ci-watch`, `supervisor` e `orquestrador` atualizam `STATE.md`/`HANDOFF.md` (via marcadores) e fazem PR/CI/Trello-close; macros retornam artefatos em memória (Trello: planner cria backlog, builder move para execução, shipper encerra).
 5. **Idioma** — Português padrão para artefatos.
 6. **Validação** — Execute hooks antes de finalizar cada artefato.
 7. **Anti-loop e Single-run** — Apenas `STATE.md`/`HANDOFF.md` persistem em disco (hooks `shipper`, `ci-watch`, `supervisor`, `orquestrador` atualizam esses dois). Demais artefatos (`PRD.md`, `PLAN.md`, `arch/*`) e saídas de builder/reviewer (resumo/parecer) são retornados **em memória** via `task()` e injetados como `context:` pelo `harness`. Proibido criar `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`/`CI_REPORT.md`/`SUPERVISOR_REPORT.md` em disco — bloqueado com `HIGH`. `harness` **só delega e encerra** — não espera hooks, não faz polling, não executa nada. `VALIDATION.md` removido (hook guard_rails).
-8. **Trello exige skill (via `find-skills`)** — Todo agente que acessa o Trello (hoje: `shipper` no fallback; hooks apenas registram) DEVE descobrir via `find-skills` e carregar a skill de Trello (hoje `trello-manager`) **antes** de qualquer operação — autenticação (`trello_api.py auth`), leitura de board/listas/cards e move de card via CLI da skill. Proibido improvisar chamadas cruas à API sem a skill; é isso que faz o agente se perder.
+8. **Trello exige skill (via `find-skills`, busca local) e tem dono por gate** — Todo agente que acessa o Trello (`planner`, `builder`, `shipper` no fallback; hooks apenas registram) DEVE descobrir via `find-skills` (busca local na pasta `skills/`) e carregar a skill de Trello (hoje `trello-manager`) **antes** de qualquer operação — autenticação (`trello_api.py auth`/`whoami`), resolução de board/card/lista por nome (`find-board`/`find-card`/`lists`) e operações via CLI da skill. Proibido improvisar chamadas cruas à API sem a skill; é isso que faz o agente se perder. **Quem faz o quê (escopo fechado):**
+   - `planner` — **único que CRIA**: cards/epics (`create-card`), tags de prioridade (`create-label` + `add-label`), sprints/backlog (`create-list`); retorna os IDs em memória para os próximos gates.
+   - `builder` — só **move/atualiza**: `move-card` para a lista de execução (+ `update-card`); **proibido criar/excluir**.
+   - `shipper` — só **encerra**: move para a lista "concluído" (`move-card` no hook ou fallback) e comenta o PR; **proibido criar/excluir**.
 
 ## RTK — economia de tokens (quando instalado)
 
@@ -45,6 +48,22 @@ Fluxos: `feature` (planner→builder→reviewer→shipper(hook)→ci-watch→sup
    - O rtk só intercepta **comandos de shell**: built-ins `read`/`grep`/`glob` não passam por ele. Para leituras grandes, prefira shell (`rg`, `cat`, `git diff`) para gerar economia.
    - Saída parecer cortada/estranha? `rtk bypass <cmd>` executa sem filtro (escape hatch); `RTK_DISABLED=1 <cmd>` desliga na sessão.
    - Métricas: `rtk gain` (economia acumulada), `rtk discover` (oportunidades perdidas) — o `supervisor` pode citar o ganho no parecer.
+   - **Visibilidade (prova de execução):** o plugin `rtk-visibility.ts` anexa `⟐ rtk ✓ — saída comprimida pelo proxy RTK` ao fim de todo comando reescrito — usuário e agentes veem no transcript que o rtk está rodando. Não confunda o marcador com saída do comando nem o remova; `RTK_VISIBILITY=0` desliga só o marcador (o rtk continua ativo).
+
+## CodeGraph + ast-grep — inteligência semântica (quando instalado)
+
+O instalador da squad também configura a pilha de análise de código, com a mesma filosofia de falha em aberto do rtk (sem os binários, a squad segue funcionando só com leitura de arquivos):
+
+- `codegraph` (`github.com/colbymchenry/codegraph`, npm `@colbymchenry/codegraph`) — índice semântico do repositório, exposto como MCP: `opencode mcp add codegraph --env CODEGRAPH_TELEMETRY=0 -- codegraph serve --mcp` (Claude: `.mcp.json`; Codex: `.codex/config.toml`).
+- `ast-grep` (brew ou npm `@ast-grep/cli`) — busca estrutural de sintaxe (AST) via CLI.
+- Índice do projeto em `.codegraph/` (estado gerado, no `.gitignore`), criado com `codegraph init`; telemetria desligada (`CODEGRAPH_TELEMETRY=0`).
+
+Regras para os agentes:
+
+8. **Escopo semântico antes da leitura crua** — para explorar o repositório (símbolos, callers, call paths, impacto), prefira o MCP `codegraph` (ex.: `codegraph_explore`) antes de abrir arquivos um a um; use `ast-grep` quando o formato estrutural (AST) do que se busca já é conhecido. Evidência semântica e estrutural se reconciliam antes de reescritas amplas.
+   - Setup, update ou diagnóstico da pilha (`setup`/`update`/`doctor`) **sempre via skill `codegraph-ast-grep`**, descoberta com `find-skills` (busca local) — nunca improvisar instalação/configuração por fora.
+   - Índice fresco? `codegraph status`; telemetria sempre desligada em comandos skill-driven (`CODEGRAPH_TELEMETRY=0`).
+   - Não instale o MCP experimental do ast-grep nem crie `sgconfig.yml`/`.codegraph/config.json` sem necessidade real (só quando o usuário pedir regras reutilizáveis).
 
 ## Memória e Política de Artefatos — Restrição Obrigatória
 
@@ -57,7 +76,7 @@ Fluxos: `feature` (planner→builder→reviewer→shipper(hook)→ci-watch→sup
 - **Injeção única:** `harness` lê `STATE.md`/`HANDOFF.md` **uma vez** no início e repassa; macros **NÃO** releem `.planning/*.md` se já injetado — usam o `context:` recebido. Releitura só se `context:` ausente.
 - **Reaproveitamento:** `STATE` guarda `flow`, `gate`, `artifacts status`, `next step`; `HANDOFF` guarda o que foi feito, arquivos alterados, decisões e pendências — próximo agente consome sem re-verificar artefatos antigos.
 - **Permissions por agente:**
-  - `harness`: `edit: deny`, `bash: deny`, `skill: deny`, `glob/grep: deny`, `read` allow apenas para `.planning/STATE.md` e `.planning/HANDOFF.md` (só delega — exploração, skills e Trello pertencem aos macros/`shipper`, hooks viram hooks).
-  - `planner|builder|reviewer`: `edit: deny` para `.planning/**` (inclui `PRD/PLAN/SUMMARY/REVIEW/VALIDATION/arch`), `allow` apenas para código-fonte do escopo do gate; tentativa de escrita em `.planning/**` é bloqueada (especialmente `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md` → `HIGH`). Guard rails em hooks, não em agents.
-  - `shipper`: `edit: allow` apenas para `.planning/HANDOFF.md` e `.planning/STATE.md` (fallback minimal); `deny` para demais `.planning/**`. Hook `shipper.py` é primário para git/PR/Trello. No fallback, skill de Trello descoberta via `find-skills` é obrigatória antes de qualquer operação Trello.
+  - `harness`: `edit: deny`, `bash: deny`, `skill: deny`, `glob/grep: deny`, `read` allow apenas para `.planning/STATE.md` e `.planning/HANDOFF.md` (só delega — exploração, skills e Trello pertencem aos macros: planner cria, builder move, shipper encerra; hooks viram hooks).
+  - `planner|builder|reviewer`: `edit: deny` para `.planning/**` (inclui `PRD/PLAN/SUMMARY/REVIEW/VALIDATION/arch`), `allow` apenas para código-fonte do escopo do gate; tentativa de escrita em `.planning/**` é bloqueada (especialmente `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md` → `HIGH`). Trello via bash (CLI da skill de Trello) só no escopo do papel: `planner` cria (cards/epics/labels/sprints), `builder` só move/atualiza; `reviewer` não toca no Trello. Guard rails em hooks, não em agents.
+  - `shipper`: `edit: allow` apenas para `.planning/HANDOFF.md` e `.planning/STATE.md` (fallback minimal); `deny` para demais `.planning/**`. Hook `shipper.py` é primário para git/PR/Trello-close (encerra o card, nunca cria). No fallback, skill de Trello descoberta via `find-skills` é obrigatória antes de qualquer operação Trello — só mover/atualizar/arquivar (proibido criar/excluir).
 - **Violação:** Se um agente tentar `write` em `.planning/PRD.md` etc., o sistema nega por `permission` e o agente deve retornar o conteúdo em memória em vez de persistir. CI/review deve apontar `HIGH` se detectar artefato fora de `STATE`/`HANDOFF` criado em disco. Criação de `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md` é sempre `HIGH`.

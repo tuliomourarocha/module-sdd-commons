@@ -145,7 +145,7 @@ npx --yes github:tuliomourarocha/module-sdd-commons#main --all --target .
 ```
 
 O que cada alvo instala:
-- **OpenCode:** `.opencode/plugins/guard-rails.ts`, `shipper.ts`, `ci-watch.ts`, `supervisor.ts` (auto-load) + `.opencode/hooks/*.py` (5 scripts) + `hooks/*.py` fallback + `agents/supervisor.md`
+- **OpenCode:** `.opencode/plugins/guard-rails.ts`, `shipper.ts`, `ci-watch.ts`, `supervisor.ts` (auto-load) + `.opencode/hooks/*.py` (5 scripts) + `hooks/*.py` fallback + `agents/supervisor.md`. O instalador ainda copia `rtk-visibility.ts` (auxiliar — marca com `⟐ rtk ✓` a saída de todo comando reescrito pelo rtk, prova visível de execução) e configura o MCP `codegraph` + índice `.codegraph/` (ver seção CodeGraph no README).
 - **Claude:** `.claude/settings.json` (hooks PostToolUse/PreToolUse/Stop + ci-watch) + `.claude/hooks/*.py` (5 scripts) + `agents/supervisor.md`
 - **Codex:** `.codex/hooks/*.py` (5 scripts) + `roles/supervisor.md`
 

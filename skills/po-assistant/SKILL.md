@@ -178,9 +178,11 @@ When creating Trello cards via `trello-manager`:
 - **Title** — Value-oriented, clear
 - **Description** — Full user story (As a… I want… So that…)
 - **Checklist** — Acceptance criteria as checklist items ONLY (business AC / Gherkin — never technical subtasks)
-- **Labels** — Type: story / feature / bug / spike
+- **Labels** — Type: story / feature / bug / spike; Priority: Alta (`red`) / Média (`orange`) / Baixa (`sky`)
 - **Members** — Assignees
 - **Due date** — When applicable
+
+> **Papéis no Harness V2:** o `planner` é o **único que cria** no Trello (cards/epics, labels, sprints = listas). O `builder` só move o card para *In Progress* (execução); o `shipper` só encerra (move para *Done*). Use sempre o CLI da skill (`trello_api.py`) — `labels`/`create-label`/`add-label` para prioridade, `create-list` para sprints, `create-card` para épics (`[EPIC] nome`) e stories.
 
 ---
 
