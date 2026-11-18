@@ -29,6 +29,24 @@ def save_config(config):
     os.chmod(CONFIG_PATH, 0o600)
 
 
+def get_auth():
+    """Credenciais — env `TRELLO_API_KEY`/`TRELLO_TOKEN` (override) ou `~/.trello_config.json`."""
+    cfg = load_config()
+    api_key = os.environ.get("TRELLO_API_KEY") or cfg.get("api_key")
+    token = os.environ.get("TRELLO_TOKEN") or cfg.get("token")
+    return api_key, token
+
+
+def cred_source():
+    """De onde vieram as credenciais: 'ambiente', 'arquivo' ou None (nenhuma completa)."""
+    cfg = load_config()
+    if os.environ.get("TRELLO_API_KEY") and os.environ.get("TRELLO_TOKEN"):
+        return "ambiente"
+    if cfg.get("api_key") and cfg.get("token"):
+        return "arquivo"
+    return None
+
+
 def is_authenticated():
     config = load_config()
     return bool(config.get("api_key") and config.get("token"))
@@ -73,11 +91,6 @@ def authenticate():
     save_config(config)
     print("\nAuthentication saved successfully!")
     return True
-
-
-def get_auth():
-    config = load_config()
-    return config.get("api_key"), config.get("token")
 
 
 def validate():

@@ -51,7 +51,9 @@ Recebe `context: {PRD.md, PLAN.md}` injetado pelo harness. Em **loop de correç�
 ## Workflow
 
 ### 1. Trello — mover o card para execução (só mover/atualizar; NUNCA criar)
-- Skill de Trello descoberta via `find-skills` (query `trello`) **carregada antes** de qualquer operação; CLI `trello_api.py` (nunca API crua).
+- **GATE obrigatório:** skill de Trello descoberta via `find-skills` (query `trello`) **carregada antes** de qualquer operação e `ensure-auth` rodado **antes de QUALQUER comando Trello** (`python3 <skill-path>/scripts/trello_api.py ensure-auth` — valida credenciais e reautentica se preciso). Falhou (exit 2/401) → registre a pendência no resumo e **não execute nenhuma operação Trello** (nem leitura). CLI `trello_api.py` (nunca API crua).
+- **Proibido concluir "sem credenciais" por inspeção de ambiente** (`printenv`, `0 variáveis TRELLO_*`): credenciais vivem em `~/.trello_config.json` (env `TRELLO_API_KEY`/`TRELLO_TOKEN` é só override) — o único árbitro é o gate `ensure-auth`.
+- **IDs nulos no `context:` não bloqueiam** — resolva por nome via CLI (`find-board` → `find-card`/`lists`); "IDs nulos" nunca é motivo para pular o movimento do card.
 - Localize o card do ciclo: IDs do planner em `context:` (`trello`/`cardId`) ou `find-card <board_id> "<nome>"` (nunca invente ID).
 - `lists <board_id>` → escolha a lista de execução pelo nome (`executando`/`fazendo`/`em execução`/`doing`/`in progress` — nunca invente destino) e `move-card <card_id> <list_id>` no início; se útil, `update-card` (progresso na `--desc`).
 - **Proibido** `create-card`/`create-list`/`create-label`/`delete-card` — criar é do planner; encerrar é do shipper.
@@ -95,7 +97,7 @@ Retorne ao harness: `{resumo}` em memória + lista de arquivos, decisões. **NÃ
 - [ ] Se `[Front]` com Design Tokens: fidelidade visual — paleta/tipografia/escala/layout/assinatura do PLAN aplicados, hero como tese, sem default templated não justificado, responsivo + focus visível + `prefers-reduced-motion` respeitado
 - [ ] Se `[Front]` com `Design Compliance Checklist`: implementação segue a skill de guidelines descoberta via `find-skills` (a11y, focus, forms, animation, images, i18n, hydration) sem violações `HIGH` (ex.: `div onClick` sem `button`, input sem label, `transition: all`, `outline-none` sem substituto, imagem sem dimensões)
 - [ ] Menor mudança completa (skill de escopo mínimo descoberta via `find-skills`, nível `full`): sem código "for later"/features não pedidas; pontos quebrados pela mudança fechados; o que pulou/risco citado no fim do resumo
-- [ ] Card movido para a lista de execução no início (via skill de Trello descoberta via `find-skills`) — **nenhum** `create-card`/`create-list`/`create-label` executado; sem board/lista/card, pendência registrada no resumo
+- [ ] Card movido para a lista de execução no início (via skill de Trello descoberta via `find-skills`, `ensure-auth` rodado antes de qualquer comando) — **nenhum** `create-card`/`create-list`/`create-label` executado; sem board/lista/card, pendência registrada no resumo
 - [ ] Resumo da implementação **retornado em memória** (não escrito em `.planning/*` — `permission: deny` verificado; inclua desvio de design se houver) — **nenhum** `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md` criado em disco
 
 ## Rules

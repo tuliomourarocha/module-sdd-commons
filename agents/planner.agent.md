@@ -68,11 +68,12 @@ Gere `PRD.md` **em memória** (max 1 página, progressive disclosure, NÃO escre
 
 ### Fase D — Backlog no Trello (ÚNICO agente que CRIA no Trello)
 Sincronize o backlog ao Trello usando a skill de Trello descoberta via `find-skills` (query `trello`) **carregada antes** de qualquer operação — sempre via CLI (`trello_api.py`), nunca API crua:
-1. `whoami` (401 → `auth`) e `find-board "<board>"` — resolva o board pelo nome (nunca invente ID).
-2. **Sprints/backlog (listas):** `lists <board_id>` — reutilize as listas existentes; se não houver, `create-list` (ex.: `Backlog`, `Sprint N — <tema>`). Sprint = lista.
-3. **Tags de prioridade (labels):** `labels <board_id>` — reutilize as existentes; se ausentes, `create-label` (sugestão: `Alta`=`red`, `Média`=`orange`, `Baixa`=`sky`).
-4. **Cards:** `create-card` na lista destino — 1 card por épico (`[EPIC] nome`, desc = resumo do escopo do PRD) e 1 card por feature/subtask do PLAN (desc = critérios de aceite); `add-label` da prioridade em cada card.
-5. Registre os IDs retornados e inclua `trello: {board_id, listas, labels, cards: [{id, name, list}]}` no retorno em memória (builder usa para mover o card; hook do shipper usa `cardId` como hint para encerrar).
+1. **GATE obrigatório — carregue a skill e rode `ensure-auth` antes de QUALQUER comando Trello** (`python3 <skill-path>/scripts/trello_api.py ensure-auth`): valida credenciais e reautentica se preciso. Falhou (exit 2/401) → registre a pendência no resumo e **não execute nenhuma operação Trello** (nem leitura). **Proibido concluir "sem credenciais" por inspeção de ambiente** (`printenv`, `0 variáveis TRELLO_*`) — credenciais vivem em `~/.trello_config.json` (env `TRELLO_API_KEY`/`TRELLO_TOKEN` é só override); o único árbitro é o gate.
+2. `find-board "<board>"` — resolva o board pelo nome (nunca invente ID; CLI aceita nome, full ID, shortLink ou URL).
+3. **Monte o plano JSON** do backlog (listas, labels com cor, cards com lista/labels) e crie TUDO com **um único `batch <board> --plan-file -`** (plano via stdin/heredoc — a skill documenta o formato). O batch é idempotente por nome (reusa lista/label/card existentes — re-rodar após erro parcial é seguro) e retorna `{board_id, listas, labels, cards}`.
+4. **NUNCA escreva script intermediário** (bash/python) que agrupe comandos do CLI — um comando por card ou `batch`, nada de args posicionais (`$6: unbound variable` já quebrou assim); **valor vazio nunca vira argumento** (label/lista não resolvida → resolva pelo nome ou reporte pendência); sempre quote argumentos.
+5. Preferência por comandos individuais (ex.: 1 card avulso): `create-list`/`create-label` (reutilize existentes via `lists`/`labels`) → `create-card` → `add-label` com o ID real do label.
+6. Registre os IDs retornados e inclua `trello: {board_id, listas, labels, cards: [{id, name, list}]}` no retorno em memória (builder usa para mover o card; hook do shipper usa `cardId` como hint para encerrar).
 - NUNCA mova/atualize cards aqui (mover é do builder; encerrar é do shipper) — seu escopo é **só criação**. `delete-card`/`archive-card` são operações humanas, nunca suas.
 - Sem board/credenciais Trello: registre a pendência no resumo e siga (backlog vive no PRD/PLAN em memória).
 
@@ -90,7 +91,7 @@ Retorne ao harness: `{PRD.md, PLAN.md, arch/*}` em memória + resumo, decisões,
 - [ ] Arquitetura com diagramas Mermaid em `arch/` (em memória, não em disco)
 - [ ] Dependency Rule e boundaries validados (self-review via skill de arquitetura descoberta via `find-skills`)
 - [ ] Subtasks com labels de camada e estimativa P/M/G
-- [ ] Backlog no Trello sincronizado (se board configurado): epics/stories criados, prioridade via label, sprints como listas — IDs retornados em memória; sem Trello, pendência registrada no resumo
+- [ ] Backlog no Trello sincronizado (se board configurado): `ensure-auth` rodado **antes** de qualquer comando, epics/stories criados, prioridade via label, sprints como listas — IDs retornados em memória; sem Trello/credenciais, pendência registrada no resumo
 - [ ] `PRD.md` e `PLAN.md` **retornados em memória** (não escritos em `.planning/*` — `permission: deny` verificado)
 - [ ] Se `[Front]` existe: `PLAN.md` contém Design Tokens (paleta, tipografia, layout, assinatura) validados contra a skill de design descoberta via `find-skills` (sem default templated não justificado)
 - [ ] Se `[Front]` existe: `PLAN.md` contém `Design Compliance Checklist` derivado da skill de guidelines descoberta via `find-skills` (via WebFetch) cobrindo a11y, focus, forms, animation, images, performance
