@@ -37,9 +37,17 @@ const CI_REPO = process.env.SHIPPER_REPO ?? process.env.CI_REPO ?? process.env.S
 const DEFAULT_TIMEOUT = parseInt(process.env.CI_WATCH_TIMEOUT ?? "600", 10);
 const DEFAULT_INTERVAL = parseInt(process.env.CI_WATCH_INTERVAL ?? "30", 10);
 const MAX_RETRIES = parseInt(process.env.CI_WATCH_MAX_RETRIES ?? "2", 10);
+const HOOK_MARK = "⟐ hook ✓ ci-watch";
 
 let hasRun = false;
 let ciWatchRetries = 0;
+
+function appendHookMarker(output: any, text: string) {
+  if (process.env.OBSERVABILITY_VISIBILITY === "0") return;
+  if (!output || typeof output.output !== "string") return;
+  if (output.output.includes(HOOK_MARK)) return;
+  output.output += `\n\n${text}`;
+}
 
 async function writeGuaranteeLog($: any, directory: string, entry: Record<string, any>) {
   const line = JSON.stringify(entry);
@@ -105,7 +113,7 @@ p.write_text(new, encoding='utf-8')
   ciWatchRetries = retries;
 }
 
-async function runCIWatch($: any, directory: string, client: any, trigger: string) {
+async function runCIWatch($: any, directory: string, client: any, trigger: string, output?: any) {
   // Debounce: se já rodou nesta sessão e não é retry explícito, ignora
   // Mas permite re-run se CI_RETRIES.json indica novo ciclo (harness incrementou)
   const currentRetries = await readRetryCount($, directory);
@@ -115,6 +123,7 @@ async function runCIWatch($: any, directory: string, client: any, trigger: strin
       await client.app.log({
         body: { service: "ci-watch", level: "info", message: `CI watch já executado (trigger ${trigger} ignorado, retries ${currentRetries}/${MAX_RETRIES})` },
       });
+      appendHookMarker(output, `${HOOK_MARK} — skipped (já executado, retries ${currentRetries}/${MAX_RETRIES})`);
       return;
     } else {
       // novo ciclo detectado
@@ -146,6 +155,7 @@ async function runCIWatch($: any, directory: string, client: any, trigger: strin
       status: "skipped_no_pr",
       message: warn,
     });
+    appendHookMarker(output, `${HOOK_MARK} — skipped (sem PR, trigger ${trigger})`);
     hasRun = false; // permite tentar novamente quando PR existir
     return;
   }
@@ -174,7 +184,9 @@ async function runCIWatch($: any, directory: string, client: any, trigger: strin
       error: "hook_not_found",
       message: errMsg,
     });
-    throw new Error(`🚨 HOOK_CI_WATCH_ERROR: ${errMsg} — verifique hooks/ci_watch.py existe. Log: .planning/HOOKS.log`);
+    const m = `${HOOK_MARK} — error (hook_not_found, trigger ${trigger})`;
+    appendHookMarker(output, m);
+    throw new Error(`${m}\n🚨 HOOK_CI_WATCH_ERROR: ${errMsg} — verifique hooks/ci_watch.py existe. Log: .planning/HOOKS.log`);
   }
 
   await client.app.log({
@@ -250,6 +262,7 @@ async function runCIWatch($: any, directory: string, client: any, trigger: strin
     await client.app.log({
       body: { service: "ci-watch", level: "info", message: `✅ CI verde — PR pronto. Supervisor será acionado em seguida.` },
     });
+    appendHookMarker(output, `${HOOK_MARK} — pass (CI verde, ${duration}ms, trigger ${trigger})`);
     // Reseta retries ao suceder (opcional)
     if (currentRetries > 0) {
       await writeRetryCount($, directory, 0);
@@ -273,7 +286,9 @@ async function runCIWatch($: any, directory: string, client: any, trigger: strin
         retries: retriesNow,
         message: failMsg,
       });
-      throw new Error(`🚨 CI_RETRIES_EXHAUSTED: ${failMsg} — Log: HANDOFF.md#CI_REPORT / .planning/HOOKS.log — ${out.slice(0, 1500)}`);
+      const m = `${HOOK_MARK} — retries exhausted (${retriesNow}/${MAX_RETRIES}, trigger ${trigger})`;
+      appendHookMarker(output, m);
+      throw new Error(`${m}\n🚨 CI_RETRIES_EXHAUSTED: ${failMsg} — Log: HANDOFF.md#CI_REPORT / .planning/HOOKS.log — ${out.slice(0, 1500)}`);
     }
     // Ainda há retries: sinaliza harness para loop builder dentro da mesma run (bloqueante)
     const nextRetry = retriesNow + 1;
@@ -283,8 +298,10 @@ async function runCIWatch($: any, directory: string, client: any, trigger: strin
     const fixMsg = `CI falhou (exit 2) via ${trigger} — retry ${nextRetry}/${MAX_RETRIES} — harness (single run) deve reiniciar builder (max 2) com contexto HANDOFF.md/STATE.md (CI_REPORT:START). Detalhe: ${out.slice(0, 2000)}`;
     await client.app.log({ body: { service: "ci-watch", level: "error", message: fixMsg } });
     // Lança erro visível que harness (single invocation) deve capturar para loop sem re-invocar
+    const m = `${HOOK_MARK} — fail (retry ${nextRetry}/${MAX_RETRIES}, trigger ${trigger})`;
+    appendHookMarker(output, m);
     throw new Error(
-      `🚨 CI_FAILED_NEEDS_FIX (retry ${nextRetry}/${MAX_RETRIES}): CI falhou — builder deve corrigir com base em HANDOFF.md seção CI_REPORT:START + STATE.md CI_STATE (sem criar artefactos separados)\n` +
+      `${m}\n🚨 CI_FAILED_NEEDS_FIX (retry ${nextRetry}/${MAX_RETRIES}): CI falhou — builder deve corrigir com base em HANDOFF.md seção CI_REPORT:START + STATE.md CI_STATE (sem criar artefactos separados)\n` +
         `${out.slice(0, 3000)}\n\n` +
         `Instrução para harness (single run, bloqueante): task("builder", context:{PLAN, resumo, CI_REPORT extraído de .planning/HANDOFF.md#CI_REPORT:START}) max 2 (nunca SUMMARY.md/REVIEW.md em disco). Harness permanece bloqueado até verde — não re-invocar externamente. Log: .planning/HOOKS.log`
     );
@@ -299,6 +316,7 @@ async function runCIWatch($: any, directory: string, client: any, trigger: strin
         message: `⏳ CI ainda pendente após ${DEFAULT_TIMEOUT}s via ${trigger} (exit 3) — harness permanece bloqueado, aguardando re-poll (não inicia loop correção). Re-poll automático via session.idle ou manual: python3 hooks/ci_watch.py --run --wait --timeout 600. Log: HANDOFF.md#CI_REPORT / STATE.md#CI_STATE`,
       },
     });
+    appendHookMarker(output, `${HOOK_MARK} — pending timeout (${DEFAULT_TIMEOUT}s, trigger ${trigger})`);
     // não throw — apenas aviso; próximo session.idle tentará novamente se hasRun reset, mesma sessão harness
     hasRun = false; // permite re-poll posterior dentro da mesma harness run
     return;
@@ -312,6 +330,7 @@ async function runCIWatch($: any, directory: string, client: any, trigger: strin
       message: `CI watch retornou exit ${exitCode} via ${trigger} (unknown/infra) — verifique gh auth e Actions tab. Harness permanece vivo (single run). Log: .planning/HOOKS.log / HANDOFF.md`,
     },
   });
+  appendHookMarker(output, `${HOOK_MARK} — unknown/infra (exit ${exitCode}, trigger ${trigger})`);
   // não bloqueia fluxo, mas avisa
 }
 
@@ -326,7 +345,7 @@ export const CIWatchPlugin: Plugin = async ({ $, directory, client }) => {
           const agent = args?.agent ?? args?.subagent ?? input?.args?.agent ?? "";
           if (agent === "shipper") {
             await new Promise((r) => setTimeout(r, 2000));
-            await runCIWatch($, directory, client, "task:shipper");
+            await runCIWatch($, directory, client, "task:shipper", output);
           }
           // Também detecta ci-watch já falhou e harness re-chamou builder → quando builder completa, novo shipper → ci-watch novamente
           // Não precisa ação para builder/reviewer aqui
@@ -336,10 +355,11 @@ export const CIWatchPlugin: Plugin = async ({ $, directory, client }) => {
           const fp: string = args?.filePath ?? args?.file ?? args?.path ?? "";
           if (fp.includes(".planning/HANDOFF.md") || fp.includes(".planning/STATE.md")) {
             await new Promise((r) => setTimeout(r, 2500));
-            await runCIWatch($, directory, client, `write:${fp.split("/").pop()}`);
+            await runCIWatch($, directory, client, `write:${fp.split("/").pop()}`, output);
           }
         }
       } catch (err: any) {
+        appendHookMarker(output, `${HOOK_MARK} — error (ver .planning/HOOKS.log)`);
         await client.app.log({
           body: { service: "ci-watch", level: "error", message: `🚨 CI watch erro visível ao harness (single run): ${err?.message?.slice(0, 1200)} — Log: HANDOFF.md#CI_REPORT / STATE.md / .planning/HOOKS.log` },
         });

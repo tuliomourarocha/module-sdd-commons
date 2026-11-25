@@ -60,9 +60,13 @@ test("instala adaptadores com os provedores esperados", async () => {
   // valida hooks determinísticos instalados
   assert.equal((await stat(path.join(target, ".opencode", "plugins", "guard-rails.ts"))).isFile(), true);
   assert.equal((await stat(path.join(target, ".opencode", "plugins", "shipper.ts"))).isFile(), true);
+  assert.equal((await stat(path.join(target, ".opencode", "plugins", "ci-watch.ts"))).isFile(), true);
   assert.equal((await stat(path.join(target, ".opencode", "plugins", "supervisor.ts"))).isFile(), true);
+  assert.equal((await stat(path.join(target, ".opencode", "plugins", "rtk-visibility.ts"))).isFile(), true);
+  assert.equal((await stat(path.join(target, ".opencode", "plugins", "observability-visibility.ts"))).isFile(), true);
   assert.equal((await stat(path.join(target, ".opencode", "hooks", "guard_rails.py"))).isFile(), true);
   assert.equal((await stat(path.join(target, ".opencode", "hooks", "shipper.py"))).isFile(), true);
+  assert.equal((await stat(path.join(target, ".opencode", "hooks", "ci_watch.py"))).isFile(), true);
   assert.equal((await stat(path.join(target, ".opencode", "hooks", "supervisor.py"))).isFile(), true);
   assert.equal((await stat(path.join(target, ".claude", "settings.json"))).isFile(), true);
   assert.equal((await stat(path.join(target, ".claude", "hooks", "guard_rails.py"))).isFile(), true);

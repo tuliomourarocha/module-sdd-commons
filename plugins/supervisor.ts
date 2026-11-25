@@ -22,7 +22,15 @@
 import type { Plugin } from "@opencode-ai/plugin";
 
 const SUPERVISOR_REPO = process.env.SUPERVISOR_REPO ?? "tuliomourarocha/module-sdd-commons";
+const HOOK_MARK = "⟐ hook ✓ supervisor";
 let hasRun = false;
+
+function appendHookMarker(output: any, text: string) {
+  if (process.env.OBSERVABILITY_VISIBILITY === "0") return;
+  if (!output || typeof output.output !== "string") return;
+  if (output.output.includes(HOOK_MARK)) return;
+  output.output += `\n\n${text}`;
+}
 
 async function writeGuaranteeLog($: any, directory: string, entry: Record<string, any>) {
   const line = JSON.stringify(entry);
@@ -31,11 +39,12 @@ async function writeGuaranteeLog($: any, directory: string, entry: Record<string
   await $`echo '${line.replace(/'/g, "'\\''")}' >> ${directory}/.opencode/hooks/hook-audit.jsonl`.nothrow().quiet();
 }
 
-async function runSupervisor($: any, directory: string, client: any, trigger: string) {
+async function runSupervisor($: any, directory: string, client: any, trigger: string, output?: any) {
   if (hasRun) {
     await client.app.log({
       body: { service: "supervisor", level: "info", message: `Supervisor já executado nesta sessão (trigger ${trigger} ignorado)` },
     });
+    appendHookMarker(output, `${HOOK_MARK} — skipped (já executado, trigger ${trigger})`);
     return;
   }
   hasRun = true;
@@ -68,7 +77,9 @@ async function runSupervisor($: any, directory: string, client: any, trigger: st
       error: "hook_not_found",
       message: errMsg,
     });
-    throw new Error(`🚨 HOOK_SUPERVISOR_ERROR: ${errMsg} — Log: .planning/HOOKS.log`);
+    const m = `${HOOK_MARK} — error (hook_not_found, trigger ${trigger})`;
+    appendHookMarker(output, m);
+    throw new Error(`${m}\n🚨 HOOK_SUPERVISOR_ERROR: ${errMsg} — Log: .planning/HOOKS.log`);
   }
 
   await client.app.log({
@@ -115,7 +126,9 @@ async function runSupervisor($: any, directory: string, client: any, trigger: st
     await client.app.log({
       body: { service: "supervisor", level: "error", message: `🚨 Supervisor hook crítico (exit 2) via ${trigger} — veja .planning/HOOKS.log` },
     });
-    throw new Error(`🚨 HOOK_SUPERVISOR_CRITICAL via ${trigger} — Log: .planning/HOOKS.log — ${pyOut.slice(0, 800)}`);
+    const m = `${HOOK_MARK} — critical (exit 2, ${duration}ms, trigger ${trigger})`;
+    appendHookMarker(output, m);
+    throw new Error(`${m}\n🚨 HOOK_SUPERVISOR_CRITICAL via ${trigger} — Log: .planning/HOOKS.log — ${pyOut.slice(0, 800)}`);
   }
 
   // Verifica que HANDOFF/STATE foram atualizados (nova persistência) — ao invés de SUPERVISOR_REPORT.md
@@ -214,6 +227,7 @@ EOSBODY`.nothrow().quiet();
       body: { service: "supervisor", level: "warn", message: `Supervisor LLM step falhou: ${err?.message?.slice(0,800)}` },
     });
   }
+  appendHookMarker(output, `${HOOK_MARK} — ok (${duration}ms, trigger ${trigger})`);
 }
 
 export const SupervisorPlugin: Plugin = async ({ $, directory, client }) => {
@@ -226,17 +240,18 @@ export const SupervisorPlugin: Plugin = async ({ $, directory, client }) => {
           const fp: string = args?.filePath ?? args?.file ?? args?.path ?? "";
           if (fp.includes(".planning/HANDOFF.md") || fp.includes(".planning/STATE.md")) {
             await new Promise((r) => setTimeout(r, 1500));
-            await runSupervisor($, directory, client, `write:${fp.split("/").pop()}`);
+            await runSupervisor($, directory, client, `write:${fp.split("/").pop()}`, output);
           }
         }
         if (tool === "task") {
           const agent = args?.agent ?? args?.subagent ?? input?.args?.agent ?? "";
           if (agent === "shipper") {
             await new Promise((r) => setTimeout(r, 2000));
-            await runSupervisor($, directory, client, "task:shipper");
+            await runSupervisor($, directory, client, "task:shipper", output);
           }
         }
       } catch (err: any) {
+        appendHookMarker(output, `${HOOK_MARK} — error (ver .planning/HOOKS.log)`);
         await client.app.log({
           body: { service: "supervisor", level: "error", message: `🚨 Supervisor hook erro visível: ${err?.message?.slice(0, 800)} — Log: .planning/HOOKS.log` },
         });

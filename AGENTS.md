@@ -48,7 +48,7 @@ Fluxos: `feature` (planner→builder→reviewer→shipper(hook)→ci-watch→sup
    - O rtk só intercepta **comandos de shell**: built-ins `read`/`grep`/`glob` não passam por ele. Para leituras grandes, prefira shell (`rg`, `cat`, `git diff`) para gerar economia.
    - Saída parecer cortada/estranha? `rtk bypass <cmd>` executa sem filtro (escape hatch); `RTK_DISABLED=1 <cmd>` desliga na sessão.
    - Métricas: `rtk gain` (economia acumulada), `rtk discover` (oportunidades perdidas) — o `supervisor` pode citar o ganho no parecer.
-   - **Visibilidade (prova de execução):** o plugin `rtk-visibility.ts` anexa `⟐ rtk ✓ — saída comprimida pelo proxy RTK` ao fim de todo comando reescrito — usuário e agentes veem no transcript que o rtk está rodando. Não confunda o marcador com saída do comando nem o remova; `RTK_VISIBILITY=0` desliga só o marcador (o rtk continua ativo).
+   - **Visibilidade (prova de execução):** plugins anexam marcadores curtos no transcript (visíveis ao usuário e aos agentes). `rtk-visibility.ts` anexa `⟐ rtk ✓ — saída comprimida pelo proxy RTK` em comandos shell reescritos (`RTK_VISIBILITY=0` desliga só o marcador, rtk continua ativo). `observability-visibility.ts` anexa `⟐ skill ✓ — skill "<id>" carregada` ao carregar skills e `⟐ codegraph ✓ — <tool> consultado (exploração semântica)` ao consultar codegraph. Os hooks determinísticos (`guard-rails`, `shipper`, `ci-watch`, `supervisor`) anexam `⟐ hook ✓ <hook> — <status> (...)` no output da tool que os acionou. `OBSERVABILITY_VISIBILITY=0` desliga só esses marcadores (hooks continuam rodando). Não confunda marcadores com saída do comando nem os remova.
 
 ## CodeGraph + ast-grep — inteligência semântica (quando instalado)
 

@@ -35,6 +35,7 @@ Implementa o que o planner planejou. Full-stack: backend, frontend e infra míni
 
 ### Token savings & tool visibility
 - **RTK**: Compressão de saída de shell ativa — cada comando bash será marcado com `⟐ rtk ✓` na saída (proxy RTK economiza 60–90% dos tokens de bash). Verifique `rtk gain` para economia acumulada.
+- **Visibilidade de execução**: skills carregadas aparecem como `⟐ skill ✓ — skill "<id>" carregada`; consultas codegraph como `⟐ codegraph ✓ — <tool> consultado`; hooks determinísticos como `⟐ hook ✓ <hook> — <status> (...)`. Não confunda marcadores com saída do comando.
 - **CodeGraph**: MCP codegraph registrado no OpenCode do projeto (`opencode.json` — codegraph serve --mcp com CODEGRAPH_TELEMETRY=0). Use `codegraph_explore` para símbolos, callers, call paths e impacto.
 - **Caveman**: Modo caveman ativo por padrão. Respostas terse, sem filler, artigos e hedging. Use `/caveman lite|full|ultra` para ajustar intensidade. <-- skills being executed, RTK commands, and codegraph commands will be logged during process execution -->
 

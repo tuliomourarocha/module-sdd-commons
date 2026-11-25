@@ -71,6 +71,15 @@ function extractFilePath(tool: string, args: any): string | undefined {
   return undefined;
 }
 
+const HOOK_MARK = "⟐ hook ✓ guard-rails";
+
+function appendHookMarker(output: any, text: string) {
+  if (process.env.OBSERVABILITY_VISIBILITY === "0") return;
+  if (!output || typeof output.output !== "string") return;
+  if (output.output.includes(HOOK_MARK)) return;
+  output.output += `\n\n${text}`;
+}
+
 // ── Log de garantia: prova que hook foi chamado + alerta agentes em caso de erro ──
 async function writeGuaranteeLog(
   $: any,
@@ -92,7 +101,8 @@ async function runGuardRails(
   $: any,
   directory: string,
   filePath: string,
-  client: any
+  client: any,
+  output?: any
 ) {
   const normalized = filePath.startsWith("/") ? filePath : `${directory}/${filePath}`;
   const triggerTs = new Date().toISOString();
@@ -200,6 +210,8 @@ async function runGuardRails(
 
   // Notifica agente em caso de erro infra — visível no decorrer do processo
   if (isInfraError && !blocked) {
+    const infraMarker = `${HOOK_MARK} — infra error em ${filePath} (exit ${exitCode}, ${duration}ms)`;
+    appendHookMarker(output, infraMarker);
     await client.app.log({
       body: {
         service: "guard-rails",
@@ -209,7 +221,7 @@ async function runGuardRails(
       },
     });
     throw new Error(
-      `🚨 HOOK_GUARD_RAILS_INFRA_ERROR: ${filePath} — hook falhou (exit ${exitCode}). ` +
+      `${infraMarker}\n🚨 HOOK_GUARD_RAILS_INFRA_ERROR: ${filePath} — hook falhou (exit ${exitCode}). ` +
       `stderr: ${stderr.slice(0, 800)}\n` +
       `Aviso: guard rails NÃO validou este arquivo. Corrija infra (python3, ruff, pyright) ou verifique .planning/HOOKS.log`
     );
@@ -222,12 +234,19 @@ async function runGuardRails(
       .slice(0, 3)
       .map((f) => `• ${f.rule}: ${f.message.slice(0, 120)}`)
       .join("\n")}`;
+    const blockMarker = `${HOOK_MARK} — BLOCKED ${filePath} (HIGH:${high} MED:${med}, ${duration}ms)`;
+    appendHookMarker(output, blockMarker);
     // Lança erro determinístico para o agente ver e corrigir (não crash do plugin)
     // O LLM recebe o erro como tool result e deve corrigir (max 2 iterações builder)
     throw new Error(
-      `⛔ GUARD_RAILS_BLOCKED: ${filePath} — corrija HIGH antes de prosseguir\n${msg}\n\nDetalhe: ${stdout.slice(0, 4000)}\n\nLog garantia: .planning/HOOKS.log`
+      `${blockMarker}\n⛔ GUARD_RAILS_BLOCKED: ${filePath} — corrija HIGH antes de prosseguir\n${msg}\n\nDetalhe: ${stdout.slice(0, 4000)}\n\nLog garantia: .planning/HOOKS.log`
     );
   }
+
+  const passMarker = med > 0
+    ? `${HOOK_MARK} — warn ${filePath} (HIGH:0 MED:${med}, ${duration}ms)`
+    : `${HOOK_MARK} — pass ${filePath} (HIGH:0 MED:0, ${duration}ms)`;
+  appendHookMarker(output, passMarker);
 }
 
 export const GuardRailsPlugin: Plugin = async ({ $, directory, client }) => {
@@ -246,6 +265,8 @@ export const GuardRailsPlugin: Plugin = async ({ $, directory, client }) => {
       // ── Bloqueio prioritário: artefatos proibidos (SUMMARY/REVIEW/VALIDATION/CI_REPORT/SUPERVISOR_REPORT/etc) sempre HIGH, mesmo se não for code file — devem ser seções em HANDOFF/STATE ──
       if (isForbiddenArtifact(filePath)) {
         const msg = `⛔ GUARD_RAILS_BLOCKED: ${filePath} — artefato proibido (SUMMARY/REVIEW/VALIDATION/CI_REPORT/SUPERVISOR_REPORT/ci_metrics etc nunca devem ser criados em disco; retorne em memória ou embarque em HANDOFF.md/STATE.md)`;
+        const blockMarker = `${HOOK_MARK} — BLOCKED ${filePath} (forbidden artifact)`;
+        appendHookMarker(output, blockMarker);
         await client.app.log({
           body: { service: "guard-rails", level: "error", message: msg, extra: { filePath, forbidden: true } },
         });
@@ -263,7 +284,7 @@ export const GuardRailsPlugin: Plugin = async ({ $, directory, client }) => {
           error: "forbidden_artifact",
           message: msg,
         });
-        throw new Error(`${msg} — Log: .planning/HOOKS.log`);
+        throw new Error(`${blockMarker}\n${msg} — Log: .planning/HOOKS.log`);
       }
 
       if (!isCodeFile(filePath)) return;
@@ -272,10 +293,12 @@ export const GuardRailsPlugin: Plugin = async ({ $, directory, client }) => {
       if (filePath.includes("guard-rails.log") || filePath.includes("HOOKS.log") || filePath.includes("hook-audit") || filePath.includes("SUPERVISOR")) return;
 
       try {
-        await runGuardRails($, directory, filePath, client);
+        await runGuardRails($, directory, filePath, client, output);
       } catch (err: any) {
         // Re-throw para agente ver — tanto BLOCK quanto INFRA precisam ser visíveis
         if (err?.message?.includes("GUARD_RAILS_BLOCKED") || err?.message?.includes("HOOK_GUARD_RAILS")) throw err;
+        const errMarker = `${HOOK_MARK} — infra error em ${filePath}`;
+        appendHookMarker(output, errMarker);
         await client.app.log({
           body: {
             service: "guard-rails",
@@ -285,7 +308,7 @@ export const GuardRailsPlugin: Plugin = async ({ $, directory, client }) => {
           },
         });
         // Garante que agente builder/reviewer seja notificado mesmo em erro infra
-        throw new Error(`🚨 HOOK_GUARD_RAILS_ERROR: ${filePath} — ${err?.message?.slice(0, 800)} — veja .planning/HOOKS.log`);
+        throw new Error(`${errMarker}\n🚨 HOOK_GUARD_RAILS_ERROR: ${filePath} — ${err?.message?.slice(0, 800)} — veja .planning/HOOKS.log`);
       }
     },
 

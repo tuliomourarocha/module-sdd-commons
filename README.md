@@ -72,17 +72,21 @@ harness** e acompanhe a economia com `rtk gain` (dados brutos de um comando duvi
 `rtk bypass <cmd>; RTK_DISABLED=1 <cmd>`). O `install.sh` legado faz o mesmo passo,
 já que ele só instala para OpenCode.
 
-**Prova visível de que o rtk está rodando:** a reescrita do rtk é silenciosa por
-natureza, então a squad instala também o plugin `rtk-visibility.ts` em
-`.opencode/plugins/`: todo comando reescrito recebe um rodapé na própria saída —
+**Prova visível de execução no transcript:** a squad instala plugins de visibilidade em
+`.opencode/plugins/` que anexam marcadores curtos na saída do tool — visíveis para
+usuário e agentes:
 
 ```
 ⟐ rtk ✓ — saída comprimida pelo proxy RTK antes do LLM ler (economia de tokens de shell)
+⟐ skill ✓ — skill "github-cli" carregada
+⟐ codegraph ✓ — codegraph.codegraph_explore consultado (exploração semântica)
+⟐ hook ✓ guard-rails — pass (HIGH:0 MED:0, 45ms)
+⟐ hook ✓ shipper — ok (1200ms, trigger task:reviewer)
 ```
 
-Você e os agentes veem esse marcador no transcript sempre que o proxy atuar
-(a primeira marcação da sessão lembra o comando `rtk gain`). `RTK_VISIBILITY=0`
-desliga só o marcador; `RTK_DISABLED=1` desliga o rtk inteiro.
+- `rtk-visibility.ts`: marca comandos shell reescritos pelo RTK (`RTK_VISIBILITY=0` desliga só o marcador; `RTK_DISABLED=1` desliga o rtk inteiro).
+- `observability-visibility.ts`: marca carregamento de skills e consultas codegraph.
+- Hooks determinísticos (`guard-rails`, `shipper`, `ci-watch`, `supervisor`): marcam quando são acionados e seu status. `OBSERVABILITY_VISIBILITY=0` desliga só os marcadores de observabilidade/hooks (os hooks continuam rodando).
 
 ### CodeGraph + ast-grep — inteligência semântica durante a instalação
 

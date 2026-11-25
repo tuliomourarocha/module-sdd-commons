@@ -7,6 +7,11 @@
       "name": "rtk-visibility",
       "hooks": ["tool.execute.before", "tool.execute.after"],
       "description": "Shows ⟐ rtk ✓ footer on shell commands for token economy visibility"
+    },
+    {
+      "name": "observability-visibility",
+      "hooks": ["tool.execute.after"],
+      "description": "Shows ⟐ skill ✓ / ⟐ codegraph ✓ / ⟐ hook ✓ markers in agent logs"
     }
   ],
   "permission": {
