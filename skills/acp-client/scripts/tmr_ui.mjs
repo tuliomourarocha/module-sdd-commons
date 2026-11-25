@@ -1,0 +1,156 @@
+/**
+ * tmr_ui.mjs — identidade visual TMR para a interface ACP no terminal.
+ * Zero dependências: ANSI 256/truecolor-safe, box-drawing, spinner, menus e
+ * painéis. Respeita NO_COLOR e degrada para plain text fora de TTY.
+ */
+
+const TTY = process.stdout.isTTY && !process.env.NO_COLOR;
+const SUPPORTS_256 = TTY; // praticamente todo terminal moderno; degrada p/ plain
+
+const c = (code, s) => (SUPPORTS_256 ? `\x1b[${code}m${s}\x1b[0m` : String(s));
+export const paint = {
+  bold: (s) => c("1", s),
+  dim: (s) => c("2", s),
+  red: (s) => c("31", s),
+  green: (s) => c("32", s),
+  yellow: (s) => c("33", s),
+  blue: (s) => c("34", s),
+  magenta: (s) => c("35", s),
+  cyan: (s) => c("36", s),
+  white: (s) => c("37", s),
+  gray: (s) => c("90", s),
+  brightCyan: (s) => c("96", s),
+  brightGreen: (s) => c("92", s),
+  brightYellow: (s) => c("93", s),
+  boldCyan: (s) => c("1;36", s),
+  boldMagenta: (s) => c("1;35", s),
+  boldGreen: (s) => c("1;32", s),
+  boldYellow: (s) => c("1;33", s),
+};
+
+export const icons = {
+  ok: paint.green("✔"),
+  fail: paint.red("✘"),
+  run: paint.cyan("▸"),
+  star: paint.brightYellow("★"),
+  warn: paint.yellow("⚠"),
+  arrow: paint.gray("❯"),
+  dot: paint.gray("·"),
+  agent: paint.magenta("◆"),
+  info: paint.blue("ℹ"),
+};
+
+// --------------------------------------------------------------- banner TMR
+const TMR_ART = [
+  ["████████", "██     ██", "████████"],
+  ["   ██    ", "██     ██", "   ██    "],
+  ["   ██    ", "██     ██", "   ██    "],
+  ["   ██    ", "██     ██", "   ██    "],
+  ["   ██    ", " ███████ ", "   ██    "],
+];
+
+export function banner(subtitle = "ACP — Squad Orchestrator") {
+  const lines = ["", "", "", "", ""];
+  TMR_ART.forEach((row, i) => {
+    lines[i] = row
+      .map((seg, col) =>
+        col === 0 ? paint.boldCyan(seg) : col === 1 ? paint.boldMagenta(seg) : paint.boldCyan(seg))
+      .join(" ");
+  });
+  console.log(lines.join("\n"));
+  console.log(`  ${paint.gray("─".repeat(42))}`);
+  console.log(`  ${paint.bold("TMR")} ${paint.gray("·")} ${paint.dim(subtitle)}`);
+  console.log(`  ${paint.gray("planner → builder → reviewer")} ${paint.gray("sobre Agent Client Protocol")}`);
+  console.log("");
+}
+
+// ------------------------------------------------------------------- helpers
+export const hr = (ch = "─", n = 58) => paint.gray(ch.repeat(n));
+export const boxLine = (label, rest = "") =>
+  `  ${paint.gray("│")} ${paint.bold(label)}  ${paint.dim(rest)}`;
+
+export function panel(title, lines) {
+  console.log(`\n  ${paint.gray("┌─")} ${paint.bold(title)} ${paint.gray("─".repeat(Math.max(2, 46 - title.length)))}`);
+  for (const l of lines) console.log(`  ${paint.gray("│")} ${l}`);
+  console.log(`  ${paint.gray("└" + "─".repeat(52))}`);
+}
+
+export function stepHeader(step, total, title) {
+  const dots = ["○", "◐", "◑", "◕", "●"];
+  const nums = Array.from({ length: total }, (_, i) =>
+    i + 1 < step ? paint.green(dots[4]) : i + 1 === step ? paint.brightCyan(`❯${step}❮`) : paint.gray(dots[0]));
+  console.log(`\n  ${nums.join(" ")}  ${paint.bold(title)}`);
+}
+
+export function phaseHeader(role, modelValue, priceStr = "") {
+  console.log("");
+  console.log(`  ${hr()}`);
+  console.log(`  ${icons.agent} ${paint.boldMagenta(`FASE ${role.toUpperCase()}`)}  ${paint.gray("·")}  ${paint.dim(modelValue)}${priceStr ? `  ${paint.gray("·")}  ${paint.dim(priceStr)}` : ""}`);
+  console.log(`  ${hr()}`);
+}
+
+// -------------------------------------------------------------------- spinner
+const SPIN_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+export function spinner(text) {
+  if (!TTY) { console.log(`  ${paint.dim(text)}…`); return { stop: () => {}, update: () => {} }; }
+  let i = 0;
+  const t = setInterval(() => {
+    process.stdout.write(`\r  ${paint.cyan(SPIN_FRAMES[i++ % SPIN_FRAMES.length])} ${paint.dim(text)}   `);
+  }, 90);
+  return {
+    stop(finalText, color = paint.green) {
+      clearInterval(t);
+      process.stdout.write(`\r\x1b[K  ${color("✔")} ${finalText ?? text}\n`);
+    },
+    update(newText) { text = newText; },
+  };
+}
+
+// ---------------------------------------------------------------------- menus
+export function menu(title, rows, { defaultIdx = 1 } = {}) {
+  panel(title, rows);
+  return defaultIdx;
+}
+
+export function promptLabel(q, def = "") {
+  process.stdout.write(`  ${icons.arrow} ${paint.bold(q)}${def ? paint.gray(` [${def}]`) : ""}: `);
+}
+
+export function confirmLabel(q) {
+  process.stdout.write(`  ${icons.arrow} ${paint.bold(q)} ${paint.gray("(s/N)")}: `);
+}
+
+// ------------------------------------------------------------------- métricas
+const fmtNum = (n) => String(n ?? 0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+export function metricsPanel(metrics, models) {
+  const t = metrics.totals();
+  const rows = [];
+  const W = [10, 30, 9, 9, 10];
+  const cell = (s, w, align = "left") => {
+    s = String(s ?? "");
+    const pad = Math.max(0, w - s.length);
+    return align === "right" ? " ".repeat(pad) + s : s + " ".repeat(pad);
+  };
+  rows.push(paint.gray(`  ${cell("agente", W[0])} ${cell("modelo", W[1])} ${cell("in", W[2], "right")} ${cell("out", W[3], "right")} ${cell("custo", W[4], "right")}`));
+  for (const [role, p] of metrics.phases.entries()) {
+    const cost = p.cost > 0 ? paint.brightYellow(`$${p.cost.toFixed(4)}`) : paint.gray("$0.0000");
+    rows.push(
+      `  ${paint.boldCyan(cell(role, W[0]))} ${paint.dim(cell(models[role]?.label ?? "?", W[1]))} ${cell(p.tokensIn, W[2], "right")} ${cell(p.tokensOut, W[3], "right")} ${cost}`
+    );
+  }
+  const totalCost = t.cost > 0 ? paint.brightYellow(`$${t.cost.toFixed(4)}`) : paint.gray("$0.0000");
+  rows.push(paint.gray(`  ${"─".repeat(W[0] + W[1] + W[2] + W[3] + W[4] + 5)}`));
+  rows.push(`  ${paint.bold(cell("TOTAL", W[0]))} ${cell("", W[1])} ${paint.bold(cell(t.tokensIn, W[2], "right"))} ${paint.bold(cell(t.tokensOut, W[3], "right"))} ${paint.bold(totalCost)}`);
+  const map = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, v]) => `${k}×${v}`).join("  ") || paint.gray("—");
+  panel("métricas da squad — tokens reais do harness", [rows.join("\n").replace(/\n/g, "\n  ")]);
+  panel("trilha de execução", [
+    `${paint.bold("skills")}   ${map(t.skills)}`,
+    `${paint.bold("hooks")}    ${map(t.hooks)}`,
+    `${paint.bold("comandos")} ${[...t.cmds.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)
+      .map(([k, v]) => (/rtk|codegraph|ast-grep|sg/i.test(k) ? paint.brightGreen(`${k}×${v}`) : `${k}×${v}`)).join("  ") || paint.gray("—")}`,
+  ]);
+}
+
+export { fmtNum };

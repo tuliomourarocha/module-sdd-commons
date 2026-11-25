@@ -35,13 +35,16 @@ TARGET=".opencode"
 RTK_ENABLED=1
 RTK_EDITION="${RTK_EDITION:-full}"
 CODEGRAPH_ENABLED=1
+LAVISH_ENABLED=1
 
 usage() {
-  echo "Uso: ./install.sh [<target-dir>] [--no-rtk] [--rtk-edition full|oss] [--no-codegraph]"
+  echo "Uso: ./install.sh [<target-dir>] [--no-rtk] [--rtk-edition full|oss] [--no-codegraph] [--no-lavish]"
   echo "  <target-dir>           Diretório alvo (default: .opencode)"
   echo "  --no-rtk               Não baixa nem vincula o rtk"
   echo "  --rtk-edition <full|>  Edição do rtk: full (padrão) ou oss (Apache-2.0)"
   echo "  --no-codegraph         Não instala codegraph/ast-grep nem registra o MCP"
+  echo "  --no-lavish            Não instala o lavish-axi (revisão de planos HTML; cai para npx on-demand)"
+  echo "  --no-acp               Não pré-baixa o adaptador codex-acp (client ACP vai com skills/)"
 }
 
 while [ $# -gt 0 ]; do
@@ -49,6 +52,8 @@ while [ $# -gt 0 ]; do
     --no-rtk)      RTK_ENABLED=0 ;;
     --rtk-edition) shift; RTK_EDITION="${1:-}"; case "$RTK_EDITION" in full|oss) ;; *) echo "✖ RTK: edição inválida ($RTK_EDITION) — use full ou oss" >&2; exit 1;; esac ;;
     --no-codegraph) CODEGRAPH_ENABLED=0 ;;
+    --no-lavish) LAVISH_ENABLED=0 ;;
+    --no-acp) ACP_ENABLED=0 ;;
     --help|-h)     usage; exit 0 ;;
     -*)            echo "Argumento desconhecido: $1 (veja ./install.sh --help)" >&2; exit 1 ;;
     *)             TARGET="$1" ;;
@@ -293,6 +298,63 @@ install_github() {
 # https://github.com/rtk-ai/rtk — proxy de comandos que comprime a saída de shell
 # antes do LLM ler (economia de 60–90% nos tokens de bash). Falha em aberto:
 # sem o binário, a squad segue funcionando sem compressão.
+
+# ── Lavish Editor: revisão de planos HTML pelo browser ───────────────────────
+# lavish-axi (npm) — abre o plano do planner como HTML interativo no browser
+# local e devolve o feedback do usuário por long-poll (skill plan-review).
+# Também é um AXI: se não instalar, os macros usam `npx -y lavish-axi` on-demand.
+# Falha em aberto: sem o CLI, os macros caem no npx e a squad segue funcionando.
+
+# ── ACP: client da squad + adaptador Codex ───────────────────────────────────
+# O client ACP é zero-dep (scripts/acp_client.mjs + acp_orchestrate.mjs) e já
+# acompanha skills/ no alvo instalado. Aqui só (a) confirmamos que os scripts
+# existem e (b) pré-baixamos o adaptador oficial do Codex
+# (@agentclientprotocol/codex-acp — npm), para o primeiro run codex não pagar
+# o download on-demand. Falha em aberto: sem o adaptador, `npx -y` baixa ao vivo.
+# O bootstrap de deps (lavish/codegraph/rtk/opencode) roda a cada run ACP.
+
+ACP_ENABLED=1
+
+install_acp() {
+  # scripts do client: fonte (repo) ou alvo instalado
+  if [ -f "$TARGET/skills/acp-client/scripts/acp_orchestrate.mjs" ] || \
+     [ -f "skills/acp-client/scripts/acp_orchestrate.mjs" ]; then
+    ok "scripts do client ACP presentes (acp_client.mjs + acp_orchestrate.mjs)"
+  else
+    error "skills/acp-client não encontrado nem na fonte nem no alvo — reinstale a squad"
+    return 1
+  fi
+
+  ensure_npm || return 1
+  if command -v codex-acp >/dev/null 2>&1; then
+    ok "adaptador codex-acp já instalado ($(codex-acp --version 2>/dev/null || echo '?'))"
+  else
+    info "pré-baixando adaptador Codex (@agentclientprotocol/codex-acp)…"
+    if npm install -g @agentclientprotocol/codex-acp >/dev/null 2>&1 && command -v codex-acp >/dev/null 2>&1; then
+      ok "codex-acp instalado — primeiro run com --agent codex não precisa de download"
+    else
+      error "npm install -g @agentclientprotocol/codex-acp falhou — o primeiro run codex usará 'npx -y' on-demand"
+      return 1
+    fi
+  fi
+}
+
+install_lavish() {
+  ensure_npm || return 1
+  if command -v lavish-axi >/dev/null 2>&1; then
+    ok "lavish-axi já instalado ($(lavish-axi --version 2>/dev/null || echo versão desconhecida))"
+    return 0
+  fi
+  info "lavish-axi ausente — instalando (npm install -g lavish-axi)…"
+  if npm install -g lavish-axi >/dev/null 2>&1 && command -v lavish-axi >/dev/null 2>&1; then
+    ok "lavish-axi instalado ($(lavish-axi --version 2>/dev/null || echo '?')) — skill plan-review pronta"
+  else
+    error "npm install -g lavish-axi falhou — skill plan-review usará 'npx -y lavish-axi' on-demand (AXI, sem install)"
+    return 1
+  fi
+}
+
+# ── RTK: download + vínculo com o harness (economia de tokens) ───────────────
 
 install_rtk() {
   if command -v rtk >/dev/null 2>&1; then
@@ -620,6 +682,20 @@ p.write_text(json.dumps(j, indent=2) + '\n')
     skip "CodeGraph: pulado (--no-codegraph)"
   fi
 
+  # Lavish: revisão de planos HTML pelo browser (skill plan-review)
+  if [ "$LAVISH_ENABLED" = "1" ]; then
+    install_lavish || true
+  else
+    skip "Lavish: pulado (--no-lavish)"
+  fi
+
+  # ACP: client da squad (scripts) + pré-download do adaptador Codex
+  if [ "$ACP_ENABLED" = "1" ]; then
+    install_acp || true
+  else
+    skip "ACP: pulado (--no-acp)"
+  fi
+
   echo ""
   ok "Instalação concluída!"
   echo ""
@@ -627,6 +703,7 @@ p.write_text(json.dumps(j, indent=2) + '\n')
   info "Hooks determinísticos: .opencode/plugins/guard-rails.ts (pós-edição) + supervisor.ts (final) → Ver hooks/README.md"
   info "RTK: comandos reescritos aparecem com '⟐ rtk ✓' na saída (economia acumulada: rtk gain); skills/codegraph/hooks aparecem com marcadores ⟐ no transcript"
   info "CodeGraph: MCP 'codegraph' ativo no projeto — 'opencode mcp list' para conferir; ast-grep para busca estrutural"
+  info "ACP: rode 'sdd-acp' (se instalado via npm) ou 'node $TARGET/skills/acp-client/scripts/acp_orchestrate.mjs' — wizard interativo: harness → .planning → issue gh → modelos por agente → fases (use --ui lavish para os quadros no browser)"
 }
 
 main

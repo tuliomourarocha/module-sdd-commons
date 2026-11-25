@@ -6,8 +6,8 @@
 ```
 planner → builder → reviewer → shipper → fim
 ```
-1. **planner** — PRD + PLAN + arch (memória) + backlog no GitHub: cria issues/épics (`create-issue`), labels de prioridade/tipo/tags (`ensure-labels`), sprints/backlog (`ensure-milestone`) e retorna os números em memória
-2. **builder** — código no disco + resumo (memória) + move a issue para execução (`move-issue` → Status `In Progress`; nunca cria)
+1. **planner** — PRD + PLAN + arch (memória) + **revisão do plano como HTML interativo via Lavish** (decisões e skills sugeridas — locais + `--remote` da skills.sh — com escolha clicável pelo usuário; installs remotos só com aprovação + `--audit`) + backlog no GitHub: cria issues/épics (`create-issue`), labels de prioridade/tipo/tags (`ensure-labels`), sprints/backlog (`ensure-milestone`) e retorna os números em memória
+2. **builder** — **executa via client ACP** (`acp_client.mjs --agent opencode|codex`, um run por subtask, `--json` parseado, gate de auth antes; interação do usuário no meio do processo via `--ui lavish`/TTY; fallback self-implement com pendência) + código no disco + resumo (memória) + move a issue para execução (`move-issue` → Status `In Progress`; nunca cria)
 3. **reviewer** — parecer de arquitetura (memória)
 4. **shipper** — fetch develop, branch de `origin/develop` atualizada, PR `--base develop` (nunca main), CI, `.planning/STATE.md` + `.planning/HANDOFF.md` + encerra a issue (sync real pelo hook: valida `gh auth status`, localiza issue por `--issue`/`Closes #N` do PR/prefixo do branch, fecha com comentário do PR e Status `Done` no Project; nunca cria issue)
 
@@ -44,4 +44,7 @@ planner(triage) → builder(fix) → reviewer → shipper
 @harness [feature] Busca por texto em produtos
 @harness [project] E-commerce Next.js + Supabase
 @harness [bugfix] Erro 500 no checkout
+
+# Interativo por humano (ACP — interface TMR):
+sdd-acp [--ui lavish]                                             # ou: node skills/acp-client/scripts/acp_orchestrate.mjs
 ```

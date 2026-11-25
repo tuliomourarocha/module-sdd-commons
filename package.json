@@ -4,7 +4,8 @@
   "description": "Instalador multi-harness para OpenCode, Claude Code e Codex.",
   "type": "module",
   "bin": {
-    "sdd-harness": "bin/sdd-harness.js"
+    "sdd-harness": "bin/sdd-harness.js",
+    "sdd-acp": "bin/sdd-acp.js"
   },
   "files": [
     "AGENTS.md",

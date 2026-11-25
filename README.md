@@ -31,6 +31,57 @@ pelo LLM) e vincula ao harness escolhido com `rtk init`:
 | Harness | Vínculo | O que o rtk instala |
 | --- | --- | --- |
 | OpenCode | `rtk init --global --opencode` | Plugin TS em `~/.config/opencode/plugins/rtk.ts` (requer OpenCode ≥ 1.18.29) |
+
+## Rodar a squad via ACP — **TMR** (`sdd-acp`)
+
+Além do `@harness` interno (orquestrado pelo agente `harness` no terminal), a squad
+pode rodar como **client ACP** com a interface **TMR** no terminal: OpenCode
+(`opencode acp`, nativo) ou Codex (adaptador `@agentclientprotocol/codex-acp`)
+executam o ciclo `planner → builder → reviewer` com você no comando.
+
+```bash
+sdd-acp                       # wizard orquestrador (interativo)
+sdd-acp --ui lavish           # + quadros ao vivo no browser (localhost:4387)
+sdd-acp doctor                # diagnóstico das dependências
+sdd-acp client --agent opencode --cwd <repo> --json "<subtask>"   # run de UMA subtask
+```
+
+Sem npm global, o mesmo wizard roda direto do projeto instalado:
+
+```bash
+node .opencode/skills/acp-client/scripts/acp_orchestrate.mjs --ui lavish
+```
+
+### O wizard (decisões humanas no início)
+
+1. **Harness** — `opencode` (nativo) ou `codex` (adaptador oficial).
+2. **Limpar `.planning/`** — lista `STATE.md`/`HANDOFF.md`/specs e pergunta se começa do zero.
+3. **Issue do GitHub** — `https://github.com/owner/repo/issues/N`, `owner/repo#N` ou `#N`;
+   a tarefa vem de `gh issue view` (sem `gh`, cole o texto manualmente). **Obrigatória
+   antes do primeiro agente.**
+4. **Modelo por agente** — para planner/builder/reviewer: lista com **custos
+   ($/Mtok in·out)**, contexto e o **★ recomendado por papel** (catálogo da squad);
+   `enter` aceita o recomendado. A escolha acontece aqui, no runtime — a instalação
+   grava só o padrão da squad.
+5. **Fases** — planner → builder → reviewer, contexto encadeado; durante as fases
+   **digite no terminal para falar com o agente no meio do processo** (steering nativo
+   no OpenCode; no Codex a mensagem entra no fim do turno).
+
+### Interface (`--ui lavish`)
+
+O console no browser mostra tudo: **tokens reais + custo USD por agente**
+(usage do próprio ACP), quadro de **skills chamadas** (`⟐ skill ✓`), quadro de
+**hooks determinísticos** (`⟐ hook ✓`), **comandos invocados** com rtk/codegraph
+destacados, e logs de cada processo agêntico. Ao fim, o resumo das métricas é
+impresso no terminal.
+
+### Bootstrap automático
+
+Todo run ACP garante as dependências e **baixa o que faltar** pelo método oficial
+de cada um (`ensure_deps.mjs`): `lavish-axi`, `codegraph`, `rtk` (validado com
+`rtk gain`) e `opencode`. O instalador da squad também os baixa
+(`--no-rtk`/`--no-codegraph`/`--no-lavish`/`--no-acp` para pular). Auth do harness:
+`opencode auth login` / `codex login` antes do primeiro run.
 | Claude Code | `rtk init --global` | Hook nativo `PreToolUse` + patch no `settings.json` |
 | Codex | `rtk init --global --codex` | Hook `PreToolUse` (`updatedInput`) + `RTK.md` em `~/.codex` |
 
@@ -141,26 +192,25 @@ script legado mantém o padrão da squad.
 
 ### Política e escolha de modelos
 
-O instalador continua com um padrão por plataforma — no OpenCode o cenário é de
-custo-benefício no plano **OpenCode Go** (`opencode-go/*`) — `harness`/`shipper` em
-`gpt-6-luna`, `planner`/`supervisor` em `glm-5.3-flash` e `builder`/`reviewer` em
-`claude-haiku-5-5`; no Claude Code, aliases Anthropic (`haiku`/`sonnet`); no Codex,
-o roteamento GPT-5.6 (Luna, Terra e Sol) gravado em `.codex/sdd-harness.json`.
+A **escolha de modelos por agente acontece no runtime, no wizard do `sdd-acp`** —
+lista completa com custos ($/Mtok in·out) e o recomendado por papel, reusando o
+mesmo ranking (`bin/lib/model-picker.js`). A instalação continua com um padrão por
+plataforma — no OpenCode o cenário é de custo-benefício no plano **OpenCode Go**
+(`opencode-go/*`) — `harness`/`shipper` em `gpt-6-luna`, `planner`/`supervisor` em
+`glm-5.3-flash` e `builder`/`reviewer` em `claude-haiku-5-5`; no Claude Code,
+aliases Anthropic (`haiku`/`sonnet`); no Codex, o roteamento GPT-5.6 (Luna, Terra e
+Sol) gravado em `.codex/sdd-harness.json`. Esse padrão é gravado no frontmatter de
+cada agente OpenCode, no `model:` do Claude Code e no `sdd-harness.json` do Codex.
 
-Em terminal interativo, antes de copiar os artefatos o instalador **lista os modelos
-disponíveis do harness escolhido, por agente**, ordenados por qualidade ×
-custo-benefício para aquele papel. O recomendado aparece destacado em verde com `★`.
-Enter aceita todos os recomendados; `r` revisa agente por agente; `t` mostra a lista
-completa; e o usuário pode escolher outro modelo ou manter o padrão. A escolha é
-aplicada no frontmatter de cada agente OpenCode, no `model:` do Claude Code e no
-`sdd-harness.json` do Codex.
-
-Sem TTY (CI, pipe) ou com `--no-model-picker`, a instalação usa o padrão da squad.
-No OpenCode a lista vem de `opencode models` + catálogo local do harness; no Claude
-Code, dos aliases resolvidos pela conta; no Codex, do catálogo OpenAI conhecido e do
-modelo já configurado em `~/.codex/config.toml`. Preços são referência — no plano
-assinado o que pesa é a cota. Os detalhes e o racional de ranking estão em
-[`platforms/model-policy.md`](platforms/model-policy.md).
+Quem quiser o picker interativo **na instalação** ainda pode: `--model-picker` lista
+os modelos do harness escolhido, por agente, ordenados por qualidade ×
+custo-benefício para o papel (Enter aceita os recomendados; `r` revisa agente por
+agente; `t` mostra a lista completa). Sem TTY (CI, pipe), a instalação usa o padrão
+da squad. No OpenCode a lista vem de `opencode models` + catálogo local do harness;
+no Claude Code, dos aliases resolvidos pela conta; no Codex, do catálogo OpenAI
+conhecido e do modelo já configurado em `~/.codex/config.toml`. Preços são
+referência — no plano assinado o que pesa é a cota. Os detalhes e o racional de
+ranking estão em [`platforms/model-policy.md`](platforms/model-policy.md).
 
 ### Via APM (Agent Package Manager)
 
@@ -187,6 +237,13 @@ O APM baixa os artefatos no formato `.agents/`, `.claude/` ou `.github/`. Em seg
 ## Uso do Harness V2
 
 O `harness` (V2) orquestra 3 fluxos com 4 macros + hooks (`planner`, `builder`, `reviewer` arquitetura, `shipper` hook).
+
+### ACP Client + Plano interativo (Lavish) + Skills remotas
+
+- **Squad como ACP client (dois modos):** o **wizard orquestrador** (`skills/acp-client/scripts/acp_orchestrate.mjs`) roda o ciclo `planner → builder → reviewer` por OpenCode/Codex com decisões humanas no início — escolha do harness, limpeza opcional de `.planning/`, **issue do GitHub como input**, e **escolha de modelo por agente** (lista com custos e recomendado por papel, no runtime — não mais na instalação); durante as fases, o usuário interage no meio do processo (steering nativo em TTY) e acompanha no `--ui lavish` quadros ao vivo de **tokens reais + custo USD por agente**, skills chamadas, hooks e comandos invocados (rtk/codegraph destacados). Já o **run de subtask única** (`acp_client.mjs`) serve aos macros internos: streaming, gate de permissões (`--permission safe|allow-all|ask`) e campo de interação do usuário (TTY/`--ui lavish`).
+- **Plano em HTML interativo:** o `planner` apresenta o plano (decisões com escolha clicável, riscos, skills sugeridas) aberto no Lavish Editor (`npx -y lavish-axi`) e itera por long-poll até a aprovação do usuário — revisão pelo browser, não pelo terminal (skill `plan-review`).
+- **Skills remotas (skills.sh):** `find_skill.py "<termos>" --remote` sugere candidatos do catálogo público da skills.sh; instalação `npx skills add <source>` **somente** com aprovação explícita do usuário, após auditoria (`find_skill.py --audit <id>`).
+- **Bootstrap de dependências:** todo run ACP garante e instala o que faltar (`ensure_deps.mjs`) — lavish-axi, codegraph, rtk e opencode (método oficial de cada um; `--doctor` diagnostica, `--no-ensure` pula).
 
 ### Arquitetura
 

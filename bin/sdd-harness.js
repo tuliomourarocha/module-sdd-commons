@@ -40,7 +40,7 @@ Opções:     --target <diretório-do-projeto>   (padrão: diretório atual)
              --rtk-scope <global|project>      (padrão: global; opencode é sempre global)
              --rtk-only                        (só baixa/vincula o rtk, sem artefatos)
              --no-codegraph                    (não instala codegraph/ast-grep nem registra o MCP)
-             --no-model-picker                 (não pergunta modelos; usa o padrão da squad)
+             --model-picker                   (pergunta modelos na instalação; default OFF — a escolha agora é no wizard do ACP)
              --help
 
 Sobre o rtk: proxy de comandos (https://github.com/rtk-ai/rtk) que comprime a
@@ -60,11 +60,11 @@ escolhido e o projeto é indexado ("codegraph init", telemetria desligada).
   "all" detecta e vincula todos os harnesses instalados (opencode, claude,
   codex); ou passe uma lista csv: --rtk-agents opencode,codex
 
-Sobre os modelos: em terminal interativo o instalador lista os modelos
-disponíveis do harness escolhido, por agente, ordenados por qualidade ×
-custo-benefício para aquele papel. O recomendado aparece destacado em verde.
-Enter aceita todos; "r" revisa agente por agente; "t" mostra a lista completa.
-Sem TTY (ou com --no-model-picker) a instalação usa o padrão da squad.
+Sobre os modelos: a escolha de modelos por agente acontece no RUNTIME da squad
+via ACP (wizard do acp_orchestrate.mjs — lista completa com custos e o
+recomendado por papel). Na instalação grava o padrão da squad; --model-picker
+reabilita o picker interativo do instalador (lista os modelos do harness
+escolhido, por agente, ordenados por qualidade × custo-benefício para o papel).
 
 Exemplos:
   npx --yes github:tuliomourarocha/module-sdd-commons#main --opencode
@@ -87,7 +87,7 @@ function parseArgs(args) {
     agents: null,
   };
   const codegraph = { enabled: true };
-  let modelPicker = true;
+  let modelPicker = false; // picker agora vive no runtime do ACP (acp_orchestrate.mjs); install grava o padrão da squad
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -96,6 +96,7 @@ function parseArgs(args) {
     if (argument === "--no-rtk") { rtk.enabled = false; continue; }
     if (argument === "--no-codegraph") { codegraph.enabled = false; continue; }
     if (argument === "--no-model-picker") { modelPicker = false; continue; }
+    if (argument === "--model-picker") { modelPicker = true; continue; }
     if (argument === "--rtk-only") { rtk.enabled = true; rtk.only = true; continue; }
     if (argument === "--rtk-edition") {
       const value = args[index + 1];
