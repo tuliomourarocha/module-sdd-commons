@@ -4,9 +4,14 @@
  * Conceito: middleware fora do LLM que finaliza o ciclo deterministicamente.
  * Complementa hooks/guard_rails.py (per-file) e hooks/supervisor.py (pós-shipper).
  *
- * Branch/PR: `hooks/shipper.py` cria a branch de trabalho a partir de `origin/<pr_base>`
- * ATUALIZADA (default `develop`, fetch antes) e abre o PR com `--base develop --head
- * <branch>` — nunca para a main (override via env `SDD_PR_BASE`).
+ * Branch/PR: `hooks/shipper.py` SEMPRE baixa a develop (`git fetch origin <pr_base>`),
+ * atualiza a develop local (ff-only) e cria a branch de trabalho A PARTIR DA DEVELOP
+ * ATUALIZADA antes de commitar e fazer push (default `develop`; override via env
+ * `SDD_PR_BASE`) — em develop/main OU em feature branch existente (branch nova por
+ * ciclo; commits anteriores ficam na branch anterior). Commits direto na develop são
+ * movidos para a branch nova e a develop é realinhada à origin; push/PR bloqueados se
+ * a branch final for a base — nunca push direto na develop/main. PR com `--base
+ * develop --head <branch>` — nunca para a main.
  *
  * Issue GitHub: `hooks/shipper.py` valida autenticação (`gh auth status`) e, sem auth,
  * marca GITHUB_AUTH_REQUIRED (instrução de `gh auth login`); localiza a issue do ciclo

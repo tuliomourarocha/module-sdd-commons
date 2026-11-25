@@ -5,22 +5,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
+import { CLAUDE_DEFAULT_MODELS, CODEX_DEFAULT_MODELS, ROLE_ORDER } from "./lib/model-catalog.js";
+import { applyOpenCodeSelections, selectModels } from "./lib/model-picker.js";
+
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const platforms = new Set(["opencode", "claude", "codex"]);
-const claudeRoleModels = {
-  harness: "haiku",
-  planner: "sonnet",
-  builder: "sonnet",
-  reviewer: "sonnet",
-  shipper: "haiku",
-};
-const codexRoleModels = {
-  harness: "gpt-5.6-luna",
-  planner: "gpt-5.6-sol",
-  builder: "gpt-5.6-sol",
-  reviewer: "gpt-5.6-terra",
-  shipper: "gpt-5.6-terra",
-};
+const claudeRoleModels = { ...CLAUDE_DEFAULT_MODELS };
+const codexRoleModels = { ...CODEX_DEFAULT_MODELS };
 
 // ── RTK (economia de tokens) ─────────────────────────────────────────────────
 // rtk — https://github.com/rtk-ai/rtk — proxy de comandos que comprime a saída
@@ -49,6 +40,7 @@ Opções:     --target <diretório-do-projeto>   (padrão: diretório atual)
              --rtk-scope <global|project>      (padrão: global; opencode é sempre global)
              --rtk-only                        (só baixa/vincula o rtk, sem artefatos)
              --no-codegraph                    (não instala codegraph/ast-grep nem registra o MCP)
+             --no-model-picker                 (não pergunta modelos; usa o padrão da squad)
              --help
 
 Sobre o rtk: proxy de comandos (https://github.com/rtk-ai/rtk) que comprime a
@@ -67,6 +59,12 @@ escolhido e o projeto é indexado ("codegraph init", telemetria desligada).
 --rtk-agents: por padrão o vínculo segue as plataformas da instalação;
   "all" detecta e vincula todos os harnesses instalados (opencode, claude,
   codex); ou passe uma lista csv: --rtk-agents opencode,codex
+
+Sobre os modelos: em terminal interativo o instalador lista os modelos
+disponíveis do harness escolhido, por agente, ordenados por qualidade ×
+custo-benefício para aquele papel. O recomendado aparece destacado em verde.
+Enter aceita todos; "r" revisa agente por agente; "t" mostra a lista completa.
+Sem TTY (ou com --no-model-picker) a instalação usa o padrão da squad.
 
 Exemplos:
   npx --yes github:tuliomourarocha/module-sdd-commons#main --opencode
@@ -89,6 +87,7 @@ function parseArgs(args) {
     agents: null,
   };
   const codegraph = { enabled: true };
+  let modelPicker = true;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -96,6 +95,7 @@ function parseArgs(args) {
     if (argument === "--dry-run") { dryRun = true; continue; }
     if (argument === "--no-rtk") { rtk.enabled = false; continue; }
     if (argument === "--no-codegraph") { codegraph.enabled = false; continue; }
+    if (argument === "--no-model-picker") { modelPicker = false; continue; }
     if (argument === "--rtk-only") { rtk.enabled = true; rtk.only = true; continue; }
     if (argument === "--rtk-edition") {
       const value = args[index + 1];
@@ -141,7 +141,7 @@ function parseArgs(args) {
   if (selected.length === 0 && !(rtk.only && rtk.agents)) {
     throw new Error("Escolha uma plataforma: --opencode, --claude, --codex ou --all; ou use --rtk-only com --rtk-agents.");
   }
-  return { selected: [...new Set(selected)], target, dryRun, rtk, codegraph };
+  return { selected: [...new Set(selected)], target, dryRun, rtk, codegraph, modelPicker };
 }
 
 async function exists(file) {
@@ -161,17 +161,18 @@ async function agentBody(role) {
   return parts.slice(2).join("---").trim();
 }
 
-function claudeFrontmatter(role) {
+function claudeFrontmatter(role, roleModels = claudeRoleModels) {
   const common = [
     `name: ${role}`,
     `description: ${descriptions[role]}`,
-    `model: ${claudeRoleModels[role]}`,
+    `model: ${roleModels[role]}`,
     `maxTurns: ${role === "builder" ? 25 : role === "harness" || role === "planner" ? 20 : 15}`,
   ];
   if (role === "harness") return [...common, "tools: Read, Glob, Grep, Agent", "disallowedTools: Write, Edit, Bash, WebFetch"].join("\n");
   if (role === "planner") return [...common, "tools: Read, Glob, Grep, Write, Edit, Bash, WebFetch, Skill"].join("\n");
   if (role === "builder") return [...common, "tools: Read, Glob, Grep, Write, Edit, Bash, WebFetch, Skill"].join("\n");
   if (role === "reviewer") return [...common, "tools: Read, Glob, Grep, Write, Edit, Bash, WebFetch, Skill"].join("\n");
+  if (role === "supervisor") return common.join("\n");
   return [...common, "tools: Read, Glob, Grep, Write, Edit, Bash, WebFetch, Skill"].join("\n");
 }
 
@@ -185,6 +186,17 @@ const descriptions = {
 };
 
 const HOOKS_SUPERVISOR_REPO = "tuliomourarocha/module-sdd-commons";
+
+// Seleção interativa → mapa simples role → modelo (Claude/Codex não usam variant).
+function resolveRoleModels(selections, defaults) {
+  const resolved = { ...defaults };
+  for (const role of ROLE_ORDER) {
+    const value = selections?.[role];
+    if (typeof value === "string") resolved[role] = value;
+    else if (value?.model) resolved[role] = value.model;
+  }
+  return resolved;
+}
 
 // ── RTK: download e vínculo com o harness escolhido ──────────────────────────
 
@@ -609,11 +621,11 @@ async function setupCodegraph(platformsRequested, { target, dryRun }) {
   }
 }
 
-async function installOpenCode(target, dryRun) {
+async function installOpenCode(target, dryRun, modelSelections) {
   const root = path.join(target, ".opencode");
   await copyDirectory(path.join(sourceRoot, "agents"), path.join(root, "agents"), dryRun);
   if (!dryRun) {
-    for (const role of Object.keys(claudeRoleModels)) {
+    for (const role of ROLE_ORDER) {
       const oldFile = path.join(root, "agents", `${role}.agent.md`);
       const newFile = path.join(root, "agents", `${role}.md`);
       if (await exists(oldFile)) await writeFile(newFile, await readFile(oldFile));
@@ -622,14 +634,7 @@ async function installOpenCode(target, dryRun) {
         await rm(oldFile);
       }
     }
-    // supervisor é subagent adicional — também normaliza .agent.md → .md se existir
-    const supOld = path.join(root, "agents", "supervisor.agent.md");
-    const supNew = path.join(root, "agents", "supervisor.md");
-    if (await exists(supOld)) {
-      await writeFile(supNew, await readFile(supOld));
-      const { rm } = await import("node:fs/promises");
-      await rm(supOld);
-    }
+    await applyOpenCodeSelections(root, modelSelections);
   }
   await copyDirectory(path.join(sourceRoot, "commands"), path.join(root, "commands"), dryRun);
   await copyDirectory(path.join(sourceRoot, "skills"), path.join(root, "skills"), dryRun);
@@ -679,19 +684,14 @@ async function installOpenCode(target, dryRun) {
   return root;
 }
 
-async function installClaude(target, dryRun) {
+async function installClaude(target, dryRun, modelSelections) {
   const root = path.join(target, ".claude");
+  const roleModels = resolveRoleModels(modelSelections, claudeRoleModels);
   if (!dryRun) {
     await mkdir(path.join(root, "agents"), { recursive: true });
-    for (const role of Object.keys(claudeRoleModels)) {
+    for (const role of ROLE_ORDER) {
       const body = (await agentBody(role)).replaceAll("task()", "Agent tool");
-      await writeFile(path.join(root, "agents", `${role}.md`), `---\n${claudeFrontmatter(role)}\n---\n\n${body}\n`);
-    }
-    // supervisor para Claude também
-    if (await exists(path.join(sourceRoot, "agents", "supervisor.agent.md"))) {
-      const supBody = (await readFile(path.join(sourceRoot, "agents", "supervisor.agent.md"), "utf8")).split(/^---\s*$/m).slice(2).join("---").trim().replaceAll("task()", "Agent tool");
-      const supFm = `name: supervisor\ndescription: ${descriptions.supervisor}\nmodel: haiku\nmaxTurns: 15`;
-      await writeFile(path.join(root, "agents", "supervisor.md"), `---\n${supFm}\n---\n\n${supBody}\n`);
+      await writeFile(path.join(root, "agents", `${role}.md`), `---\n${claudeFrontmatter(role, roleModels)}\n---\n\n${body}\n`);
     }
     await mkdir(path.join(root, "commands"), { recursive: true });
     await writeFile(path.join(root, "commands", "sdd-harness.md"), await readFile(path.join(sourceRoot, "platforms", "claude", "sdd-harness-command.md")));
@@ -717,19 +717,17 @@ async function installClaude(target, dryRun) {
   return root;
 }
 
-async function installCodex(target, dryRun) {
+async function installCodex(target, dryRun, modelSelections) {
   const root = path.join(target, ".codex");
+  const roleModels = resolveRoleModels(modelSelections, codexRoleModels);
   if (!dryRun) {
     await mkdir(path.join(root, "roles"), { recursive: true });
-    for (const role of Object.keys(claudeRoleModels)) {
+    for (const role of ROLE_ORDER) {
       await writeFile(path.join(root, "roles", `${role}.md`), `${await agentBody(role)}\n`);
-    }
-    if (await exists(path.join(sourceRoot, "agents", "supervisor.agent.md"))) {
-      await writeFile(path.join(root, "roles", "supervisor.md"), `${await agentBody("supervisor")}\n`);
     }
     await writeFile(
       path.join(root, "sdd-harness.json"),
-      `${JSON.stringify({ provider: "openai", roleModels: codexRoleModels }, null, 2)}\n`,
+      `${JSON.stringify({ provider: "openai", roleModels }, null, 2)}\n`,
     );
     await mkdir(path.join(root, "skills", "sdd-harness"), { recursive: true });
     await writeFile(path.join(root, "skills", "sdd-harness", "SKILL.md"), await readFile(path.join(sourceRoot, "platforms", "codex", "SKILL.md")));
@@ -747,14 +745,26 @@ async function installCodex(target, dryRun) {
 }
 
 async function main() {
-  const { selected, target, dryRun, rtk, codegraph } = parseArgs(process.argv.slice(2));
+  const { selected, target, dryRun, rtk, codegraph, modelPicker } = parseArgs(process.argv.slice(2));
   console.log(`${dryRun ? "Simulação" : "Instalando"} SDD Harness em ${target}`);
 
   if (rtk.only) {
     console.log("--rtk-only: pulando instalação de artefatos (agents/commands/skills/hooks)");
   } else {
+    const interactive = modelPicker && Boolean(process.stdin.isTTY && process.stdout.isTTY);
+    if (!modelPicker) console.log("Modelos: padrão da squad (--no-model-picker)");
+    else if (!interactive && !dryRun) console.log("Modelos: padrão da squad (sem TTY para escolha interativa)");
+
+    const modelSelections = modelPicker
+      ? await selectModels({ platforms: selected, sourceRoot, dryRun, interactive })
+      : {};
+
     for (const platform of selected) {
-      const output = await ({ opencode: installOpenCode, claude: installClaude, codex: installCodex }[platform])(target, dryRun);
+      const output = await ({ opencode: installOpenCode, claude: installClaude, codex: installCodex }[platform])(
+        target,
+        dryRun,
+        modelSelections[platform],
+      );
       console.log(`✓ ${platform}: ${output}`);
     }
   }

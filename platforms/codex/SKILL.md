@@ -1,13 +1,13 @@
 ---
 name: sdd-harness
-description: Execute o Harness V2 para fluxos feature, project ou bugfix, usando os 5 papéis + hooks versionados deste pacote (checker removido).
+description: Execute o Harness V2 para fluxos feature, project ou bugfix, usando os 5 papéis + supervisor (hook) e hooks versionados deste pacote (checker removido).
 ---
 
 # Harness V2 para Codex
 
 Use este skill quando o pedido envolver uma feature, projeto novo ou bugfix.
 Leia `../../roles/harness.md` e siga seu pipeline. Os cartões de papel estão em
-`../../roles/{planner,builder,reviewer,shipper}.md` (checker removido — guard rails em `hooks/guard_rails.py`). O roteamento de
+`../../roles/{planner,builder,reviewer,shipper,supervisor}.md` (checker removido — guard rails em `hooks/guard_rails.py`). O roteamento de
 modelos está em `../../sdd-harness.json`.
 
 ## Regras de adaptação

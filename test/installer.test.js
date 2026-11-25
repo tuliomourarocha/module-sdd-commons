@@ -12,7 +12,11 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 
 test("instala adaptadores com os provedores esperados", async () => {
   const target = await mkdtemp(path.join(tmpdir(), "sdd-harness-test-"));
-  await run(process.execPath, ["bin/sdd-harness.js", "--all", "--target", target], { cwd: projectRoot });
+  await run(
+    process.execPath,
+    ["bin/sdd-harness.js", "--all", "--target", target, "--no-model-picker", "--no-rtk", "--no-codegraph"],
+    { cwd: projectRoot },
+  );
   const claudeHarness = await readFile(path.join(target, ".claude", "agents", "harness.md"), "utf8");
   const codexRouting = JSON.parse(await readFile(path.join(target, ".codex", "sdd-harness.json"), "utf8"));
 
@@ -43,10 +47,12 @@ test("instala adaptadores com os provedores esperados", async () => {
     assert.ok(!declared.startsWith("console-openai/"), `${role} não pode depender de crédito OpenAI`);
     assert.ok(!declared.startsWith("opencode/"), `${role} não pode usar o tier free do Zen (cota esgota e trava o ciclo)`);
   }
+  const openCodeSupervisor = await readFile(path.join(target, ".opencode", "agents", "supervisor.md"), "utf8");
+  assert.match(openCodeSupervisor, /^model: opencode-go\/glm-5\.3-flash$/m);
   assert.match(claudeHarness, /model: haiku/);
   assert.deepEqual(codexRouting.roleModels, {
     harness: "gpt-5.6-luna", planner: "gpt-5.6-sol", builder: "gpt-5.6-sol",
-    reviewer: "gpt-5.6-terra", shipper: "gpt-5.6-terra",
+    reviewer: "gpt-5.6-terra", shipper: "gpt-5.6-terra", supervisor: "gpt-5.6-terra",
   });
   assert.equal((await stat(path.join(target, ".codex", "skills", "sdd-harness", "SKILL.md"))).isFile(), true);
   // 5 macros (checker removido) + supervisor (hook final) = 6

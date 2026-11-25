@@ -114,7 +114,11 @@ Opções:
 
 ```bash
 --no-codegraph            # não instala codegraph/ast-grep nem registra o MCP
+--no-model-picker         # não pergunta modelos; usa o padrão da squad
 ```
+
+O seletor de modelos só abre em terminal interativo. Em CI, `--dry-run` ou
+`--no-model-picker`, a instalação segue determinística com o padrão por papel.
 
 Antes de publicar, é possível testar o binário localmente:
 
@@ -128,19 +132,30 @@ do módulo. Troque-o por uma tag para instalações reproduzíveis, por exemplo
 `#v2.1.0`.
 
 `install.sh` permanece disponível como compatibilidade para instalações antigas
-do OpenCode.
+do OpenCode. O seletor interativo de modelos faz parte do CLI `sdd-harness`; o
+script legado mantém o padrão da squad.
 
-### Política de modelos
+### Política e escolha de modelos
 
-O instalador decide os modelos por plataforma: no OpenCode o cenário é de custo-benefício
-no plano **OpenCode Go** (`opencode-go/*`) — `harness`/`shipper` em `gpt-6-luna`,
-`planner`/`supervisor` em `glm-5.3-flash` e `builder`/`reviewer` em `claude-haiku-5-5`;
-o Zen free (`opencode/big-pickle` no harness) foi testado e descartado porque a cota
-esgota e trava o ciclo, e `console-openai` foi abandonado por
-cobrar crédito da organização OpenAI (`credit_balance_exhausted`). Claude
-Code usa aliases Anthropic (`haiku`/`sonnet`); e
-Codex grava o roteamento GPT-5.6 (Luna, Terra e Sol) por papel em
-`.codex/sdd-harness.json`. Não há escolha manual de modelos durante a instalação. Os detalhes estão em
+O instalador continua com um padrão por plataforma — no OpenCode o cenário é de
+custo-benefício no plano **OpenCode Go** (`opencode-go/*`) — `harness`/`shipper` em
+`gpt-6-luna`, `planner`/`supervisor` em `glm-5.3-flash` e `builder`/`reviewer` em
+`claude-haiku-5-5`; no Claude Code, aliases Anthropic (`haiku`/`sonnet`); no Codex,
+o roteamento GPT-5.6 (Luna, Terra e Sol) gravado em `.codex/sdd-harness.json`.
+
+Em terminal interativo, antes de copiar os artefatos o instalador **lista os modelos
+disponíveis do harness escolhido, por agente**, ordenados por qualidade ×
+custo-benefício para aquele papel. O recomendado aparece destacado em verde com `★`.
+Enter aceita todos os recomendados; `r` revisa agente por agente; `t` mostra a lista
+completa; e o usuário pode escolher outro modelo ou manter o padrão. A escolha é
+aplicada no frontmatter de cada agente OpenCode, no `model:` do Claude Code e no
+`sdd-harness.json` do Codex.
+
+Sem TTY (CI, pipe) ou com `--no-model-picker`, a instalação usa o padrão da squad.
+No OpenCode a lista vem de `opencode models` + catálogo local do harness; no Claude
+Code, dos aliases resolvidos pela conta; no Codex, do catálogo OpenAI conhecido e do
+modelo já configurado em `~/.codex/config.toml`. Preços são referência — no plano
+assinado o que pesa é a cota. Os detalhes e o racional de ranking estão em
 [`platforms/model-policy.md`](platforms/model-policy.md).
 
 ### Via APM (Agent Package Manager)
@@ -177,7 +192,7 @@ O `harness` (V2) orquestra 3 fluxos com 4 macros + hooks (`planner`, `builder`, 
 | `planner` | Planeja — PRD, PLAN, arquitetura + cria o backlog no GitHub (issues/épics, labels de prioridade, milestones de sprints) | `po-assistant`, `grill-me`, `mermaid-diagrams`, `clean-architecture`, `github-cli` |
 | `builder` | Implementa — full-stack + infra mínima + move o card para execução (nunca cria) | `clean-architecture`, `nextjs-app-router-patterns`, `supabase-postgres-best-practices` |
 | `reviewer` | Revisa — só arquitetura técnica/software | `clean-architecture`, `solid`, `clean-code` |
-| `shipper` (hook) | Finaliza — branch de `origin/develop` atualizada, PR `--base develop` (nunca main), git/CI/issue-close (encerra a issue, nunca cria)/STATE/HANDOFF via `hooks/shipper.py` + `plugins/shipper.ts` (fallback minimal) | `state-manager`, `git-commit`, `github-cli` **obrigatória no fallback** (carregar antes de qualquer operação de issues) |
+| `shipper` (hook) | Finaliza — baixa/atualiza a develop e cria branch a partir dela (nunca push direto na develop/main), PR `--base develop` (nunca main), git/CI/issue-close (encerra a issue, nunca cria)/STATE/HANDOFF via `hooks/shipper.py` + `plugins/shipper.ts` (fallback minimal) | `state-manager`, `git-commit`, `github-cli` **obrigatória no fallback** (carregar antes de qualquer operação de issues) |
 
 > **Guard rails** (lint, testes, ruff/pylance/eslint/biome, tsc) são hooks determinísticos (`hooks/guard_rails.py`) — `checker` removido.
 
@@ -222,7 +237,7 @@ O orquestrador executa:
 1. **Planner** → discovery + `PRD.md` + `PLAN.md` + `arch/` (memória — nunca em disco) + cria o backlog no GitHub (issues/épics, labels de prioridade, milestones de sprints; números em memória)
 2. **Builder** → implementa + resumo em memória (nunca `SUMMARY.md` em disco) + move a issue para execução (Status `In Progress`; nunca cria issue) — `hooks/guard_rails.py` valida per-file e bloqueia `SUMMARY.md`/`REVIEW.md`/`VALIDATION.md`
 3. **Reviewer** → parecer de arquitetura em memória (nunca `REVIEW.md`/`VALIDATION.md` em disco, sem lint — hooks fazem)
-4. **Shipper(hook)** → fetch develop + branch de `origin/develop` atualizada + commit + PR `--base develop` (nunca main) + CI check + `.planning/STATE.md`/`HANDOFF.md` + issue close (encerra a issue → comentário do PR + Status `Done` no Project; instrução de `gh auth login` se sem auth; nunca cria issue) (via `hooks/shipper.py`)
+4. **Shipper(hook)** → fetch develop + atualiza a develop local + branch de trabalho a partir da develop ATUALIZADA (nunca push direto na develop/main) + commit + PR `--base develop` (nunca main) + CI check + `.planning/STATE.md`/`HANDOFF.md` + issue close (encerra a issue → comentário do PR + Status `Done` no Project; instrução de `gh auth login` se sem auth; nunca cria issue) (via `hooks/shipper.py`)
 
 ### Fluxo 2: Novo Projeto (`project`)
 

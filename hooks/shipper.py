@@ -16,8 +16,13 @@ Acionamento:
   - Em Claude: `.claude/settings.json` → hooks.PostToolUse / Stop (opcional)
 
 O que faz (determinístico, sem LLM):
-  - Git: fetch origin (base atualizada), branch de trabalho criada a partir de
-    `origin/<pr_base>` (default `develop`, via `--pr-base`/`SDD_PR_BASE`), commit
+  - Git: SEMPRE baixa a develop (`git fetch origin <pr_base>`, default `develop`, via
+    `--pr-base`/`SDD_PR_BASE`), atualiza a develop local (ff-only) e cria branch de
+    trabalho A PARTIR DA DEVELOP ATUALIZADA antes de commitar — em develop/main OU em
+    feature branch existente (política "branch nova da develop": commits anteriores
+    ficam na branch anterior). Commits já feitos direto na develop são movidos para a
+    branch nova e a develop local é realinhada a `origin/<base>`. NUNCA push direto na
+    develop/main (push/PR bloqueados se a branch final for a base). Commit
     conventional, push
   - PR: `gh pr create --base <pr_base> --head <branch>` (develop, nunca main por
     default) ou atualiza se já existe (corrige a base se divergente); `gh pr checks`
@@ -114,7 +119,7 @@ def get_git_status(repo: Path) -> dict[str, Any]:
 def ensure_planning_dir(repo: Path):
     (repo / ".planning").mkdir(parents=True, exist_ok=True)
 
-# ── Branch base — work branch nasce de origin/<base> ATUALIZADA (default develop) ──
+# ── Branch base — SEMPRE: baixa a develop, atualiza e cria branch a partir dela ──
 def git_remote_default_branch(repo: Path) -> str:
     code, out, _ = run(["git", "symbolic-ref", "refs/remotes/origin/HEAD"], cwd=repo)
     if code == 0 and out.strip():
@@ -135,44 +140,147 @@ def git_fetch_base(repo: Path, base: str) -> str:
     code, out, err = run(["git", "fetch", "origin", base], cwd=repo, timeout=90)
     return "" if code == 0 else f"git fetch origin {base} falhou ({(out+err).strip()[:200]}) — branch pode estar desatualizada"
 
+def update_local_base(repo: Path, base: str) -> tuple[bool, str]:
+    """Atualiza a `<base>` LOCAL a partir de `origin/<base>` (ff-only via refspec).
+
+    `git fetch origin <base>:<base>` atualiza/cria a branch local em fast-forward;
+    recusa não-ff (divergência) e recusa branch checked-out — casos tratados pelo
+    chamador (ff-merge, realinhamento ou retry pós-switch).
+    """
+    code, out, err = run(["git", "fetch", "origin", f"{base}:{base}"], cwd=repo, timeout=90)
+    if code == 0:
+        return True, ""
+    msg = (out + err).strip()
+    low = msg.lower()
+    if "checked out" in low or "check out" in low:
+        return False, "checked-out — atualizada no fluxo da branch de trabalho (ff-merge/realinhamento)"
+    if "non-fast-forward" in low or "not a fast-forward" in low or "refusing to fetch" in low:
+        return False, f"divergiu de `origin/{base}` — não atualizada automaticamente ({msg[:160]})"
+    return False, f"atualização falhou: {msg[:160]}"
+
 def branch_slug(msg: str) -> str:
     txt = (msg or "").strip().splitlines()[0] if (msg or "").strip() else "shipper"
     txt = re.sub(r"^[a-z]+(\([^)]*\))?[!:]?:\s*", "", txt, flags=re.IGNORECASE)
     slug = re.sub(r"-{2,}", "-", re.sub(r"[^a-z0-9]+", "-", txt.lower())).strip("-")
     return slug[:32] or "shipper"
 
-def prepare_feature_branch(repo: Path, base: str, commit_msg: str, dry_run: bool) -> dict[str, Any]:
-    """Branch de trabalho a partir de `origin/<base>` APÓS fetch (atualizada).
+def _work_branch_name(commit_msg: str) -> str:
+    prefix = "fix" if commit_msg.strip().lower().startswith("fix") else "chore" if commit_msg.strip().lower().startswith("chore") else "feat"
+    return f"{prefix}/{branch_slug(commit_msg)}-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S')}"
 
-    - Em `<base>`/`main`/`master` com alterações: cria `<feat|fix|chore>/<slug>-<ts>` de origin/<base> (muda de branch carregando alterações uncommitted).
-    - Em feature branch: NÃO rebasa automaticamente — apenas reporta quantos commits atrás de origin/<base> (honestidade).
+def _ahead_behind(repo: Path, left: str, right: str) -> tuple[int, int]:
+    """(commits só em `left`, commits só em `right`) via rev-list --left-right --count; (-1, -1) se falhar."""
+    code, out, _ = run(["git", "rev-list", "--left-right", "--count", f"{left}...{right}"], cwd=repo)
+    parts = out.split() if code == 0 else []
+    if len(parts) == 2 and all(p.isdigit() for p in parts):
+        return int(parts[0]), int(parts[1])
+    return -1, -1
+
+def prepare_feature_branch(repo: Path, base: str, commit_msg: str, dry_run: bool) -> dict[str, Any]:
+    """SEMPRE: baixa a `<base>` (develop), atualiza-a e cria branch de trabalho A PARTIR
+    DELA antes de commitar e fazer push — nunca push direto na `<base>`/main.
+
+    Fluxo determinístico:
+    1. `git fetch origin <base>` — baixa a develop mais recente da origin.
+    2. Atualiza a `<base>` local (ff-only) quando possível.
+    3. Cria `<feat|fix|chore>/<slug>-<ts>` a partir da develop ATUALIZADA
+       (`refs/remotes/origin/<base>`), carregando as alterações não commitadas —
+       em develop/main OU em feature branch (política "branch nova da develop":
+       commits anteriores ficam na branch anterior).
+    4. Commits já feitos DIRETO na develop: movidos para a branch nova e a develop
+       local é realinhada a `origin/<base>` — push nunca sai direto da develop.
+
+    `blocked_base=True` sinaliza que a branch final continua sendo a base (falha na
+    criação) — o `main()` bloqueia push/PR (nunca envia a develop/main direto).
     """
-    res: dict[str, Any] = {"base": base, "branch": get_git_branch(repo), "created": False, "notes": []}
+    res: dict[str, Any] = {"base": base, "branch": get_git_branch(repo), "created": False, "updated_base": False, "blocked_base": False, "notes": []}
     cur = res["branch"]
     if dry_run:
-        if cur in (base, "main", "master"):
-            res["notes"].append(f"dry-run: branch de trabalho de origin/{base} não criada")
+        res["notes"].append(f"dry-run: `{base}` não baixada/atualizada e branch de trabalho a partir dela não criada")
         return res
+
+    # 1. Baixa a develop (fonte de verdade da origin)
     fetch_note = git_fetch_base(repo, base)
     if fetch_note:
         res["notes"].append(fetch_note)
+    origin_tip = f"refs/remotes/origin/{base}"
+    code_o, _, _ = run(["git", "rev-parse", "--verify", origin_tip], cwd=repo)
+    if code_o != 0:
+        res["blocked_base"] = cur in (base, "main", "master")
+        res["notes"].append(f"sem `origin/{base}` — branch a partir da `{base}` atualizada não criada; permanecendo em `{cur}`")
+        return res
+
+    info = get_git_status(repo)
+    name = _work_branch_name(commit_msg)
+
+    def _switch_fail_note(out: str, err: str) -> None:
+        res["notes"].append(f"falha ao criar branch `{name}` a partir de `origin/{base}`: {(out+err).strip()[:200]} — permanecendo em `{cur}`")
+        res["branch"] = get_git_branch(repo)
+        res["blocked_base"] = res["branch"] in (base, "main", "master")
+
     if cur in (base, "main", "master"):
-        if not get_git_status(repo)["has_changes"]:
-            res["notes"].append(f"sem alterações — branch de trabalho não criada (em `{cur}`)")
-            return res
-        prefix = "fix" if commit_msg.strip().lower().startswith("fix") else "chore" if commit_msg.strip().lower().startswith("chore") else "feat"
-        name = f"{prefix}/{branch_slug(commit_msg)}-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S')}"
-        code, out, err = run(["git", "switch", "-c", name, f"refs/remotes/origin/{base}"], cwd=repo)
+        ahead, behind = _ahead_behind(repo, "HEAD", origin_tip)
+        if info["has_changes"]:
+            # 3. branch nova a partir da develop atualizada, carregando as alterações
+            code, out, err = run(["git", "switch", "-c", name, origin_tip], cwd=repo)
+            if code == 0:
+                res["branch"] = name; res["created"] = True
+                res["notes"].append(f"branch `{name}` criada a partir da `{base}` ATUALIZADA (`origin/{base}` baixado da origin) — alterações pendentes carregadas")
+                # fora da base agora: completa a atualização da develop local (ff-only)
+                ok_u, note_u = update_local_base(repo, base)
+                res["updated_base"] = ok_u
+                if note_u:
+                    res["notes"].append(f"develop `{base}` local: {note_u}")
+            else:
+                _switch_fail_note(out, err)
+        elif ahead > 0:
+            # 4. commits direto na develop: move para a branch e realinha a develop — nunca push direto
+            code, out, err = run(["git", "switch", "-c", name], cwd=repo)
+            if code == 0:
+                res["branch"] = name; res["created"] = True
+                res["notes"].append(f"commits diretos na `{base}` movidos para a branch `{name}` (a partir da `{base}`) — push nunca sai direto da `{base}`")
+                if behind > 0:
+                    res["notes"].append(f"atenção: `{base}` divergiu da origin ({behind} commit(s) atrás) — `{name}` não contém esses commits; rebase/merge manual pode ser necessário")
+                code_r, out_r, err_r = run(["git", "branch", "-f", base, origin_tip], cwd=repo)
+                res["updated_base"] = code_r == 0
+                if code_r == 0:
+                    res["notes"].append(f"`{base}` local realinhada a `origin/{base}` (commits preservados em `{name}`)")
+                else:
+                    res["notes"].append(f"falha ao realinhar `{base}` local a `origin/{base}`: {(out_r+err_r).strip()[:160]} — realinhe manualmente (`git switch {base} && git reset --hard origin/{base}`)")
+            else:
+                _switch_fail_note(out, err)
+        else:
+            # clean e sem commits próprios — atualiza a develop local se estiver atrás; nada a enviar
+            if behind > 0:
+                code_m, out_m, err_m = run(["git", "merge", "--ff-only", origin_tip], cwd=repo)
+                if code_m == 0:
+                    res["updated_base"] = True
+                    res["notes"].append(f"`{base}` local atualizada (fast-forward) para `origin/{base}`")
+                else:
+                    res["notes"].append(f"`{base}` local não atualizada (ff-only falhou): {(out_m+err_m).strip()[:160]}")
+            res["notes"].append(f"sem alterações — nada a enviar (em `{cur}`)")
+        return res
+
+    # Feature branch — política "branch nova da develop": atualiza a develop local e,
+    # havendo alterações pendentes, cria branch nova a partir da develop atualizada
+    ok_u, note_u = update_local_base(repo, base)
+    res["updated_base"] = ok_u
+    if note_u:
+        res["notes"].append(f"develop `{base}` local: {note_u}")
+    if info["has_changes"]:
+        code, out, err = run(["git", "switch", "-c", name, origin_tip], cwd=repo)
         if code == 0:
             res["branch"] = name; res["created"] = True
-            res["notes"].append(f"branch `{name}` criada a partir de `origin/{base}` (atualizada via fetch)")
+            res["notes"].append(f"branch `{name}` criada a partir da `{base}` ATUALIZADA — alterações pendentes carregadas")
+            res["notes"].append(f"commits anteriores de `{cur}` permanecem na branch anterior (branch nova por ciclo)")
         else:
-            res["notes"].append(f"falha ao criar branch `{name}` de origin/{base}: {(out+err).strip()[:200]} — permanecendo em `{cur}`")
-            res["branch"] = get_git_branch(repo)
-        return res
-    code, out, _ = run(["git", "rev-list", "--count", f"{cur}..refs/remotes/origin/{base}"], cwd=repo)
-    if code == 0 and out.strip().isdigit() and int(out.strip()) > 0:
-        res["notes"].append(f"branch `{cur}` está {int(out.strip())} commit(s) atrás de `origin/{base}` — rebase/merge manual recomendado (hook não rebasa)")
+            _switch_fail_note(out, err)
+    else:
+        ahead, _behind = _ahead_behind(repo, "HEAD", origin_tip)
+        if ahead > 0:
+            res["notes"].append(f"sem alterações pendentes — `{cur}` tem {ahead} commit(s) ainda não em `{base}`; push dela (branch não recriada, commits preservados)")
+        else:
+            res["notes"].append(f"sem alterações — nada a enviar (em `{cur}`)")
     return res
 
 def load_context(context_file: str | None) -> dict[str, Any]:
@@ -207,7 +315,12 @@ def generate_handoff(repo: Path, git_info: dict[str, Any], context: dict[str, An
     branch = git_info.get("branch", "main")
     bp = branch_prep or {}
     base = bp.get("base") or getattr(args, "pr_base", "develop")
-    branch_disp = f"`{branch}`" + (f" (criada de `origin/{base}` atualizada)" if bp.get("created") else f" ← `origin/{base}`")
+    extras = []
+    if bp.get("created"):
+        extras.append(f"criada de `origin/{base}` atualizada")
+    if bp.get("updated_base"):
+        extras.append(f"`{base}` local baixada/atualizada da origin")
+    branch_disp = f"`{branch}`" + (f" ({'; '.join(extras)})" if extras else f" ← `origin/{base}`")
     diff_stat = git_info.get("diff_stat", "")[:4000]
     diff_names = git_info.get("diff_names", [])
     # contexto injetado (PRD/PLAN + resumo/parecer) se houver — nunca arquivos SUMMARY/REVIEW/VALIDATION
@@ -324,6 +437,8 @@ def generate_state(repo: Path, git_info: dict[str, Any], context: dict[str, Any]
     lines.append(f"# STATE — {now}")
     lines.append("")
     branch_disp = f"`{branch}`" + (f" (criada de `origin/{base}` atualizada)" if bp.get("created") else "")
+    if bp.get("updated_base"):
+        branch_disp += f" ({base} local baixada/atualizada da origin)"
     lines.append(f"**Flow:** `{flow}` | **Gate:** `done` | **Branch:** {branch_disp}")
     lines.append(f"**PR base:** `{base}` (develop, nunca main) | **Repo:** `{args.repo_slug}` | **Gerado por:** `hooks/shipper.py`")
     if pr_url:
@@ -812,13 +927,22 @@ def main():
     if branch_prep["branch"] != git_info.get("branch"):
         git_info = get_git_status(repo)  # branch mudou — recarregar status/diff
 
+    # Push/PR bloqueados se a branch final ainda for a base — shipper NUNCA envia a develop/main direto
+    push_blocked = bool(branch_prep.get("blocked_base")) and not args.dry_run
+    if push_blocked:
+        print(f"⛔ Push/PR bloqueados: branch final é `{branch_prep['branch']}` (base `{pr_base}`) — crie a branch manualmente e reexecute o shipper")
+
     # 1. Git commit
     commit_ok, commit_msg_out = do_git_commit(repo, commit_msg, args.dry_run)
     print(f"{'✅' if commit_ok else '❌'} Git commit: {commit_msg_out}")
 
     # 2. Push
-    push_ok, push_out = do_git_push(repo, git_info.get("branch", pr_base), args.dry_run)
-    print(f"{'✅' if push_ok else '⚠️'} Git push: {push_out}")
+    if push_blocked:
+        push_ok, push_out = False, f"push bloqueado: branch final é `{branch_prep['branch']}` (base `{pr_base}`) — shipper nunca faz push direto na develop/main"
+        print(f"⛔ Git push: {push_out}")
+    else:
+        push_ok, push_out = do_git_push(repo, git_info.get("branch", pr_base), args.dry_run)
+        print(f"{'✅' if push_ok else '⚠️'} Git push: {push_out}")
 
     # 3. Gera HANDOFF e STATE (sempre, mesmo se git falhou)
     handoff_md = generate_handoff(repo, git_info, context, args, branch_prep)
@@ -833,9 +957,13 @@ def main():
         sys.exit(1)
 
     # 4. PR — explícito para a base develop (`--base develop --head <branch>`), nunca para main
-    pr_title = args.pr_title.strip() or commit_msg.split("\n")[0][:80]
-    pr_ok, pr_out, pr_url = do_gh_pr(repo, pr_title, handoff_path, git_info.get("branch", pr_base), pr_base, args.dry_run)
-    print(f"{'✅' if pr_ok else '⚠️'} PR ({pr_base} ← {git_info.get('branch', pr_base)}): {pr_out}")
+    if push_blocked:
+        pr_ok, pr_out, pr_url = False, f"PR bloqueado: branch final é `{branch_prep['branch']}` (base `{pr_base}`)", None
+        print(f"⛔ PR: {pr_out}")
+    else:
+        pr_title = args.pr_title.strip() or commit_msg.split("\n")[0][:80]
+        pr_ok, pr_out, pr_url = do_gh_pr(repo, pr_title, handoff_path, git_info.get("branch", pr_base), pr_base, args.dry_run)
+        print(f"{'✅' if pr_ok else '⚠️'} PR ({pr_base} ← {git_info.get('branch', pr_base)}): {pr_out}")
     if pr_url:
         state_pr_url = pr_url
 
@@ -884,6 +1012,8 @@ def main():
         import datetime
 
         status = "success" if commit_ok and pr_ok else "critical" if not commit_ok else "warn"
+        if push_blocked:
+            status = "critical"  # push/PR bloqueados — branch final é a base (develop/main)
         if args.fail_on_ci and ci_pass is False:
             status = "critical"
         if gh_status == "failed" and status == "success":
@@ -895,6 +1025,8 @@ def main():
             "branch": git_info.get("branch"),
             "pr_base": pr_base,
             "branch_created": branch_prep.get("created"),
+            "base_updated": branch_prep.get("updated_base"),
+            "push_blocked": push_blocked,
             "dry_run": args.dry_run,
             "commit_ok": commit_ok,
             "push_ok": push_ok,
@@ -934,7 +1066,7 @@ def main():
         pass
 
     # Exit codes
-    if not commit_ok:
+    if not commit_ok or push_blocked:
         sys.exit(2)
     if args.fail_on_ci and ci_pass is False:
         sys.exit(2)

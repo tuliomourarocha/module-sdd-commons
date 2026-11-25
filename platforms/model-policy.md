@@ -1,23 +1,60 @@
 # Política de modelos — Harness V2
 
-Cada adaptador tem seu próprio provedor. Não há escolha de modelo global nem
-modelo pago por fora gravado nos agentes.
+Cada adaptador tem seu próprio provedor. O instalador traz um **padrão por papel**
+e, em terminal interativo, oferece a lista de modelos disponíveis do harness
+escolhido para o usuário aceitar ou trocar. A escolha é sempre opcional: Enter
+mantém a recomendação da squad.
 
 | Harness | Provedor | Resolução de modelo |
 | --- | --- | --- |
-| OpenCode | OpenCode Go | Todos os macros em `opencode-go/*`; `opencode/*` (Zen free) foi testado para o harness (`big-pickle`) e rejeitado: a cota esgota no meio do ciclo e trava o único papel que inicia tudo ("Free usage limit reached", 04/11/2026). |
-| Claude Code | Anthropic | Usa aliases `haiku` e `sonnet`, resolvidos pela conta. |
-| Codex | OpenAI | O instalador grava automaticamente o roteamento por papel em `.codex/sdd-harness.json`. |
+| OpenCode | OpenCode Go | Padrão em `opencode-go/*`; a lista vem de `opencode models` + catálogo local. `opencode/*` (Zen free) é oferecido, mas marcado com risco de cota: no harness, um `big-pickle` com cota esgotada trava o único papel que inicia tudo. |
+| Claude Code | Anthropic | Aliases `haiku`/`sonnet`/`opus`, resolvidos pela conta; o instalador pergunta por agente. |
+| Codex | OpenAI | Roteamento gravado em `.codex/sdd-harness.json`; a lista combina o catálogo OpenAI conhecido com o `model` já configurado em `~/.codex/config.toml`. |
 
-No Codex, `planner` e `builder` usam `gpt-5.6-sol`; `reviewer` e `shipper` usam
-`gpt-5.6-terra`; `harness` usa `gpt-5.6-luna`. No OpenCode o cenário é o de melhor
-custo-benefício dentro do plano OpenCode Go, cujos modelos de trabalho custam centavos
-por milhão de tokens; o único candidato free (Zen `opencode/big-pickle` para o harness)
-foi descartado porque a cota esgota e trava o ciclo. `checker` removido — guard rails são
-hooks determinísticos. A instalação aplica
-essa decisão, sem exigir escolha do usuário.
+No Codex, o padrão é `planner` e `builder` em `gpt-5.6-sol`; `reviewer`, `shipper` e
+`supervisor` em `gpt-5.6-terra`; `harness` em `gpt-5.6-luna`. No OpenCode o cenário é
+o de melhor custo-benefício dentro do plano OpenCode Go. `checker` removido — guard
+rails são hooks determinísticos.
 
-## Mapa por papel (OpenCode)
+## Seleção interativa (instalação)
+
+Quando `stdin` e `stdout` são TTY (e `--no-model-picker` não foi passado):
+
+1. O CLI detecta os modelos disponíveis por harness.
+2. Para cada agente, imprime até 8 opções ordenadas por qualidade × custo-benefício
+   para aquele papel, com preço de referência, contexto e variante sugerida.
+3. A recomendação da squad aparece em **verde** com `★ recomendado`.
+4. `Enter` aceita todos; `r` revisa agente por agente; `t` mostra a lista completa.
+   No modo de revisão, também é possível digitar o número ou o nome do modelo.
+
+Sem TTY, em `--dry-run` (apenas imprime) ou com `--no-model-picker`, a instalação
+aplica o padrão da squad sem perguntar. A escolha do OpenCode é gravada como
+`model:` + `variant:` no frontmatter (nunca no sufixo `#variante`); no Claude Code,
+no `model:` do agente; no Codex, em `.codex/sdd-harness.json`.
+
+### Como o ranking é calculado
+
+O instalador pontua cada modelo em cinco eixos — general, coding, instruction,
+speed e reliability — e combina com o custo:
+
+| Papel | Peso de qualidade | Peso de custo | Foco |
+| --- | --- | --- | --- |
+| `harness` | 35% | 65% | instrução e procedimento |
+| `planner` | 65% | 35% | raciocínio e contexto |
+| `builder` | 55% | 45% | coding e cache |
+| `reviewer` | 60% | 40% | leitura crítica e coding |
+| `shipper` | 35% | 65% | instrução e procedimento |
+| `supervisor` | 45% | 55% | saída longa e custo |
+
+Custo no OpenCode usa o preço por token (input + 3×output, aproximando uso de
+agente); no Claude/Codex assinados, usa uma classe relativa de cota. Modelos free,
+`preview`, `legacy` e `console-openai` recebem penalidade de risco; no `harness` e
+no `shipper`, free pesa mais porque a cota esgotada interrompe o ciclo. O padrão da
+squad recebe um pequeno bônus de fit para continuar no topo — ele é a recomendação
+curada, não um empate acidental. A pontuação é uma curadoria local aproximada; a
+lista completa (`t`) mostra todas as opções disponíveis para o usuário decidir.
+
+## Mapa por papel (OpenCode — padrão)
 
 | Papel | Modelo | Variante | Por quê | Custo por M tok (in/out) |
 | --- | --- | --- | --- | --- |
