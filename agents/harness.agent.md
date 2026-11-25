@@ -38,6 +38,10 @@ permissions:
   - action: read
     resource: "*/.planning/HANDOFF.md"
     effect: allow
+  # 4) Habilita skills discovery via find-skills para rtk/codegraph/caveman
+  - action: subagent
+    resource: find-skills
+    effect: allow
 ---
 
 # Harness — Orquestrador

@@ -2,7 +2,13 @@
   "$schema": "https://opencode.ai/config.json",
   "formatter": true,
   "lsp": true,
-  "plugin": [],
+  "plugin": [
+    {
+      "name": "rtk-visibility",
+      "hooks": ["tool.execute.before", "tool.execute.after"],
+      "description": "Shows ⟐ rtk ✓ footer on shell commands for token economy visibility"
+    }
+  ],
   "permission": {
     "edit": "allow",
     "bash": "allow",
