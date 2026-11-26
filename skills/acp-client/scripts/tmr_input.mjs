@@ -24,11 +24,11 @@ const state = {
   steering: null,  // { onLine(text) } — modo livre durante as fases
   line: "",
   closed: false,
-  display: null,   // fn(p) — no split screen, prompt/menu renderizam na coluna direita
+  display: null,   // fn(p) — no split screen, prompt/menu renderizam no rodapé da coluna esquerda
 };
 
-/** No split screen, prompts/menus renderizam via display fn (coluna direita)
- *  em vez de escrever no stdout esquerdo. fn(null) limpa. */
+/** No split screen, prompts/menus renderizam via display fn (rodapé da coluna
+ *  ESQUERDA — a direita fica só com o quadro de métricas). fn(null) limpa. */
 export function setPromptDisplay(fn) { state.display = fn; }
 const show = (p) => { if (state.display) state.display(p); };
 

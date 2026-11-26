@@ -9,8 +9,10 @@
  * - log(text): append no buffer esquerdo (suporta chunks sem \n — buffer de
  *   linha parcial; \r isolado vira quebra).
  * - setRight(lines): substitui o quadro direito (array de linhas com ANSI).
- * - setPrompt({question, typed, hint, menu}): quando um prompt TMR está ativo,
- *   o topo da coluna direita mostra a pergunta/estado (menus ↑↓ renderizam aí).
+ *   A coluna direita é SÓ métricas — issue/status, tokens/custo — nunca escolhas.
+ * - setPrompt({question, typed, hint, menu}): prompt TMR ativo renderiza como
+ *   overlay no RODAPÉ da coluna ESQUERDA (faz parte do processo: escolha do
+ *   harness, confirms, issue, modelo — tudo à esquerda, ao vivo).
  * - exit(): restaura o terminal principal, despeja TODO o log esquerdo no
  *   scrollback real e devolve o cursor.
  *
@@ -125,15 +127,45 @@ function render() {
   const visible = state.rows;
   const gutter = ui.paint.gray(" ┊ ");
   const rightBlock = buildRightBlock();
-  const leftStart = Math.max(0, state.left.length - visible);
+  // prompt TMR = overlay no RODAPÉ da coluna esquerda (processo à esquerda,
+  // métricas à direita) — o log esquerdo cede as últimas linhas a ele
+  const promptLines = buildPromptLines();
+  const logRows = Math.max(1, visible - promptLines.length);
+  const leftStart = Math.max(0, state.left.length - logRows);
   for (let r = 0; r < visible; r++) {
-    const l = clipAnsi(state.left[leftStart + r] ?? "", state.leftW).replace(/\t/g, "  ");
+    const isPrompt = r >= logRows;
+    const l = isPrompt
+      ? clipAnsi(promptLines[r - logRows] ?? "", state.leftW)
+      : clipAnsi(state.left[leftStart + r] ?? "", state.leftW).replace(/\t/g, "  ");
     const rLine = rightBlock[r] ?? "";
     const padL = " ".repeat(Math.max(0, state.leftW - visLen(l)));
     const padR = " ".repeat(Math.max(0, state.rightW - visLen(rLine)));
     rows.push(l + padL + gutter + rLine + padR + "\x1b[K");
   }
   process.stdout.write("\x1b[H\x1b[J" + rows.join("\n") + "\x1b[H");
+}
+
+/** Linhas do prompt TMR ativo (pergunta/echo/menu) — renderizam no rodapé da
+ *  coluna ESQUERDA. A coluna direita fica reservada só para o quadro de métricas. */
+function buildPromptLines() {
+  const p = state.prompt;
+  if (!p) return [];
+  const w = state.leftW;
+  const out = [];
+  out.push(ui.paint.gray("─".repeat(Math.max(1, w - 1))));
+  for (const ql of String(p.question ?? "").split("\n")) {
+    out.push(`${ui.paint.boldMagenta("❯ ")}${ui.paint.bold(clipAnsi(ql, w - 3))}`);
+  }
+  if (p.hint) out.push(ui.paint.gray(clipAnsi(p.hint, w - 1)));
+  if (p.kind === "select" && p.menu) {
+    // payload novo do tmr_input: {search, window:[{bullet,label}], footer}
+    if (p.menu.search) out.push(`${ui.paint.gray("buscar:")} ${ui.paint.bold(clipAnsi(p.menu.search, w - 12))}${ui.paint.gray("▌")}`);
+    for (const r of p.menu.window ?? []) out.push(`${r.bullet} ${clipAnsi(r.label, w - 4)}`);
+    if (p.menu.footer) out.push(ui.paint.gray(clipAnsi(p.menu.footer, w - 1)));
+  } else if (p.kind === "text" || p.kind === "confirm") {
+    out.push(p.typed ? `${ui.paint.bold(clipAnsi(p.typed, w - 2))}${ui.paint.gray("▌")}` : ui.paint.gray("▌"));
+  }
+  return out.slice(0, Math.max(4, Math.floor(state.rows / 2)));
 }
 
 function buildRightBlock() {
@@ -144,25 +176,7 @@ function buildRightBlock() {
   const bar = border("┌" + "─".repeat(w - 2) + "┐");
   const mid = (s) => border("│") + " " + s + " ".repeat(Math.max(0, w - 3 - visLen(s))) + border("│");
   const bottom = border("└" + "─".repeat(w - 2) + "┘");
-  const p = state.prompt;
-  if (p) {
-    out.push(mid(ui.paint.boldMagenta("PROMPT TMR")));
-    if (p.question) {
-      for (const ql of String(p.question).split("\n")) out.push(mid(clipAnsi(ql, w - 4)));
-    }
-    if (p.hint) out.push(mid(ui.paint.gray(clipAnsi(p.hint, w - 4))));
-    if (p.kind === "select" && p.menu) {
-      // payload novo do tmr_input: {search, window:[{bullet,label}], footer}
-      if (p.menu.search) out.push(mid(`${ui.paint.gray("buscar:")} ${ui.paint.bold(clipAnsi(p.menu.search, w - 12))}${ui.paint.gray("▌")}`));
-      for (const r of p.menu.window ?? []) {
-        out.push(mid(`${r.bullet} ${clipAnsi(r.label, w - 6)}`));
-      }
-      if (p.menu.footer) out.push(mid(ui.paint.gray(clipAnsi(p.menu.footer, w - 4))));
-    } else if (p.kind === "text" || p.kind === "confirm") {
-      out.push(mid(p.typed ? ui.paint.bold(clipAnsi(p.typed, w - 4)) : ui.paint.gray("⌷")));
-    }
-    out.push(bottom);
-  }
+  // SÓ métricas — escolhas/prompts vivem no rodapé da coluna esquerda
   for (const l of state.right.slice(0, Math.max(0, visibleRows() - out.length))) out.push(l);
   return out.slice(0, visibleRows()).map((l) => row(clipAnsi(l, w)));
 }

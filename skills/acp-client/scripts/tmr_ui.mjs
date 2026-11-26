@@ -169,6 +169,7 @@ export function metricsBoxLines(metrics, models, { issue = null, status = "", wi
   const visLen = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, "").length;
   const mid = (s) => paint.gray("│") + " " + s + " ".repeat(Math.max(0, width - 3 - visLen(s))) + paint.gray("│");
   const cell = (s, w) => { s = String(s ?? ""); return s + " ".repeat(Math.max(0, w - visLen(s))); };
+  const border = paint.brightBlue;
   const lines = [];
   if (issue) {
     lines.push(mid(`${paint.bold("ISSUE")}  ${paint.boldCyan(`#${issue.number ?? "manual"}`)} ${paint.dim(String(issue.title ?? "").slice(0, 24))}`));
