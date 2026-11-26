@@ -161,43 +161,79 @@ export function metricsPanel(metrics, models) {  const t = metrics.totals();
   ]);
 }
 
-/** Linhas do quadro da squad — conteúdo SEM borda (a moldura ┌─┐/│/└─┘ e a
- *  centralização vertical são aplicadas pelo buildRightBlock do split screen). */
-const ROLES_HINT = ["planner", "builder", "reviewer", "shipper", "supervisor"];
+/** Dados do painel "Processos" — uma linha por fase da squad. */
+const visLen = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, "").length;
+const cell = (s, w) => { s = String(s ?? ""); return s.slice(0, w) + " ".repeat(Math.max(0, w - visLen(s))); };
 
-export function metricsBoxLines(metrics, models, { issue = null, status = "" } = {}) {
+export function runRows(metrics, models, outputs, issue, phaseState) {
+  const rows = [];
+  for (const [role] of metrics.phases.entries()) {
+    const done = !!outputs[role];
+    const active = phaseState?.currentRole === role;
+    rows.push({
+      id: String(issue?.number ?? "manual"),
+      title: role,
+      agent: models[role]?.label ?? "—",
+      status: done ? "completed" : active && phaseState?.phaseActive ? "running" : "queued",
+      dur: metrics.duration(role),
+    });
+  }
+  return rows;
+}
+
+/** Painéis da coluna direita do split screen (estilo protótipo):
+ *  Issue em foco · Uso e custos · Rastreamento de agentes · Comandos e skills. */
+export function sidePanels(metrics, models, { issue = null, outputs = {}, phaseState = null } = {}) {
   const t = metrics.totals();
-  const visLen = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, "").length;
-  const cell = (s, w) => { s = String(s ?? ""); return s + " ".repeat(Math.max(0, w - visLen(s))); };
-  const lines = [];
-  if (issue) {
-    lines.push(`${paint.bold("ISSUE")}   ${paint.boldCyan(`#${issue.number ?? "manual"}`)} ${paint.dim(String(issue.title ?? "").slice(0, 24))}`);
-    lines.push(`${paint.bold("status")}  ${paint.brightCyan(status || "—")}`);
-    lines.push("");
+  const panels = [];
+  const roles = [...metrics.phases.keys()];
+  const done = roles.filter((r) => outputs[r]).length;
+  const pct = roles.length ? Math.round((done / roles.length) * 100) : 0;
+  const fmt = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+  // Issue em foco
+  const barW = 20;
+  const filled = Math.round((pct / 100) * barW);
+  panels.push({
+    title: "Issue em foco",
+    lines: [
+      issue ? `${paint.boldCyan(`#${issue.number ?? "manual"}`)} ${paint.dim(String(issue.title ?? "").slice(0, 26))}` : paint.gray("—"),
+      `${paint.gray("progresso")}  ${paint.brightGreen("█".repeat(filled))}${paint.gray("░".repeat(barW - filled))} ${paint.bold(pct + "%")}`,
+    ],
+  });
+
+  // Uso e custos (2 métricas, uma por linha)
+  panels.push({
+    title: "Uso e custos",
+    lines: [
+      `${paint.gray("tokens")}   ${paint.bold(fmt(t.tokensIn))} in · ${paint.bold(fmt(t.tokensOut))} out`,
+      `${paint.gray("custo")}    ${paint.brightGreen("$" + t.cost.toFixed(4))} ${paint.gray("USD real")}`,
+    ],
+  });
+
+  // Rastreamento de agentes
+  const agentLines = [];
+  for (const [role] of metrics.phases.entries()) {
+    const st = outputs[role] ? paint.green("● ok")
+      : phaseState?.currentRole === role && phaseState?.phaseActive ? paint.brightGreen("● rodando")
+      : paint.gray("○ fila");
+    agentLines.push(`${paint.boldCyan(cell(role, 9))} ${paint.dim(cell((models[role]?.label ?? "—").slice(0, 12), 13))} ${st}`);
   }
-  lines.push("");
-  for (const [role, p] of metrics.phases.entries()) {
-    lines.push(`  ${paint.boldCyan(cell(role, 9))} ${paint.dim(cell(models[role]?.label ?? "—", 18))} ${paint.dim("×" + p.turns)}`);
-  }
-  lines.push("");
-  lines.push(`${paint.boldCyan("tokens")}   ${String(t.tokensIn).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} in · ${String(t.tokensOut).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} out`);
-  lines.push(`${paint.boldCyan("custo")}    ${t.cost > 0 ? paint.brightYellow("$" + t.cost.toFixed(4)) : paint.gray("$0.0000")} (USD real)`);
-  const cmds = [...t.cmds.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+  panels.push({ title: "Rastreamento de agentes", badge: String(roles.length), lines: agentLines });
+
+  // Comandos e skills (condensado)
+  const toolLines = [];
+  const cmds = [...t.cmds.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
   if (cmds.length) {
-    lines.push("");
-    lines.push(paint.bold("comandos executados"));
-    for (const [k, v] of cmds) {
-      const mark = /rtk|codegraph|ast-grep|sg/i.test(k) ? paint.brightGreen("●") : paint.gray("○");
-      lines.push(`  ${mark} ${cell(k, 22)} ${paint.dim("×" + v)}`);
-    }
+    toolLines.push(cmds.map(([k, v]) => `${/rtk|codegraph|ast-grep|sg/i.test(k) ? paint.brightGreen("●") : paint.gray("○")} ${k.replace(" (proxy)", "")} ${paint.dim("×" + v)}`).join("  "));
   }
-  const skills = [...t.skills.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
-  if (skills.length) {
-    lines.push("");
-    lines.push(paint.bold("skills chamadas"));
-    for (const [k, v] of skills) lines.push(`  ${paint.magenta("◆")} ${cell(k, 22)} ${paint.dim("×" + v)}`);
+  for (const [k, v] of [...t.skills.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2)) {
+    toolLines.push(`${paint.magenta("◆")} skill ${k} ${paint.dim("×" + v)}`);
   }
-  return lines;
+  if (!toolLines.length) toolLines.push(paint.gray("nenhuma chamada registrada"));
+  panels.push({ title: "Comandos e skills", lines: toolLines });
+
+  return panels;
 }
 
 /** Quadro lateral — impresso à direita (coluna) após cada fase, com os números

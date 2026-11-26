@@ -217,8 +217,17 @@ const CMD_RE = /^(rtk|codegraph|ast-grep|sg|git|npm|npx|gh|node|py(thon3?)?|pyte
 class Metrics {
   constructor() {
     this.phases = new Map(ROLES.map((r) => [r, { tokensIn: 0, tokensOut: 0, cost: 0, turns: 0, skills: new Map(), hooks: new Map(), cmds: new Map() }]));
+    this.times = new Map(); // role -> { startedAt, endedAt }
   }
   phase(role) { return this.phases.get(role) ?? { tokensIn: 0, tokensOut: 0, cost: 0, turns: 0, skills: new Map(), hooks: new Map(), cmds: new Map() }; }
+  start(role) { if (!this.times.get(role)) this.times.set(role, { startedAt: Date.now() }); }
+  end(role) { const t = this.times.get(role); if (t && !t.endedAt) t.endedAt = Date.now(); }
+  duration(role) {
+    const t = this.times.get(role);
+    if (!t?.startedAt) return "—";
+    const s = Math.max(0, Math.floor(((t.endedAt ?? Date.now()) - t.startedAt) / 1000));
+    return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  }
   addUsage(role, usage) {
     const p = this.phase(role);
     if (!usage) return;
@@ -484,8 +493,8 @@ async function main() {
   // ── SPLIT SCREEN: logs à esquerda, quadro de métricas à direita, o run todo
   const split = !argv.includes("--no-split") && screen.activate();
   if (split) {
-    console.log = (...a) => screen.log(a.map(String).join(" "));
-    console.error = (...a) => screen.log(ui.paint.red(a.map(String).join(" ")));
+    console.log = (...a) => screen.log(a.map(String).join(" ") + "\n");
+    console.error = (...a) => screen.log(ui.paint.red(a.map(String).join(" ")) + "\n");
     input.setPromptDisplay((p) => screen.setPrompt(p));
     console.log(`  ${ui.icons.info} ${ui.paint.gray("split screen ativo — logs à esquerda · quadro à direita (--no-split desliga)")}`);
   }
@@ -536,11 +545,15 @@ async function main() {
   const metrics = new Metrics();
   const renderer = makeRenderer();
   const models = {}; // escolhido POR FASE (gate de aprovação + select antes de cada agente)
-  const outputs = {}; // saída de cada fase — declarado ANTES do refreshRight (evita TDZ crash)
-  // re-render periódico da coluna direita do split screen (métricas)
-  const refreshRight = () => screen.setRight(ui.metricsBoxLines(metrics, models, { issue, status: squadStatus(outputs) + (phaseState.phaseActive ? " · em execução" : "") }));
-  if (split) refreshRight();
-  const uiTimer = setInterval(() => { try { if (split) refreshRight(); } catch {} }, 2000);
+  const outputs = {}; // saída de cada fase — declarado ANTES do refreshUI (evita TDZ crash)
+  // re-render periódico do split screen (hero + processos + coluna direita)
+  const refreshUI = () => {
+    screen.setHero({ issue, harness });
+    screen.setRuns(ui.runRows(metrics, models, outputs, issue, phaseState));
+    screen.setSide(ui.sidePanels(metrics, models, { issue, outputs, phaseState }));
+  };
+  if (split) refreshUI();
+  const uiTimer = setInterval(() => { try { if (split) refreshUI(); } catch {} }, 2000);
 
   // steering terminal entre fases — perguntas pendentes têm precedência
   input.setSteering((t) => {
@@ -556,6 +569,7 @@ async function main() {
 
   for (const role of ROLES) {
     phaseState.currentRole = role;
+    screen.setTag(role);
     console.log(`\n  ${ui.icons.agent} ${ui.paint.boldMagenta(`PRÓXIMO AGENTE: ${role.toUpperCase()}`)} ${ui.paint.gray("·")} ${ui.paint.dim(ROLE_DESC[role] ?? "")}`);
     if (!(await askYN(`Chamar o ${role.toUpperCase()} agora?`, "s"))) {
       console.log(`  ${ui.icons.warn} ${ui.paint.yellow(`execução interrompida pelo usuário antes de ${role}`)}`);
@@ -566,16 +580,18 @@ async function main() {
     const prev = role === "planner" ? "" : role === "builder"
       ? `=== CONTEXTO DO PLANNER ===\n${outputs.planner ?? ""}`
       : `=== CONTEXTO DO BUILDER (resumo de implementação) ===\n${outputs.builder ?? ""}`;
+    metrics.start(role);
     const run = await runPhase({
       preset: AGENT_PRESETS[harness], cwd, role, modelValue: models[role].modelValue,
       rolePrompt: rolePrompts[role], task, prevContext: prev,
       metrics, renderer,
     });
+    metrics.end(role);
     outputs[role] = run.output;
     const t = metrics.totals();
     console.log(`  ${ui.icons.ok} ${ui.paint.bold(role)} concluído ${ui.paint.gray(`(${run.stopReason})`)} — ${ui.paint.dim(`acumulado: ${t.tokensIn} in / ${t.tokensOut} out · $${t.cost.toFixed(4)}`)}`);
     // quadro do lado: issue+status, tokens, valor consumido e comandos — após cada fase
-    if (split) refreshRight();
+    if (split) refreshUI();
     ui.metricsSidePanel(metrics, models, { issue, status: squadStatus(outputs) });
 
     // ── Revisão no TERMINAL (sem Lavish): skills.sh locais + remotas ──
