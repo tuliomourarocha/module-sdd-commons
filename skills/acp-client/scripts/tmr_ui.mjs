@@ -161,41 +161,41 @@ export function metricsPanel(metrics, models) {  const t = metrics.totals();
   ]);
 }
 
-/** Linhas do quadro da squad (para a coluna direita do split screen). */
+/** Linhas do quadro da squad — conteúdo SEM borda (a moldura ┌─┐/│/└─┘ e a
+ *  centralização vertical são aplicadas pelo buildRightBlock do split screen). */
 const ROLES_HINT = ["planner", "builder", "reviewer", "shipper", "supervisor"];
 
-export function metricsBoxLines(metrics, models, { issue = null, status = "", width = 46 } = {}) {
+export function metricsBoxLines(metrics, models, { issue = null, status = "" } = {}) {
   const t = metrics.totals();
   const visLen = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, "").length;
-  const mid = (s) => paint.gray("│") + " " + s + " ".repeat(Math.max(0, width - 3 - visLen(s))) + paint.gray("│");
   const cell = (s, w) => { s = String(s ?? ""); return s + " ".repeat(Math.max(0, w - visLen(s))); };
-  const border = paint.brightBlue;
   const lines = [];
   if (issue) {
-    lines.push(mid(`${paint.bold("ISSUE")}  ${paint.boldCyan(`#${issue.number ?? "manual"}`)} ${paint.dim(String(issue.title ?? "").slice(0, 24))}`));
-    lines.push(mid(`${paint.bold("status")}  ${paint.brightCyan(status || "—")}`));
-    lines.push(mid(border("─".repeat(width - 4))));
+    lines.push(`${paint.bold("ISSUE")}   ${paint.boldCyan(`#${issue.number ?? "manual"}`)} ${paint.dim(String(issue.title ?? "").slice(0, 24))}`);
+    lines.push(`${paint.bold("status")}  ${paint.brightCyan(status || "—")}`);
+    lines.push("");
   }
-  lines.push(mid(paint.bold("QUADRO DA SQUAD")));
+  lines.push(paint.bold("QUADRO DA SQUAD"));
   for (const [role, p] of metrics.phases.entries()) {
-    lines.push(mid(`${paint.boldCyan(cell(role, 9))} ${paint.dim(cell(models[role]?.label ?? "—", 18))} ${paint.dim("×" + p.turns)}`));
+    lines.push(`  ${paint.boldCyan(cell(role, 9))} ${paint.dim(cell(models[role]?.label ?? "—", 18))} ${paint.dim("×" + p.turns)}`);
   }
-  lines.push(mid(border("─".repeat(width - 4))));
-  lines.push(mid(`${paint.boldCyan("tokens")}   ${String(t.tokensIn).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} in · ${String(t.tokensOut).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} out`));
-  lines.push(mid(`${paint.boldCyan("custo")}    ${t.cost > 0 ? paint.brightYellow("$" + t.cost.toFixed(4)) : paint.gray("$0.0000")} (USD real)`));
-  lines.push(mid(border("─".repeat(width - 4))));
+  lines.push("");
+  lines.push(`${paint.boldCyan("tokens")}   ${String(t.tokensIn).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} in · ${String(t.tokensOut).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} out`);
+  lines.push(`${paint.boldCyan("custo")}    ${t.cost > 0 ? paint.brightYellow("$" + t.cost.toFixed(4)) : paint.gray("$0.0000")} (USD real)`);
   const cmds = [...t.cmds.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
-  lines.push(mid(paint.bold("comandos executados")));
-  for (const [k, v] of cmds) {
-    const mark = /rtk|codegraph|ast-grep|sg/i.test(k) ? paint.brightGreen("●") : paint.gray("○");
-    lines.push(mid(`  ${mark} ${cell(k, 22)} ${paint.dim("×" + v)}`));
+  if (cmds.length) {
+    lines.push("");
+    lines.push(paint.bold("comandos executados"));
+    for (const [k, v] of cmds) {
+      const mark = /rtk|codegraph|ast-grep|sg/i.test(k) ? paint.brightGreen("●") : paint.gray("○");
+      lines.push(`  ${mark} ${cell(k, 22)} ${paint.dim("×" + v)}`);
+    }
   }
-  if (!cmds.length) lines.push(mid(`  ${paint.gray("— nenhum ainda")}`));
   const skills = [...t.skills.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
   if (skills.length) {
-    lines.push(mid(border("─".repeat(width - 4))));
-    lines.push(mid(paint.bold("skills chamadas")));
-    for (const [k, v] of skills) lines.push(mid(`  ${paint.magenta("◆")} ${cell(k, 22)} ${paint.dim("×" + v)}`));
+    lines.push("");
+    lines.push(paint.bold("skills chamadas"));
+    for (const [k, v] of skills) lines.push(`  ${paint.magenta("◆")} ${cell(k, 22)} ${paint.dim("×" + v)}`);
   }
   return lines;
 }

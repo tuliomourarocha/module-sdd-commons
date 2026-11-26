@@ -8,11 +8,12 @@
  *   + linha do quadro direito.
  * - log(text): append no buffer esquerdo (suporta chunks sem \n — buffer de
  *   linha parcial; \r isolado vira quebra).
- * - setRight(lines): substitui o quadro direito (array de linhas com ANSI).
+ * - setRight(lines): substitui o conteúdo do quadro direito (linhas SEM borda —
+ *   a moldura ┌─┐…└─┘ e o centralizador vertical são do render).
  *   A coluna direita é SÓ métricas — issue/status, tokens/custo — nunca escolhas.
  * - setPrompt({question, typed, hint, menu}): prompt TMR ativo renderiza como
- *   overlay no RODAPÉ da coluna ESQUERDA (faz parte do processo: escolha do
- *   harness, confirms, issue, modelo — tudo à esquerda, ao vivo).
+ *   MODAL centralizado sobre a coluna ESQUERDA (faz parte do processo: escolha
+ *   do harness, confirms, issue, modelo — tudo à esquerda, bem visível).
  * - exit(): restaura o terminal principal, despeja TODO o log esquerdo no
  *   scrollback real e devolve o cursor.
  *
@@ -123,20 +124,31 @@ function scheduleRender() {
 function render() {
   if (!state.active) return;
   state.dirty = false;
-  const rows = [];
   const visible = state.rows;
   const gutter = ui.paint.gray(" ┊ ");
-  const rightBlock = buildRightBlock();
-  // prompt TMR = overlay no RODAPÉ da coluna esquerda (processo à esquerda,
-  // métricas à direita) — o log esquerdo cede as últimas linhas a ele
-  const promptLines = buildPromptLines();
-  const logRows = Math.max(1, visible - promptLines.length);
-  const leftStart = Math.max(0, state.left.length - logRows);
+  const rightBlock = buildRightBlock(); // exatamente `visible` linhas
+
+  // coluna esquerda: log corrente; com prompt ativo, o MODAL centraliza sobre
+  // ela e o log contorna (linhas acima/abaixo continuam visíveis)
+  const promptRows = buildPromptRows();
+  const leftRows = [];
+  if (promptRows) {
+    const H = Math.min(promptRows.length, visible);
+    const top = Math.max(0, Math.floor((visible - H) / 2));
+    const bottom = Math.max(0, visible - H - top);
+    const logs = state.left.slice(Math.max(0, state.left.length - (top + bottom)));
+    while (logs.length < top + bottom) logs.unshift("");
+    leftRows.push(...logs.slice(0, top), ...promptRows.slice(0, H), ...logs.slice(top));
+  } else {
+    const leftStart = Math.max(0, state.left.length - visible);
+    for (let r = 0; r < visible; r++) {
+      leftRows.push(clipAnsi(state.left[leftStart + r] ?? "", state.leftW).replace(/\t/g, "  "));
+    }
+  }
+
+  const rows = [];
   for (let r = 0; r < visible; r++) {
-    const isPrompt = r >= logRows;
-    const l = isPrompt
-      ? clipAnsi(promptLines[r - logRows] ?? "", state.leftW)
-      : clipAnsi(state.left[leftStart + r] ?? "", state.leftW).replace(/\t/g, "  ");
+    const l = clipAnsi(leftRows[r] ?? "", state.leftW);
     const rLine = rightBlock[r] ?? "";
     const padL = " ".repeat(Math.max(0, state.leftW - visLen(l)));
     const padR = " ".repeat(Math.max(0, state.rightW - visLen(rLine)));
@@ -145,40 +157,55 @@ function render() {
   process.stdout.write("\x1b[H\x1b[J" + rows.join("\n") + "\x1b[H");
 }
 
-/** Linhas do prompt TMR ativo (pergunta/echo/menu) — renderizam no rodapé da
- *  coluna ESQUERDA. A coluna direita fica reservada só para o quadro de métricas. */
-function buildPromptLines() {
+/** Prompt TMR ativo → MODAL centralizado (vertical na coluna esquerda,
+ *  horizontal dentro dela). A coluna direita fica só com o quadro de métricas. */
+function buildPromptRows() {
   const p = state.prompt;
-  if (!p) return [];
-  const w = state.leftW;
-  const out = [];
-  out.push(ui.paint.gray("─".repeat(Math.max(1, w - 1))));
-  for (const ql of String(p.question ?? "").split("\n")) {
-    out.push(`${ui.paint.boldMagenta("❯ ")}${ui.paint.bold(clipAnsi(ql, w - 3))}`);
-  }
-  if (p.hint) out.push(ui.paint.gray(clipAnsi(p.hint, w - 1)));
+  if (!p) return null;
+  const w = Math.min(state.leftW - 2, 62);
+  const innerW = w - 6;
+  const border = ui.paint.boldMagenta;
+  const inner = [];
+  inner.push(ui.paint.boldMagenta("◈ PROMPT TMR"));
+  for (const ql of String(p.question ?? "").split("\n")) inner.push(ui.paint.bold(ql));
+  if (p.hint) inner.push(ui.paint.gray(p.hint));
   if (p.kind === "select" && p.menu) {
-    // payload novo do tmr_input: {search, window:[{bullet,label}], footer}
-    if (p.menu.search) out.push(`${ui.paint.gray("buscar:")} ${ui.paint.bold(clipAnsi(p.menu.search, w - 12))}${ui.paint.gray("▌")}`);
-    for (const r of p.menu.window ?? []) out.push(`${r.bullet} ${clipAnsi(r.label, w - 4)}`);
-    if (p.menu.footer) out.push(ui.paint.gray(clipAnsi(p.menu.footer, w - 1)));
+    // payload do tmr_input: {search, window:[{bullet,label}], footer}
+    if (p.menu.search) inner.push(`${ui.paint.gray("buscar:")} ${ui.paint.bold(p.menu.search)}${ui.paint.gray("▌")}`);
+    for (const r of p.menu.window ?? []) inner.push(`${r.bullet} ${r.label}`);
+    if (p.menu.footer) inner.push(ui.paint.gray(p.menu.footer));
   } else if (p.kind === "text" || p.kind === "confirm") {
-    out.push(p.typed ? `${ui.paint.bold(clipAnsi(p.typed, w - 2))}${ui.paint.gray("▌")}` : ui.paint.gray("▌"));
+    inner.push(p.typed ? `${ui.paint.bold(p.typed)}${ui.paint.gray("▌")}` : ui.paint.gray("▌"));
   }
-  return out.slice(0, Math.max(4, Math.floor(state.rows / 2)));
+  // moldura + centralização horizontal: padL desloca a caixa pro meio da esquerda
+  const padL = " ".repeat(Math.max(1, Math.floor((state.leftW - w) / 2)));
+  const maxInner = Math.max(2, state.rows - 6); // cabe no terminal mesmo pequeno
+  const rows = [padL + border("┌" + "─".repeat(w - 2) + "┐")];
+  for (const l of inner.slice(0, maxInner)) {
+    const c = clipAnsi(l, innerW);
+    rows.push(padL + border("│") + "  " + c + " ".repeat(Math.max(0, innerW - visLen(c))) + "  " + border("│"));
+  }
+  rows.push(padL + border("└" + "─".repeat(w - 2) + "┘"));
+  return rows;
 }
 
+/** Quadro de métricas: moldura completa ┌─┐/│/└─┘ em torno do conteúdo de
+ *  setRight (linhas sem borda) e centralização VERTICAL na coluna direita. */
 function buildRightBlock() {
-  const out = [];
   const w = state.rightW;
   const row = (s) => s + " ".repeat(Math.max(0, w - visLen(s)));
   const border = ui.paint.brightBlue;
-  const bar = border("┌" + "─".repeat(w - 2) + "┐");
-  const mid = (s) => border("│") + " " + s + " ".repeat(Math.max(0, w - 3 - visLen(s))) + border("│");
-  const bottom = border("└" + "─".repeat(w - 2) + "┘");
-  // SÓ métricas — escolhas/prompts vivem no rodapé da coluna esquerda
-  for (const l of state.right.slice(0, Math.max(0, visibleRows() - out.length))) out.push(l);
-  return out.slice(0, visibleRows()).map((l) => row(clipAnsi(l, w)));
+  const innerW = w - 6;
+  const inner = (state.right ?? []).map((l) => clipAnsi(l, innerW));
+  const topPad = Math.max(0, Math.floor((visibleRows() - inner.length - 2) / 2));
+  const out = [];
+  for (let i = 0; i < topPad; i++) out.push("");
+  out.push(border("┌" + "─".repeat(w - 2) + "┐"));
+  for (const l of inner) {
+    out.push(border("│") + "  " + l + " ".repeat(Math.max(0, innerW - visLen(l))) + "  " + border("│"));
+  }
+  out.push(border("└" + "─".repeat(w - 2) + "┘"));
+  return out.slice(0, visibleRows()).map(row);
 }
 
 function visibleRows() { return state.rows; }

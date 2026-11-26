@@ -584,6 +584,7 @@ async function main() {
   const metrics = new Metrics();
   const renderer = makeRenderer();
   const models = {}; // escolhido POR FASE (gate de aprovação + select antes de cada agente)
+  const outputs = {}; // saída de cada fase — declarado ANTES do refreshRight (evita TDZ crash)
   let lavish = null;
   if (uiFlag) {
     lavish = new LavishUi({ cwd }, { agentLabel: `squad ${harness}`, render: orchestratorHtml });
@@ -594,7 +595,7 @@ async function main() {
   // re-render periódico: dashboards Lavish + coluna direita do split screen
   const refreshRight = () => screen.setRight(ui.metricsBoxLines(metrics, models, { issue, status: squadStatus(outputs) + (phaseState.phaseActive ? " · em execução" : "") }));
   if (split) refreshRight();
-  const uiTimer = setInterval(() => { lavish?.refresh(); if (split) refreshRight(); }, 2000);
+  const uiTimer = setInterval(() => { try { lavish?.refresh(); if (split) refreshRight(); } catch {} }, 2000);
 
   // steering terminal entre fases — perguntas pendentes têm precedência
   input.setSteering((t) => {
@@ -607,7 +608,6 @@ async function main() {
   const rolePrompts = {};
   for (const r of ROLES) rolePrompts[r] = await rolePromptFor(r);
   const task = `Tarefa (issue #${issue.number} — ${issue.url ?? "manual"}):\n${issue.title}\n\n${issue.body}`;
-  const outputs = {};
 
   for (const role of ROLES) {
     phaseState.currentRole = role;
