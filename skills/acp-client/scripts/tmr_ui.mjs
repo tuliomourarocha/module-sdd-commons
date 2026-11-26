@@ -20,6 +20,7 @@ export const paint = {
   white: (s) => c("37", s),
   gray: (s) => c("90", s),
   brightCyan: (s) => c("96", s),
+  brightBlue: (s) => c("94", s),
   brightGreen: (s) => c("92", s),
   brightYellow: (s) => c("93", s),
   boldCyan: (s) => c("1;36", s),
@@ -91,8 +92,17 @@ export function phaseHeader(role, modelValue, priceStr = "") {
 // -------------------------------------------------------------------- spinner
 const SPIN_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+let spinnersQuiet = false;
+export function setSpinnersQuiet(v) { spinnersQuiet = v; }
+
 export function spinner(text) {
-  if (!TTY) { console.log(`  ${paint.dim(text)}…`); return { stop: () => {}, update: () => {} }; }
+  if (!TTY || spinnersQuiet) {
+    // modo silencioso (split screen): sem animação \r — linhas no log esquerdo
+    return {
+      stop: (finalText, color) => console.log(`  ${(color ?? paint.green)("✔")} ${finalText ?? text}`),
+      update: () => {},
+    };
+  }
   let i = 0;
   const t = setInterval(() => {
     process.stdout.write(`\r  ${paint.cyan(SPIN_FRAMES[i++ % SPIN_FRAMES.length])} ${paint.dim(text)}   `);
@@ -151,6 +161,44 @@ export function metricsPanel(metrics, models) {  const t = metrics.totals();
   ]);
 }
 
+/** Linhas do quadro da squad (para a coluna direita do split screen). */
+const ROLES_HINT = ["planner", "builder", "reviewer", "shipper", "supervisor"];
+
+export function metricsBoxLines(metrics, models, { issue = null, status = "", width = 46 } = {}) {
+  const t = metrics.totals();
+  const visLen = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, "").length;
+  const mid = (s) => paint.gray("│") + " " + s + " ".repeat(Math.max(0, width - 3 - visLen(s))) + paint.gray("│");
+  const cell = (s, w) => { s = String(s ?? ""); return s + " ".repeat(Math.max(0, w - visLen(s))); };
+  const lines = [];
+  if (issue) {
+    lines.push(mid(`${paint.bold("ISSUE")}  ${paint.boldCyan(`#${issue.number ?? "manual"}`)} ${paint.dim(String(issue.title ?? "").slice(0, 24))}`));
+    lines.push(mid(`${paint.bold("status")}  ${paint.brightCyan(status || "—")}`));
+    lines.push(mid(border("─".repeat(width - 4))));
+  }
+  lines.push(mid(paint.bold("QUADRO DA SQUAD")));
+  for (const [role, p] of metrics.phases.entries()) {
+    lines.push(mid(`${paint.boldCyan(cell(role, 9))} ${paint.dim(cell(models[role]?.label ?? "—", 18))} ${paint.dim("×" + p.turns)}`));
+  }
+  lines.push(mid(border("─".repeat(width - 4))));
+  lines.push(mid(`${paint.boldCyan("tokens")}   ${String(t.tokensIn).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} in · ${String(t.tokensOut).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} out`));
+  lines.push(mid(`${paint.boldCyan("custo")}    ${t.cost > 0 ? paint.brightYellow("$" + t.cost.toFixed(4)) : paint.gray("$0.0000")} (USD real)`));
+  lines.push(mid(border("─".repeat(width - 4))));
+  const cmds = [...t.cmds.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+  lines.push(mid(paint.bold("comandos executados")));
+  for (const [k, v] of cmds) {
+    const mark = /rtk|codegraph|ast-grep|sg/i.test(k) ? paint.brightGreen("●") : paint.gray("○");
+    lines.push(mid(`  ${mark} ${cell(k, 22)} ${paint.dim("×" + v)}`));
+  }
+  if (!cmds.length) lines.push(mid(`  ${paint.gray("— nenhum ainda")}`));
+  const skills = [...t.skills.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+  if (skills.length) {
+    lines.push(mid(border("─".repeat(width - 4))));
+    lines.push(mid(paint.bold("skills chamadas")));
+    for (const [k, v] of skills) lines.push(mid(`  ${paint.magenta("◆")} ${cell(k, 22)} ${paint.dim("×" + v)}`));
+  }
+  return lines;
+}
+
 /** Quadro lateral — impresso à direita (coluna) após cada fase, com os números
  *  correntes: issue em trabalho + status, tokens usados, valor consumido e
  *  comandos executados. */
@@ -162,21 +210,22 @@ export function metricsSidePanel(metrics, models, { issue = null, status = "", w
   const line = (s) => console.log(padStr + s);
   const visLen = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, "").length;
   const cell = (s, w) => { s = String(s ?? ""); return s + " ".repeat(Math.max(0, w - visLen(s))); };
-  const bar = paint.gray("┌" + "─".repeat(width - 2) + "┐");
-  const mid = (s) => paint.gray("│") + " " + s + " ".repeat(Math.max(0, width - 3 - visLen(s))) + paint.gray("│");
-  const bottom = paint.gray("└" + "─".repeat(width - 2) + "┘");
+  const border = paint.brightBlue;
+  const bar = border("┌" + "─".repeat(width - 2) + "┐");
+  const mid = (s) => border("│") + " " + s + " ".repeat(Math.max(0, width - 3 - visLen(s))) + border("│");
+  const bottom = border("└" + "─".repeat(width - 2) + "┘");
   line("");
   line(bar);
   if (issue) {
     line(mid(`${paint.bold("ISSUE")}  ${paint.boldCyan(`#${issue.number ?? "manual"}`)} ${paint.dim(String(issue.title ?? "").slice(0, 24))}`));
     line(mid(`${paint.bold("status")}  ${paint.brightCyan(status || "—")}`));
-    line(mid(paint.gray("─".repeat(width - 4))));
+    line(mid(border("─".repeat(width - 4))));
   }
   line(mid(paint.bold("QUADRO DA SQUAD") + paint.dim("  (após a última fase)")));
-  line(mid(paint.gray("─".repeat(width - 4))));
+  line(mid(border("─".repeat(width - 4))));
   line(mid(`${paint.boldCyan("tokens")}   ${String(t.tokensIn).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} in · ${String(t.tokensOut).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} out`));
   line(mid(`${paint.boldCyan("custo")}    ${t.cost > 0 ? paint.brightYellow("$" + t.cost.toFixed(4)) : paint.gray("$0.0000")} (USD, real do harness)`));
-  line(mid(paint.gray("─".repeat(width - 4))));
+  line(mid(border("─".repeat(width - 4))));
   const cmds = [...t.cmds.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
   line(mid(paint.bold("comandos executados")));
   for (const [k, v] of cmds) {
@@ -186,7 +235,7 @@ export function metricsSidePanel(metrics, models, { issue = null, status = "", w
   if (!cmds.length) line(mid(`  ${paint.gray("— nenhum ainda")}`));
   const skills = [...t.skills.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
   if (skills.length) {
-    line(mid(paint.gray("─".repeat(width - 4))));
+    line(mid(border("─".repeat(width - 4))));
     line(mid(paint.bold("skills chamadas")));
     for (const [k, v] of skills) line(mid(`  ${paint.magenta("◆")} ${cell(k, 22)} ${paint.dim("×" + v)}`));
   }

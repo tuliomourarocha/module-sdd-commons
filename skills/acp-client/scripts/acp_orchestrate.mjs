@@ -38,6 +38,7 @@ import { loadModelPools, rankModels, chooseVariant, loadDefaults } from "../../.
 import * as ui from "./tmr_ui.mjs";
 import * as input from "./tmr_input.mjs";
 import * as review from "./tmr_review.mjs";
+import * as screen from "./tmr_screen.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 // scripts → acp-client → skills → raiz do pacote/repo
@@ -92,10 +93,14 @@ async function installArtifacts(cwd, harness) {
   }
   console.log(`  ${ui.paint.gray("─")} instalando artefatos para ${harness} (saída ao vivo)…`);
   const installer = path.join(SOURCE_ROOT, "bin", "sdd-harness.js");
-  const r = spawnSync(process.execPath, [installer, `--${harness}`, "--target", cwd, "--artifacts-only"], {
-    cwd, stdio: "inherit",
+  // spawn async com linhas roteadas pelo console.log (compatível com split screen)
+  const status = await new Promise((resolve) => {
+    const child = spawn(process.execPath, [installer, `--${harness}`, "--target", cwd, "--artifacts-only"], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const pump = (stream) => { stream.setEncoding("utf8"); let buf = ""; stream.on("data", (c) => { buf += c; let i; while ((i = buf.indexOf("\n")) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); if (l.trim()) console.log(`    ${ui.paint.gray(l)}`); } }); };
+    pump(child.stdout); pump(child.stderr);
+    child.on("exit", (code) => resolve(code));
   });
-  if (r.status === 0) console.log(`  ${ui.icons.ok} ${ui.paint.green("artefatos instalados")} ${ui.paint.gray(`(${harness}) + MCP codegraph`)}`);
+  if (status === 0) console.log(`  ${ui.icons.ok} ${ui.paint.green("artefatos instalados")} ${ui.paint.gray(`(${harness}) + MCP codegraph`)}`);
   else console.log(`  ${ui.icons.fail} ${ui.paint.red("instalação falhou")} — rode manualmente: sdd-harness --${harness} --target ${cwd} --artifacts-only`);
 }
 
@@ -150,9 +155,21 @@ const priceOf = (e) =>
 const fmt$ = (v) => (v == null ? "?" : String(v));
 const fmtCtx = (c) => (c ? Math.round(c / 1000) + "k" : "?");
 
-/** Escolhe o modelo para UM papel — catálogo COMPLETO do harness, ordenado
- *  por qualidade × custo para o papel (rankModels). Chamada antes de cada fase. */
-async function pickModelForRole(harness, role, forcedModel) {
+/** Lista de modelos DISPONÍVEIS no harness escolhido — sondada UMA vez por run
+ *  e reutilizada em todas as fases (o catálogo do provider pode crescer ao vivo;
+ *  sem isso a lista "multiplica" entre fases). */
+function probeAvailableModels(harness) {
+  if (harness === "opencode") {
+    const r = spawnSync("opencode", ["models"], { encoding: "utf8", timeout: 30_000 });
+    if (r.status === 0) {
+      const values = (r.stdout ?? "").split("\n").map((l) => l.trim()).filter((l) => l.includes("/"));
+      if (values.length) return values.map((v) => ({ value: v, name: v }));
+    }
+  }
+  return null; // codex (e fallback): usa o catálogo do model-picker
+}
+
+async function pickModelForRole(harness, role, forcedModel, available) {
   const platform = AGENT_PRESETS[harness].platform;
   const pools = await loadModelPools([platform]);
   const pool = pools[platform] ?? [];
@@ -162,22 +179,33 @@ async function pickModelForRole(harness, role, forcedModel) {
 
   const roleDefault = platform === "opencode" ? defaults?.opencode?.[role] : defaults?.codex?.[role];
   const ranked = rankModels(pool, platform, role, roleDefault);
-  if (!ranked.length) {
+  if (!ranked.length && !available?.length) {
     console.error(`(sem modelos no pool de ${platform} — usando default do papel)`);
     return { modelValue: roleDefault?.model ?? roleDefault ?? "", label: String(roleDefault?.model ?? roleDefault ?? "default"), input: null, output: null };
   }
-  const options = ranked.map((e, i) => {
-    const varHint = chooseVariant(e, role, roleDefault?.variant ?? null);
+  // disponíveis no harness: filtra o pool ranqueado; modelos fora do catálogo
+  // de preços entram no fim com "custo desconhecido" — a lista é a COMPLETA
+  // de disponíveis, estável por run (sondada uma vez, nunca re-cresce)
+  const availSet = new Set((available ?? []).map((a) => a.value));
+  const inPool = availSet.size ? ranked.filter((e) => availSet.has(e.modelValue)) : ranked;
+  const inPoolSet = new Set(inPool.map((e) => e.modelValue));
+  const extras = (available ?? [])
+    .filter((a) => !inPoolSet.has(a.value))
+    .map((a) => ({ modelValue: a.value, label: a.name ?? a.value, input: null, output: null, context: null }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const ranked_all = [...inPool, ...extras];
+  const options = ranked_all.map((e, i) => {
+    const varHint = e.input != null ? chooseVariant(e, role, roleDefault?.variant ?? null) : null;
     const rec = i === 0 ? `${ui.icons.star} ` : "";
     return `${rec}${e.label}  [${e.modelValue}]  ${priceOf(e)}  ctx ${fmtCtx(e.context)}${varHint ? ` · var ${varHint}` : ""}`;
   });
   const idx = await input.select(
-    `Modelo para o agente ${role.toUpperCase()} — catálogo completo (${ranked.length}, ordenado por qualidade × custo) · ↑↓ navega, enter escolhe`,
+    `Modelo para o agente ${role.toUpperCase()} — ${ranked_all.length} disponíveis no ${harness} (ordenado por qualidade × custo) · ↑↓ navega, enter escolhe`,
     options,
     1,
-    (i) => `${ranked[i].label} (${ranked[i].modelValue})`,
+    (i) => `${ranked_all[i].label} (${ranked_all[i].modelValue})`,
   );
-  const chosen = ranked[idx];
+  const chosen = ranked_all[idx];
   console.log(`  ${ui.icons.ok} ${role}: ${ui.paint.bold(chosen.label)} ${ui.paint.gray(`(${chosen.modelValue})`)}`);
   return chosen;
 }
@@ -336,7 +364,8 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
         return { optionId: reject?.optionId };
       }
       if (m === "fs/read_text_file") {
-        const p = path.resolve(req.params?.path ?? "");
+        // paths relativos resolvem contra o CWD DA SESSÃO, não do orquestrador
+        const p = path.resolve(cwd, req.params?.path ?? "");
         if (!p.startsWith(cwd + path.sep) && p !== cwd) throw new Error(`fora do cwd: ${p}`);
         let text = await fs.readFile(p, "utf8");
         const { line, limit } = req.params ?? {};
@@ -349,7 +378,7 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
         return { content: text };
       }
       if (m === "fs/write_text_file") {
-        const p = path.resolve(req.params?.path ?? "");
+        const p = path.resolve(cwd, req.params?.path ?? "");
         if (!p.startsWith(cwd + path.sep) && p !== cwd) throw new Error(`fora do cwd: ${p}`);
         await fs.mkdir(path.dirname(p), { recursive: true });
         await fs.writeFile(p, req.params?.content ?? "", "utf8");
@@ -467,15 +496,15 @@ function makeRenderer() {
       const role = phaseState.currentRole;
       if (obj.type === "agent_text") {
         phaseText.set(role, (phaseText.get(role) ?? "") + obj.text);
-        if (!/^=+$/.test(obj.text) && !obj.text.includes("===")) process.stdout.write(obj.text);
+        if (!/^=+$/.test(obj.text) && !obj.text.includes("===")) console.log(obj.text);
       } else if (obj.type === "thought") {
         phaseText.set(role, (phaseText.get(role) ?? "") + obj.text);
       } else if (obj.type === "tool_call") {
-        process.stdout.write(`\n  ${ui.paint.cyan("▸")} ${obj.title ?? ""} ${ui.paint.gray(`[${obj.kind ?? obj.status ?? ""}]`)}\n`);
+        console.log(`  ${ui.paint.cyan("▸")} ${obj.title ?? ""} ${ui.paint.gray(`[${obj.kind ?? obj.status ?? ""}]`)}`);
       } else if (obj.type === "tool_update") {
-        if (obj.status === "failed") process.stdout.write(`  ${ui.paint.red("✘")} ${obj.title}\n`);
+        if (obj.status === "failed") console.log(`  ${ui.paint.red("✘")} ${obj.title}`);
       } else if (obj.type === "plan") {
-        for (const e of obj.entries) process.stdout.write(`  ${e.status === "completed" ? ui.paint.green("☑") : e.status === "in_progress" ? ui.paint.cyan("▶") : ui.paint.gray("☐")} ${e.content}\n`);
+        for (const e of obj.entries) console.log(`  ${e.status === "completed" ? ui.paint.green("☑") : e.status === "in_progress" ? ui.paint.cyan("▶") : ui.paint.gray("☐")} ${e.content}`);
       } else if (obj.type === "permission") {
         console.log(`  ${ui.paint.yellow("🔑")} ${ui.paint.dim(obj.kind ?? "?")}: ${obj.title ?? ""} ${ui.paint.gray(`→ ${obj.choice}`)}`);
       } else if (obj.type === "status") {
@@ -499,6 +528,15 @@ async function main() {
   if (!process.stdin.isTTY) fail("o orquestrador é interativo (wizard) — precisa de TTY. Para uma subtask única use acp_client.mjs.");
   ui.banner("ACP — Squad Orchestrator");
 
+  // ── SPLIT SCREEN: logs à esquerda, quadro de métricas à direita, o run todo
+  const split = !argv.includes("--no-split") && screen.activate();
+  if (split) {
+    console.log = (...a) => screen.log(a.map(String).join(" "));
+    console.error = (...a) => screen.log(ui.paint.red(a.map(String).join(" ")));
+    input.setPromptDisplay((p) => screen.setPrompt(p));
+    console.log(`  ${ui.icons.info} ${ui.paint.gray("split screen ativo — logs à esquerda · quadro à direita (--no-split desliga)")}`);
+  }
+
   // 1) harness
   let harness = forcedAgent;
   if (!harness) {
@@ -516,6 +554,10 @@ async function main() {
   }
   if (!AGENT_PRESETS[harness]) fail(`harness desconhecido: ${harness}`, 2);
   console.log(`  ${ui.icons.ok} harness: ${ui.paint.bold(harness)}`);
+
+  // catálogo de modelos DISPONÍVEIS — sondado uma vez, estável nas 5 fases
+  const available = probeAvailableModels(harness);
+  console.log(`  ${ui.icons.ok} ${ui.paint.dim(available ? `${available.length} modelos disponíveis (lista fixa para este run)` : "catálogo do model-picker")}`);
 
   // 2) artefatos da squad no projeto (runtime — a instalação não os copia mais)
   await installArtifacts(cwd, harness);
@@ -549,8 +591,10 @@ async function main() {
     lavish.onFeedback = (p) => steeringQueue.push(p);
     await lavish.start();
   }
-  // re-render periódico dos dashboards
-  const uiTimer = lavish ? setInterval(() => lavish.refresh(), 2000) : null;
+  // re-render periódico: dashboards Lavish + coluna direita do split screen
+  const refreshRight = () => screen.setRight(ui.metricsBoxLines(metrics, models, { issue, status: squadStatus(outputs) + (phaseState.phaseActive ? " · em execução" : "") }));
+  if (split) refreshRight();
+  const uiTimer = setInterval(() => { lavish?.refresh(); if (split) refreshRight(); }, 2000);
 
   // steering terminal entre fases — perguntas pendentes têm precedência
   input.setSteering((t) => {
@@ -573,7 +617,7 @@ async function main() {
       console.log(`  ${ui.icons.warn} ${ui.paint.yellow(`execução interrompida pelo usuário antes de ${role}`)}`);
       break;
     }
-    const chosen = await pickModelForRole(harness, role, forcedModel);
+    const chosen = await pickModelForRole(harness, role, forcedModel, available);
     models[role] = chosen;
     lavish?.event(`modelo do ${role}: ${chosen.modelValue}`);
     const prev = role === "planner" ? "" : role === "builder"
@@ -588,6 +632,7 @@ async function main() {
     const t = metrics.totals();
     console.log(`  ${ui.icons.ok} ${ui.paint.bold(role)} concluído ${ui.paint.gray(`(${run.stopReason})`)} — ${ui.paint.dim(`acumulado: ${t.tokensIn} in / ${t.tokensOut} out · $${t.cost.toFixed(4)}`)}`);
     // quadro do lado: issue+status, tokens, valor consumido e comandos — após cada fase
+    if (split) refreshRight();
     ui.metricsSidePanel(metrics, models, { issue, status: squadStatus(outputs) });
 
     // ── Revisão Lavish: SOMENTE no fim do planner e do supervisor ──
@@ -633,6 +678,7 @@ async function main() {
 
   clearInterval(uiTimer);
   input.setSteering(null);
+  screen.exit(); // volta ao buffer principal — o histórico completo fica no scrollback
   console.log("");
   ui.metricsSidePanel(metrics, models, { issue, status: `${squadStatus(outputs)} · concluída` });
   ui.metricsPanel(metrics, models);

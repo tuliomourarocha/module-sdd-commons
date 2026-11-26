@@ -297,8 +297,9 @@ async function answerPermission(req, opts, rl) {
 }
 
 // ------------------------------------------------------------------ FS callbacks
-function withinRoots(p, roots) {
-  const abs = path.resolve(p);
+function withinRoots(p, roots, base) {
+  // paths relativos resolvem contra o CWD DA SESSÃO, não do processo client
+  const abs = path.resolve(base, p);
   return roots.some((r) => abs === r || abs.startsWith(r + path.sep));
 }
 
@@ -317,8 +318,8 @@ async function handleAgentRequest(req, ctx) {
   }
   if (m === "fs/read_text_file") {
     const { path: p, line, limit } = req.params ?? {};
-    if (!withinRoots(p, ctx.roots)) throw new Error(`fora das raízes permitidas: ${p}`);
-    let text = await fs.readFile(path.resolve(p), "utf8");
+    if (!withinRoots(p, ctx.roots, ctx.opts.cwd)) throw new Error(`fora das raízes permitidas: ${p}`);
+    let text = await fs.readFile(path.resolve(ctx.opts.cwd, p), "utf8");
     if (line !== undefined || limit !== undefined) {
       const lines = text.split("\n");
       const start = line !== undefined ? Math.max(0, line - 1) : 0;
@@ -329,13 +330,13 @@ async function handleAgentRequest(req, ctx) {
   }
   if (m === "fs/write_text_file") {
     const { path: p, content } = req.params ?? {};
-    if (!withinRoots(p, ctx.roots)) throw new Error(`fora das raízes permitidas: ${p}`);
+    if (!withinRoots(p, ctx.roots, ctx.opts.cwd)) throw new Error(`fora das raízes permitidas: ${p}`);
     if (ctx.opts.permission !== "allow-all" && ctx.opts.permission !== "ask") {
       // safe: escrita via fs só se o turno já liberou edit — conservador: nega
       throw new Error(`escrita negada pela policy '${ctx.opts.permission}': ${p}`);
     }
-    await fs.mkdir(path.dirname(path.resolve(p)), { recursive: true });
-    await fs.writeFile(path.resolve(p), content ?? "", "utf8");
+    await fs.mkdir(path.dirname(path.resolve(ctx.opts.cwd, p)), { recursive: true });
+    await fs.writeFile(path.resolve(ctx.opts.cwd, p), content ?? "", "utf8");
     return {};
   }
   if (m.startsWith("terminal/")) throw new Error("terminal não habilitado neste client");

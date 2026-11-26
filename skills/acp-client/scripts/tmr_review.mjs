@@ -112,8 +112,11 @@ export async function runLavishReview(role, html, { log = console.log } = {}) {
   const file = path.join(os.tmpdir(), `tmr-review-${role}-${Date.now()}.html`);
   await fs.writeFile(file, html, "utf8");
   const prompts = [];
-  const open = spawn("npx", ["-y", "lavish-axi", file], { stdio: ["ignore", "ignore", "inherit"] });
-  await new Promise((res) => open.on("exit", res));
+  const open = spawn("npx", ["-y", "lavish-axi", file], { stdio: ["ignore", "ignore", "pipe"] });
+  open.stderr.setEncoding("utf8");
+  let openErr = "";
+  open.stderr.on("data", (c) => (openErr += c));
+  await new Promise((res) => open.on("exit", (code) => { if (code !== 0 && openErr.trim()) log(`    ${openErr.trim().split("\n").slice(-2).join(" · ")}`); res(); }));
   log(`  ${"▸"} revisão aberta no Lavish — aprove o plano, as skills e responda as dúvidas; 'Send & End' encerra`);
   for (let i = 0; i < 30; i++) {
     const batch = await pollOnce(file);
