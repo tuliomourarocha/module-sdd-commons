@@ -320,6 +320,27 @@ install_github() {
 
 ACP_ENABLED=1
 
+warn()   { printf "  \033[1;33m⚠\033[0m %s\n" "$*"; }
+
+# shim do CLI TMR: ~/.local/bin/sdd-acp → bin/sdd-acp.js deste pacote
+ensure_sdd_acp_shim() {
+  local shim="$HOME/.local/bin/sdd-acp"
+  if command -v sdd-acp >/dev/null 2>&1 && [ "$(command -v sdd-acp)" != "$shim" ]; then
+    ok "sdd-acp já disponível ($(command -v sdd-acp))"
+    return 0
+  fi
+  mkdir -p "$HOME/.local/bin"
+  cat > "$shim" <<SHIMEOF
+#!/bin/sh
+exec node "$(cd "$SRC_ROOT" && pwd)/bin/sdd-acp.js" "\$@"
+SHIMEOF
+  chmod +x "$shim"
+  if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
+    warn "~/.local/bin fora do PATH — adicione: export PATH=\"\$HOME/.local/bin:\$PATH\""
+  fi
+  ok "shim criado: $shim (rode 'sdd-acp' em qualquer terminal)"
+}
+
 install_acp_stack_only() {
   # scripts do client vivem no próprio pacote/repo (SRC_ROOT) — sem TARGET
   if [ -f "$SRC_ROOT/skills/acp-client/scripts/acp_orchestrate.mjs" ]; then
@@ -328,7 +349,9 @@ install_acp_stack_only() {
     error "skills/acp-client não encontrado em $SRC_ROOT — pacote incompleto"
     return 1
   fi
+  ensure_sdd_acp_shim
   ensure_npm || return 1
+  ensure_sdd_acp_shim
   if command -v codex-acp >/dev/null 2>&1; then
     ok "adaptador codex-acp já instalado ($(codex-acp --version 2>/dev/null || echo '?'))"
   else

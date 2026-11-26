@@ -780,8 +780,14 @@ async function main() {
     if (ensure.status !== 0) throw new Error("bootstrap de dependências falhou (ensure_deps) — rode sdd-acp doctor para diagnosticar");
     await installCodexAcpAdapter(dryRun);
     console.log("\n✓ Pilha ACP pronta. Agora rode o wizard:");
-    console.log("  sdd-acp          (instala os artefatos da squad no harness escolhido e roda o ciclo)");
-    console.log("  sdd-acp doctor   (diagnóstico)");
+    if (spawnSync("command", ["-v", "sdd-acp"], { shell: true }).status !== 0) {
+      console.log("  ⚠ 'sdd-acp' não está no PATH. Opções:");
+      console.log("    npm i -g github:tuliomourarocha/module-sdd-commons#main   (publica os bins)");
+      console.log("    ou use o caminho direto:  node <pacote>/skills/acp-client/scripts/acp_orchestrate.mjs");
+    } else {
+      console.log("  sdd-acp          (instala os artefatos da squad no harness escolhido e roda o ciclo)");
+      console.log("  sdd-acp doctor   (diagnóstico)");
+    }
     return;
   }
 

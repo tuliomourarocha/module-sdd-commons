@@ -54,6 +54,10 @@ Sem npm global, o mesmo wizard roda direto do projeto instalado:
 node .opencode/skills/acp-client/scripts/acp_orchestrate.mjs --ui lavish
 ```
 
+> **`sdd-acp: command not found`?** O bin vem com o pacote — instale/link uma vez:
+> `npm link` (no clone do repo) ou `npm i -g github:tuliomourarocha/module-sdd-commons#main`.
+> O `install.sh` também cria um shim em `~/.local/bin/sdd-acp` apontando para o clone.
+
 ### O wizard (decisões humanas no início)
 
 1. **Harness** — `opencode` (nativo) ou `codex` (adaptador oficial).
