@@ -17,11 +17,11 @@
  *      tokens (usage do response do session/prompt) e custo em USD
  *      (notification usage_update) por agente; quadros de skills chamadas
  *      (⟐ skill ✓), hooks (⟐ hook ✓) e comandos invocados (rtk, codegraph
- *      destacados); com --ui lavish tudo isso vive no console HTML no browser.
+ *      destacados) — TUDO no terminal, via split screen do TMR.
  *
  * Uso:
  *   node skills/acp-client/scripts/acp_orchestrate.mjs [--cwd <repo>] \
- *        [--agent opencode|codex] [--model <provider/model>] [--ui lavish]
+ *        [--agent opencode|codex] [--model <provider/model>]
  *
  * Requer TTY (wizard interativo). Run simples de UMA subtask continua no
  * acp_client.mjs (usado pelos macros builder/planner internos).
@@ -32,7 +32,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Rpc, handleNotification, LavishUi } from "./acp_client.mjs";
+import { Rpc, handleNotification } from "./acp_client.mjs";
 import { ensureDeps } from "./ensure_deps.mjs";
 import { loadModelPools, rankModels, chooseVariant, loadDefaults } from "../../../bin/lib/model-picker.js";
 import * as ui from "./tmr_ui.mjs";
@@ -65,7 +65,6 @@ const ROLE_DESC = {
 };
 
 const fail = (msg, code = 1) => { console.error(`acp_orchestrate: ${msg}`); process.exit(code); };
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const bump = (m, k, n = 1) => m.set(k, (m.get(k) ?? 0) + n);
 const mapStr = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => `${k}×${v}`).join(", ") || "—";
 
@@ -269,49 +268,6 @@ class Metrics {
   }
 }
 
-// ------------------------------------------------------------------- console HTML (dashboards)
-function orchestratorHtml(state) {
-  const { agent, cwd, sessionId, events, metrics, issue, models, currentRole } = state;
-  const t = metrics?.totals?.() ?? { tokensIn: 0, tokensOut: 0, cost: 0, skills: new Map(), hooks: new Map(), cmds: new Map() };
-  const rows = [...metrics.phases.entries()].map(([r, p]) =>
-    `<tr><td>${esc(r)}${currentRole === r ? " ▶" : ""}</td><td>${esc(models[r]?.label ?? "—")}</td><td>${p.tokensIn}</td><td>${p.tokensOut}</td><td>$${p.cost.toFixed(4)}</td></tr>`).join("");
-  const board = (m, hi = false) => [...m.entries()].sort((a, b) => b[1] - a[1])
-    .map(([k, v]) => `<span class="chip ${hi && /rtk|codegraph|ast-grep|sg/i.test(k) ? "hi" : ""}">${esc(k)}×${v}</span>`).join(" ") || "<em>—</em>";
-  const logRows = events.slice(-250).map((e) => `<div><span class="t">${esc(e.role ? `[${e.role}] ` : "")}${esc(e.t)}</span> ${esc(e.text)}</div>`).join("\n");
-  return `<!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8"><title>Squad ACP — ${esc(agent)}</title>
-<style>
-:root{color-scheme:light;background:#f6f7f9;color:#14181f}
-body{margin:0 auto;max-width:1080px;padding:1.6rem;font:15px/1.55 system-ui}
-h1{font-size:1.15rem;margin:0 0 .2rem} .sub{color:#67707d;font-size:.85rem;margin-bottom:1rem}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
-.card{background:#fff;border:1px solid #e3e6ea;border-radius:10px;padding:.9rem}
-.card h2{font-size:.85rem;text-transform:uppercase;letter-spacing:.06em;color:#67707d;margin:0 0 .6rem}
-table{border-collapse:collapse;width:100%;font-size:.86rem}
-td,th{border-bottom:1px solid #edf0f3;padding:.3rem .4rem;text-align:left}
-.chip{display:inline-block;background:#eef2ff;border:1px solid #dbe3f5;border-radius:999px;padding:.05rem .55rem;margin:.1rem .25rem .1rem 0;font-size:.8rem}
-.chip.hi{background:#ecfdf5;border-color:#b7e4c7;font-weight:600}
-.log{white-space:pre-wrap;font:12.5px/1.5 ui-monospace,Menlo,monospace;max-height:42vh;overflow-y:auto;border-left:3px solid #3b82f6;padding-left:.8rem}
-.t{color:#8a93a0}
-.issue{font-size:.85rem;color:#3c4654;margin-bottom:1rem}
-</style></head><body data-lavish-annotate="off">
-<h1>Squad ACP — orquestração ${esc(agent)}</h1>
-<div class="sub">cwd: ${esc(cwd)}${sessionId ? " · session: " + esc(sessionId) : ""} · fase atual: <b>${esc(currentRole ?? "—")}</b></div>
-<div class="issue">📌 Issue: <b>${esc(issue?.title ?? "—")}</b>${issue?.url ? ` · ${esc(issue.url)}` : ""}</div>
-<div class="grid">
-  <div class="card"><h2>Métricas por agente (tokens reais + custo USD)</h2>
-    <table><tr><th>agente</th><th>modelo</th><th>tokens in</th><th>tokens out</th><th>custo</th></tr>${rows}</table>
-    <p style="font-size:.85rem"><b>TOTAL:</b> ${t.tokensIn} in · ${t.tokensOut} out · <b>$${t.cost.toFixed(4)}</b></p></div>
-  <div class="card"><h2>Comandos invocados (rtk/codegraph destacados)</h2>
-    <div>${board(t.cmds, true)}</div></div>
-  <div class="card"><h2>Skills chamadas (⟐ skill ✓)</h2><div>${board(t.skills)}</div></div>
-  <div class="card"><h2>Hooks determinísticos (⟐ hook ✓)</h2><div>${board(t.hooks)}</div></div>
-</div>
-<div class="card" style="margin-top:1rem"><h2>Logs dos processos agênticos</h2><div class="log">${logRows || "<em>aguardando…</em>"}</div>
-<p class="sub">Fale na <b>Conversation panel</b> para interagir com o agente no meio do processo — entra no turno corrente (steering nativo) ou na fila do próximo.</p></div>
-</body></html>`;
-}
-
 // ------------------------------------------------------------------- texto por fase + steering
 const phaseText = new Map(ROLES.map((r) => [r, ""]));
 const steeringQueue = {
@@ -329,12 +285,12 @@ function squadStatus(outputs) {
 }
 
 // ------------------------------------------------------------------- run de fase via ACP
-async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevContext, metrics, renderer, lavish }) {
+async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevContext, metrics, renderer }) {
   const child = spawn(preset.command, preset.args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
   let activeRenderer = renderer; // trocado pelo wrapper com spinner quando o turno começa
   const rpc = new Rpc(child, {
     onEvent: (msg) => {
-      handleNotification(msg, { emit: (o) => activeRenderer.emit(o) }, lavish);
+      handleNotification(msg, { emit: (o) => activeRenderer.emit(o) });
       const u = msg.params?.update ?? {};
       if (u.sessionUpdate === "usage_update") metrics.addCost(role, u.cost?.amount ?? 0);
       if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") {
@@ -429,7 +385,6 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
       renderer.emit(obj);
     },
   };
-  lavish?.event(`▶ ${role} — turno iniciado (${modelValue ?? "modelo default"})`);
 
   const res = await rpc.request("session/prompt", {
     sessionId,
@@ -446,7 +401,6 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
   // steering não-nativo (fila) ou pós-turno: entrega o resto como turno extra
   const leftover = steeringQueue.drain();
   if (leftover.length) {
-    lavish?.event(`↪ steering aplicado ao ${role} (pós-turno)`);
     const res2 = await rpc.request("session/prompt", {
       sessionId,
       prompt: [{ type: "text", text: leftover.map((s) => s.text).join("\n\n") }],
@@ -520,7 +474,6 @@ async function main() {
   const argv = process.argv.slice(2);
   const flag = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : null);
   const cwd = flag("--cwd") ? path.resolve(flag("--cwd")) : process.cwd();
-  const uiFlag = argv.includes("--ui");
   const forcedAgent = flag("--agent");
   const forcedModel = flag("--model");
 
@@ -580,22 +533,14 @@ async function main() {
   }
   console.log(`  ${ui.icons.ok} issue: ${ui.paint.bold(`#${issue.number ?? "manual"}`)} ${issue.title}${issue.labels ? ui.paint.gray(` [${issue.labels}]`) : ""}`);
 
-  // UI/console Lavish com dashboards (opcional)
   const metrics = new Metrics();
   const renderer = makeRenderer();
   const models = {}; // escolhido POR FASE (gate de aprovação + select antes de cada agente)
   const outputs = {}; // saída de cada fase — declarado ANTES do refreshRight (evita TDZ crash)
-  let lavish = null;
-  if (uiFlag) {
-    lavish = new LavishUi({ cwd }, { agentLabel: `squad ${harness}`, render: orchestratorHtml });
-    Object.assign(lavish.state, { metrics, issue, models, currentRole: null });
-    lavish.onFeedback = (p) => steeringQueue.push(p);
-    await lavish.start();
-  }
-  // re-render periódico: dashboards Lavish + coluna direita do split screen
+  // re-render periódico da coluna direita do split screen (métricas)
   const refreshRight = () => screen.setRight(ui.metricsBoxLines(metrics, models, { issue, status: squadStatus(outputs) + (phaseState.phaseActive ? " · em execução" : "") }));
   if (split) refreshRight();
-  const uiTimer = setInterval(() => { try { lavish?.refresh(); if (split) refreshRight(); } catch {} }, 2000);
+  const uiTimer = setInterval(() => { try { if (split) refreshRight(); } catch {} }, 2000);
 
   // steering terminal entre fases — perguntas pendentes têm precedência
   input.setSteering((t) => {
@@ -611,7 +556,6 @@ async function main() {
 
   for (const role of ROLES) {
     phaseState.currentRole = role;
-    lavish?.event(`══ FASE ${role.toUpperCase()} ══`);
     console.log(`\n  ${ui.icons.agent} ${ui.paint.boldMagenta(`PRÓXIMO AGENTE: ${role.toUpperCase()}`)} ${ui.paint.gray("·")} ${ui.paint.dim(ROLE_DESC[role] ?? "")}`);
     if (!(await askYN(`Chamar o ${role.toUpperCase()} agora?`, "s"))) {
       console.log(`  ${ui.icons.warn} ${ui.paint.yellow(`execução interrompida pelo usuário antes de ${role}`)}`);
@@ -619,14 +563,13 @@ async function main() {
     }
     const chosen = await pickModelForRole(harness, role, forcedModel, available);
     models[role] = chosen;
-    lavish?.event(`modelo do ${role}: ${chosen.modelValue}`);
     const prev = role === "planner" ? "" : role === "builder"
       ? `=== CONTEXTO DO PLANNER ===\n${outputs.planner ?? ""}`
       : `=== CONTEXTO DO BUILDER (resumo de implementação) ===\n${outputs.builder ?? ""}`;
     const run = await runPhase({
       preset: AGENT_PRESETS[harness], cwd, role, modelValue: models[role].modelValue,
       rolePrompt: rolePrompts[role], task, prevContext: prev,
-      metrics, renderer, lavish,
+      metrics, renderer,
     });
     outputs[role] = run.output;
     const t = metrics.totals();
@@ -635,40 +578,47 @@ async function main() {
     if (split) refreshRight();
     ui.metricsSidePanel(metrics, models, { issue, status: squadStatus(outputs) });
 
-    // ── Revisão Lavish: SOMENTE no fim do planner e do supervisor ──
+    // ── Revisão no TERMINAL (sem Lavish): skills.sh locais + remotas ──
     if (role === "planner") {
       const suggestions = review.skillSuggestions(REVIEW_FIND_SKILL, task);
-      const html = review.buildReviewHtml({
-        title: `Plano — ${issue.title}`,
-        subtitle: `TMR · revisão do PLANNER · issue #${issue.number ?? "manual"} — aprove o plano, as skills e responda as dúvidas`,
-        planText: outputs.planner,
-        localSkills: suggestions.local,
-        remoteSkills: suggestions.remote,
-      });
-      const feedback = await review.runLavishReview("planner", html);
-      const approvedSkills = review.handleSkillFeedback(feedback, REVIEW_FIND_SKILL);
-      if (feedback.length) {
-        outputs.planner += `\n\n=== FEEDBACK DA REVISÃO (Lavish) ===\n${feedback.join("\n")}` +
+      console.log(`  ${ui.icons.info} skills LOCAIS relevantes à tarefa: ${suggestions.local.map((s) => s.name).join(", ") || "—"}`);
+      let approvedSkills = [];
+      if (suggestions.remote.length) {
+        console.log(`  ${ui.icons.info} skills.sh sugeridas para a tarefa:`);
+        for (const s of suggestions.remote) {
+          console.log(`      ${ui.paint.dim("·")} ${ui.paint.bold(s.name)} ${ui.paint.gray(`— ${s.source} · ${s.installs} installs · ${s.url}`)}`);
+        }
+        // instalação por aprovação explícita (uma a uma; auditoria pública antes do add)
+        const remaining = [...suggestions.remote];
+        const approvedTexts = [];
+        while (remaining.length) {
+          const opts = [...remaining.map((s) => `${s.name} — ${s.source} · ${s.installs} installs`), "nenhuma — seguir sem instalar"];
+          const pick = await input.select("Instalar alguma skill do skills.sh? (auditoria + npx skills add)", opts, opts.length, (i) => opts[i]);
+          if (pick === opts.length - 1) break;
+          const chosenSkill = remaining.splice(pick, 1)[0];
+          approvedTexts.push(`SKILL APROVADA: ${chosenSkill.id}`);
+        }
+        approvedSkills = review.handleSkillFeedback(approvedTexts, REVIEW_FIND_SKILL);
+      } else {
+        console.log(`  ${ui.icons.warn} ${ui.paint.yellow("nenhuma sugestão do skills.sh — seguindo só com skills locais")}`);
+      }
+      const fbPlanner = (await ask("Feedback/dúvidas sobre o plano (vazio = nada a acrescentar)")).trim();
+      const feedback = fbPlanner ? [fbPlanner] : [];
+      if (feedback.length || approvedSkills.length) {
+        outputs.planner += `\n\n=== FEEDBACK DA REVISÃO ===\n${feedback.join("\n")}` +
           (approvedSkills.length ? `\n=== SKILLS INSTALADAS COM APROVAÇÃO ===\n${approvedSkills.join("\n")}` : "");
-        console.log(`  ${ui.icons.ok} ${ui.paint.bold(feedback.length)} feedback(s) incorporados ao contexto do builder`);
+        console.log(`  ${ui.icons.ok} ${ui.paint.bold(feedback.length)} feedback(s) + ${ui.paint.bold(approvedSkills.length)} skill(s) incorporados ao contexto do builder`);
       }
     }
     if (role === "supervisor") {
-      const t2 = metrics.totals();
-      const html = review.buildReviewHtml({
-        title: `Auditoria — ${issue.title}`,
-        subtitle: `TMR · revisão do SUPERVISOR — tokens ${t2.tokensIn} in / ${t2.tokensOut} out · $${t2.cost.toFixed(4)} · status: ${squadStatus(outputs)}`,
-        planText: outputs.supervisor,
-        extraSections: [{ title: "Contexto do ciclo", body: `Issue: #${issue.number ?? "manual"} ${issue.title}\nHarness: ${harness}\nModelos: ${ROLES.map((r) => `${r}=${models[r]?.modelValue ?? "?"}`).join(", ")}` }],
-      });
-      const feedback = await review.runLavishReview("supervisor", html);
-      if (feedback.length) {
-        console.log(`  ${ui.icons.ok} ${ui.paint.bold(feedback.length)} observação(ões) do usuário na auditoria — repassando ao supervisor…`);
+      const fb = (await ask("Observações do usuário sobre a auditoria (vazio = encerrar)")).trim();
+      if (fb) {
+        console.log(`  ${ui.icons.ok} ${ui.paint.bold("1")} observação do usuário na auditoria — repassando ao supervisor…`);
         const extra = await runPhase({
           preset: AGENT_PRESETS[harness], cwd, role: "supervisor", modelValue: models.supervisor?.modelValue,
           rolePrompt: rolePrompts.supervisor, task,
-          prevContext: `=== AUDITORIA ANTERIOR ===\n${outputs.supervisor ?? ""}\n\n=== FEEDBACK DO USUÁRIO (revisão Lavish) ===\n${feedback.join("\n")}`,
-          metrics, renderer, lavish,
+          prevContext: `=== AUDITORIA ANTERIOR ===\n${outputs.supervisor ?? ""}\n\n=== FEEDBACK DO USUÁRIO ===\n${fb}`,
+          metrics, renderer,
         });
         outputs.supervisor = extra.output;
         ui.metricsSidePanel(metrics, models, { issue, status: `${squadStatus(outputs)} · revisão aplicada` });
@@ -683,10 +633,6 @@ async function main() {
   ui.metricsSidePanel(metrics, models, { issue, status: `${squadStatus(outputs)} · concluída` });
   ui.metricsPanel(metrics, models);
   console.log(`\n  ${ui.icons.ok} ${ui.paint.bold("TMR")} ${ui.paint.dim("orquestração concluída")}`);
-  if (lavish) {
-    lavish.event("■ orquestração concluída");
-    await lavish.end();
-  }
   input.restore();
   process.exit(0);
 }

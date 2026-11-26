@@ -12,7 +12,7 @@
  * - setRight(lines): conteúdo do quadro direito (linhas SEM borda — a moldura
  *   e o centralizador vertical são do render). SÓ métricas, nunca escolhas.
  * - setPrompt({question, typed, hint, menu}): prompt TMR ativo aparece dentro
- *   da caixa TMR no topo; sem prompt, a caixa fica compacta (idle/steering).
+ *   da caixa TMR grande no topo; sem prompt, a caixa mostra banner + estado.
  * - exit(): restaura o terminal principal, despeja TODO o log no scrollback real.
  *
  * Fallback: activate() retorna false fora de TTY, com NO_COLOR ou terminal
@@ -147,20 +147,29 @@ function render() {
   process.stdout.write("\x1b[H\x1b[J" + rows.join("\n") + "\x1b[H");
 }
 
-/** Caixa TMR no TOPO da coluna esquerda — presente durante TODO o processo.
- *  Com prompt ativo: pergunta, digitação, menu e rodapé dentro dela.
- *  Sem prompt: compacta, mostra o estado (idle ou steering). */
+/** Caixa TMR no TOPO da coluna esquerda — desenho GRANDE, presente o processo
+ *  todo. Com prompt ativo: pergunta, digitação, menu e rodapé dentro dela.
+ *  Sem prompt: banner + estado (idle ou steering). */
+const TMR_BANNER = [
+  "████████ ██████   ██████ ██████",
+  "   ██    ██   ██ ██      ██   ██",
+  "   ██    ██████  ██      ██████  ·  squad ACP",
+  "   ██    ██   ██  ██████ ██   ██",
+];
+
 function buildTmrBlock() {
   const w = state.leftW;
   const innerW = w - 4;
   const border = ui.paint.boldMagenta;
   const p = state.prompt;
   const inner = [];
+  for (const b of TMR_BANNER) inner.push(ui.paint.boldMagenta("  " + b));
+  inner.push(ui.paint.gray("  " + "─".repeat(Math.max(4, innerW - 2))));
   if (p && p.kind === "steering") {
-    inner.push(`${ui.paint.boldMagenta("◈ TMR · steering")} ${ui.paint.gray("— enter envia ao agente em curso")}`);
+    inner.push(`${ui.paint.boldMagenta("◈ steering")} ${ui.paint.gray("— enter envia ao agente em curso")}`);
     inner.push(p.typed ? `${ui.paint.gray("▸ ")}${ui.paint.bold(p.typed)}${ui.paint.gray("▌")}` : `${ui.paint.gray("▸ ▌")}`);
   } else if (p) {
-    inner.push(`${ui.paint.boldMagenta("◈ TMR")} ${ui.paint.brightCyan("· aguardando você")}`);
+    inner.push(`${ui.paint.boldMagenta("◈ aguardando você")}`);
     for (const ql of String(p.question ?? "").split("\n")) inner.push(ui.paint.bold(ql));
     if (p.hint) inner.push(ui.paint.gray(p.hint));
     if (p.kind === "select" && p.menu) {
@@ -172,10 +181,10 @@ function buildTmrBlock() {
       inner.push(p.typed ? `${ui.paint.gray("▸ ")}${ui.paint.bold(p.typed)}${ui.paint.gray("▌")}` : `${ui.paint.gray("▸ ▌")}`);
     }
   } else {
-    inner.push(`${ui.paint.boldMagenta("◈ TMR")} ${ui.paint.gray("— processo em curso · digite para steering ao agente")}`);
+    inner.push(`${ui.paint.boldMagenta("◈")} ${ui.paint.gray("processo em curso · digite para steering ao agente")}`);
   }
   const rows = [border("┌" + "─".repeat(w - 2) + "┐")];
-  const maxInner = Math.max(2, Math.floor(state.rows * 0.6) - 2);
+  const maxInner = Math.max(TMR_BANNER.length + 3, Math.floor(state.rows * 0.65) - 2);
   for (const l of inner.slice(0, maxInner)) {
     const c = clipAnsi(l, innerW);
     rows.push(border("│") + "  " + c + " ".repeat(Math.max(0, innerW - visLen(c))) + "  " + border("│"));
@@ -184,23 +193,25 @@ function buildTmrBlock() {
   return rows;
 }
 
-/** Quadro de métricas: moldura completa ┌─┐/│/└─┘ em torno do conteúdo de
- *  setRight (linhas sem borda) e centralização VERTICAL na coluna direita. */
+/** Quadro de métricas GRANDE: moldura ┌─┐/│/└─┘ ocupando a ALTURA TODA da
+ *  coluna direita, com o conteúdo de setRight no topo. */
 function buildRightBlock() {
   const w = state.rightW;
   const row = (s) => s + " ".repeat(Math.max(0, w - visLen(s)));
   const border = ui.paint.brightBlue;
   const innerW = w - 6;
-  const inner = (state.right ?? []).map((l) => clipAnsi(l, innerW));
-  const topPad = Math.max(0, Math.floor((visibleRows() - inner.length - 2) / 2));
-  const out = [];
-  for (let i = 0; i < topPad; i++) out.push("");
-  out.push(border("┌" + "─".repeat(w - 2) + "┐"));
-  for (const l of inner) {
-    out.push(border("│") + "  " + l + " ".repeat(Math.max(0, innerW - visLen(l))) + "  " + border("│"));
+  const vis = visibleRows();
+  const inner = [];
+  inner.push(ui.paint.bold("MÉTRICAS DA SQUAD"));
+  inner.push("");
+  for (const l of state.right ?? []) inner.push(l);
+  const rows = [border("┌" + "─".repeat(w - 2) + "┐")];
+  for (let r = 0; r < vis - 2; r++) {
+    const l = clipAnsi(inner[r] ?? "", innerW);
+    rows.push(border("│") + "   " + l + " ".repeat(Math.max(0, innerW - visLen(l))) + "   " + border("│"));
   }
-  out.push(border("└" + "─".repeat(w - 2) + "┘"));
-  return out.slice(0, visibleRows()).map(row);
+  rows.push(border("└" + "─".repeat(w - 2) + "┘"));
+  return rows.map(row);
 }
 
 function visibleRows() { return state.rows; }

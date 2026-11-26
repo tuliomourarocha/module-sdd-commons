@@ -175,7 +175,7 @@ export function metricsBoxLines(metrics, models, { issue = null, status = "" } =
     lines.push(`${paint.bold("status")}  ${paint.brightCyan(status || "—")}`);
     lines.push("");
   }
-  lines.push(paint.bold("QUADRO DA SQUAD"));
+  lines.push("");
   for (const [role, p] of metrics.phases.entries()) {
     lines.push(`  ${paint.boldCyan(cell(role, 9))} ${paint.dim(cell(models[role]?.label ?? "—", 18))} ${paint.dim("×" + p.turns)}`);
   }
