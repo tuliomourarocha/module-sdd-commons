@@ -67,10 +67,12 @@ reabilita o picker interativo do instalador (lista os modelos do harness
 escolhido, por agente, ordenados por qualidade × custo-benefício para o papel).
 
 Exemplos:
-  npx --yes github:tuliomourarocha/module-sdd-commons#main --opencode
+  npx --yes github:tuliomourarocha/module-sdd-commons#main            (ACP-only: só a pilha ACP)
+  npx --yes github:tuliomourarocha/module-sdd-commons#main --opencode (instalação completa da squad no OpenCode)
   npx --yes github:tuliomourarocha/module-sdd-commons#main --claude --target ../meu-app
   npx --yes github:tuliomourarocha/module-sdd-commons#main --codex --no-rtk
   npx --yes github:tuliomourarocha/module-sdd-commons#main --opencode --rtk-agents all
+  npx --yes github:tuliomourarocha/module-sdd-commons#main --opencode --artifacts-only  (só artefatos + MCP — usado pelo TMR)
   npx --yes github:tuliomourarocha/module-sdd-commons#main --rtk-only --rtk-agents all`);
   process.exit(exitCode);
 }
@@ -88,6 +90,7 @@ function parseArgs(args) {
   };
   const codegraph = { enabled: true };
   let modelPicker = false; // picker agora vive no runtime do ACP (acp_orchestrate.mjs); install grava o padrão da squad
+  let artifactsOnly = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -97,6 +100,7 @@ function parseArgs(args) {
     if (argument === "--no-codegraph") { codegraph.enabled = false; continue; }
     if (argument === "--no-model-picker") { modelPicker = false; continue; }
     if (argument === "--model-picker") { modelPicker = true; continue; }
+    if (argument === "--artifacts-only") { artifactsOnly = true; continue; }
     if (argument === "--rtk-only") { rtk.enabled = true; rtk.only = true; continue; }
     if (argument === "--rtk-edition") {
       const value = args[index + 1];
@@ -138,11 +142,17 @@ function parseArgs(args) {
     throw new Error(`Argumento desconhecido: ${argument}`);
   }
 
-  // sem plataforma: só aceitável no modo --rtk-only (só configura o vínculo do rtk)
-  if (selected.length === 0 && !(rtk.only && rtk.agents)) {
-    throw new Error("Escolha uma plataforma: --opencode, --claude, --codex ou --all; ou use --rtk-only com --rtk-agents.");
-  }
-  return { selected: [...new Set(selected)], target, dryRun, rtk, codegraph, modelPicker };
+  return {
+    selected: [...new Set(selected)],
+    target,
+    dryRun,
+    rtk,
+    codegraph,
+    modelPicker,
+    // Sem plataforma → modo ACP-only (default): baixa só a pilha ACP.
+    // --artifacts-only → só artefatos + MCP para as plataformas pedidas (deps já garantidas).
+    artifactsOnly,
+  };
 }
 
 async function exists(file) {
@@ -598,8 +608,20 @@ async function initCodegraphIndex(target, dryRun) {
   }
 }
 
-async function setupCodegraph(platformsRequested, { target, dryRun }) {
-  console.log("\n== CodeGraph + ast-grep — inteligência semântica ==");
+// Pré-download do adaptador oficial do Codex (ACP) — o primeiro run com
+// --agent codex no TMR não paga o download on-demand (fallback: npx -y ao vivo).
+async function installCodexAcpAdapter(dryRun) {
+  if (spawnSync("command", ["-v", "codex-acp"], { shell: true }).status === 0) {
+    console.log("✓ adaptador codex-acp já instalado");
+    return;
+  }
+  console.log("… pré-baixando adaptador Codex (@agentclientprotocol/codex-acp)");
+  const result = spawnSync("npm", ["install", "-g", "@agentclientprotocol/codex-acp"], { stdio: "inherit" });
+  if (result.status === 0) console.log("✓ codex-acp instalado");
+  else console.log("⚠ npm install -g @agentclientprotocol/codex-acp falhou — o primeiro run codex usará 'npx -y' on-demand");
+}
+
+async function setupCodegraph(platformsRequested, { target, dryRun }) {  console.log("\n== CodeGraph + ast-grep — inteligência semântica ==");
   try {
     if (platformsRequested.length === 0) {
       console.log("✖ CodeGraph: nenhuma plataforma para configurar");
@@ -746,7 +768,42 @@ async function installCodex(target, dryRun, modelSelections) {
 }
 
 async function main() {
-  const { selected, target, dryRun, rtk, codegraph, modelPicker } = parseArgs(process.argv.slice(2));
+  const { selected, target, dryRun, rtk, codegraph, modelPicker, artifactsOnly } = parseArgs(process.argv.slice(2));
+
+  // ── Modo ACP-only (default, sem plataforma): baixa SÓ a pilha ACP ──────────
+  // rtk + codegraph/ast-grep + lavish + opencode + adaptador codex-acp.
+  // Os artefatos da squad e os MCPs são instalados pelo TMR no momento da
+  // execução (wizard sdd-acp), para o harness escolhido.
+  if (selected.length === 0 && !rtk.only) {
+    console.log("Modo ACP-only: instalando apenas a pilha ACP (artefatos e MCPs viram com o TMR — sdd-acp)");
+    const ensure = spawnSync(process.execPath, [path.join(sourceRoot, "skills", "acp-client", "scripts", "ensure_deps.mjs")], { stdio: "inherit" });
+    if (ensure.status !== 0) throw new Error("bootstrap de dependências falhou (ensure_deps) — rode sdd-acp doctor para diagnosticar");
+    await installCodexAcpAdapter(dryRun);
+    console.log("\n✓ Pilha ACP pronta. Agora rode o wizard:");
+    console.log("  sdd-acp          (instala os artefatos da squad no harness escolhido e roda o ciclo)");
+    console.log("  sdd-acp doctor   (diagnóstico)");
+    return;
+  }
+
+  // ── Modo --artifacts-only (usado pelo TMR em runtime): artefatos + MCP, sem
+  //    re-baixar dependências (ensure_deps já garantiu rtk/codegraph/lavish).
+  if (artifactsOnly) {
+    if (selected.length === 0) throw new Error("--artifacts-only exige plataforma: --opencode, --claude ou --codex.");
+    console.log(`Modo artifacts-only: instalando artefatos + MCP para ${selected.join(", ")} em ${target}`);
+    for (const platform of selected) {
+      const output = await ({ opencode: installOpenCode, claude: installClaude, codex: installCodex }[platform])(
+        target,
+        dryRun,
+        {},
+      );
+      console.log(`✓ ${platform}: ${output}`);
+      if (await bindCodegraphToHarness(platform, { target, dryRun })) {
+        console.log(`✓ MCP codegraph registrado no ${platform}`);
+      }
+    }
+    return;
+  }
+
   console.log(`${dryRun ? "Simulação" : "Instalando"} SDD Harness em ${target}`);
 
   if (rtk.only) {

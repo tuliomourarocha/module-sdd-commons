@@ -27,6 +27,7 @@
  * acp_client.mjs (usado pelos macros builder/planner internos).
  */
 import { spawn, spawnSync } from "node:child_process";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
@@ -38,7 +39,8 @@ import { loadModelPools, rankModels, chooseVariant, loadDefaults } from "../../.
 import * as ui from "./tmr_ui.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const SOURCE_ROOT = path.resolve(SCRIPT_DIR, "../../../..");
+// scripts → acp-client → skills → raiz do pacote/repo
+const SOURCE_ROOT = path.resolve(SCRIPT_DIR, "../../..");
 
 const AGENT_PRESETS = {
   opencode: { command: "opencode", args: ["acp"], authHint: "opencode auth login", platform: "opencode" },
@@ -66,6 +68,32 @@ const askYN = (q, def = "n") => ask(`${q} (s/N)`, def === "s" ? "s" : "n").then(
 
 function printMenu(title, rows) {
   ui.panel(title, rows);
+}
+
+// ------------------------------------------------------------------- artefatos da squad
+/** Instala os artefatos da squad (agents/skills/commands/hooks/plugins) + MCP
+ *  para o harness escolhido — no RUNTIME, via bin/sdd-harness.js --artifacts-only. */
+async function installArtifacts(cwd, harness) {
+  const marker = { opencode: ".opencode/agents", claude: ".claude/agents", codex: ".codex" }[harness];
+  const already = fsSync.existsSync(path.join(cwd, marker));
+  ui.stepHeader(2, 5, "Artefatos da squad");
+  if (already) {
+    console.log(`  ${ui.icons.info} artefatos já presentes (${marker})`);
+    if (!(await askYN("Atualizar (reinstalar) os artefatos?", "n"))) { console.log(`  ${ui.paint.gray("(mantidos)")}`); return; }
+  } else if (!(await askYN(`Instalar artefatos da squad para ${harness} neste projeto? (agents/skills/hooks/plugins + MCP)`, "s"))) {
+    console.log(`  ${ui.paint.yellow("⚠")} ${ui.paint.dim("sem artefatos — o harness roda com o ambiente que já tiver")}`);
+    return;
+  }
+  const sp = ui.spinner(`instalando artefatos para ${harness}`);
+  const installer = path.join(SOURCE_ROOT, "bin", "sdd-harness.js");
+  const r = spawnSync(process.execPath, [installer, `--${harness}`, "--target", cwd, "--artifacts-only"], {
+    cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8",
+  });
+  sp.stop(r.status === 0 ? `artefatos instalados (${harness}) + MCP` : "instalação falhou", r.status === 0 ? ui.paint.green : ui.paint.red);
+  if (r.status !== 0) {
+    const out = (r.stdout ?? r.stderr ?? r.error?.message ?? "").trim().split("\n").slice(-6);
+    for (const l of out) console.log(`    ${ui.paint.gray(l)}`);
+  }
 }
 
 // ------------------------------------------------------------------- .planning
@@ -272,7 +300,7 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
   let activeRenderer = renderer; // trocado pelo wrapper com spinner quando o turno começa
   const rpc = new Rpc(child, {
     onEvent: (msg) => {
-      handleNotification(msg, { emit: (o) => activeRenderer.emit(o) }, ui);
+      handleNotification(msg, { emit: (o) => activeRenderer.emit(o) }, lavish);
       const u = msg.params?.update ?? {};
       if (u.sessionUpdate === "usage_update") metrics.addCost(role, u.cost?.amount ?? 0);
       if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") metrics.addTool(role, u.title);
@@ -462,7 +490,7 @@ async function main() {
   // 1) harness
   let harness = forcedAgent;
   if (!harness) {
-    ui.stepHeader(1, 4, "Escolha do harness");
+    ui.stepHeader(1, 5, "Escolha do harness");
     printMenu("qual harness vai executar a squad via ACP?", [
       `${ui.paint.brightCyan("1)")} opencode  ${ui.paint.dim("(nativo — opencode acp)")}`,
       `${ui.paint.white("2)")} codex     ${ui.paint.dim("(adaptador oficial @agentclientprotocol/codex-acp)")}`,
@@ -473,12 +501,15 @@ async function main() {
   if (!AGENT_PRESETS[harness]) fail(`harness desconhecido: ${harness}`, 2);
   console.log(`  ${ui.icons.ok} harness: ${ui.paint.bold(harness)}`);
 
-  // 2) limpar .planning (STATE/HANDOFF/specs) para começar do zero
-  ui.stepHeader(2, 4, "Estado da squad (.planning/)");
+  // 2) artefatos da squad no projeto (runtime — a instalação não os copia mais)
+  await installArtifacts(cwd, harness);
+
+  // 3) limpar .planning (STATE/HANDOFF/specs) para começar do zero
+  ui.stepHeader(3, 5, "Estado da squad (.planning/)");
   await maybeCleanPlanning(cwd);
 
-  // 3) issue do GitHub — obrigatória antes do primeiro agente
-  ui.stepHeader(3, 4, "Tarefa — issue do GitHub");
+  // 4) issue do GitHub — obrigatória antes do primeiro agente
+  ui.stepHeader(4, 5, "Tarefa — issue do GitHub");
   let issue = null;
   while (!issue) {
     const link = await ask("Link/ID da issue (https://github.com/owner/repo/issues/N, owner/repo#N ou #N)");
@@ -491,8 +522,8 @@ async function main() {
   }
   console.log(`  ${ui.icons.ok} issue: ${ui.paint.bold(`#${issue.number ?? "manual"}`)} ${issue.title}${issue.labels ? ui.paint.gray(` [${issue.labels}]`) : ""}`);
 
-  // 4) modelo por agente (lista completa + custos + recomendado por papel)
-  ui.stepHeader(4, 4, "Modelo por agente");
+  // 5) modelo por agente (lista completa + custos + recomendado por papel)
+  ui.stepHeader(5, 5, "Modelo por agente");
   const models = await pickModelsForRoles(harness, forcedModel);
   for (const r of ROLES) console.log(`  ${ui.icons.ok} ${ui.paint.boldCyan(r.padEnd(8))} ${models[r].label} ${ui.paint.gray(`(${models[r].modelValue})`)} ${ui.paint.dim("·")} ${ui.paint.dim(priceOf(models[r]))}`);
 
@@ -545,7 +576,7 @@ async function main() {
   console.log("");
   ui.metricsPanel(metrics, models);
   console.log(`\n  ${ui.icons.ok} ${ui.paint.bold("TMR")} ${ui.paint.dim("orquestração concluída")}`);
-  if (ui) {
+  if (lavish) {
     lavish.event("■ orquestração concluída");
     await lavish.end();
   }

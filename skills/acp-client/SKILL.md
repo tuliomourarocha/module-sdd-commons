@@ -18,9 +18,10 @@ O macro é o **client**; o harness externo é o **agent**. Toda a execução (me
 `acp_orchestrate.mjs` é a entrada quando um HUMANO quer rodar o ciclo completo, com a **identidade visual TMR** no terminal (`tmr_ui.mjs`: banner, menus em painel, spinner, headers de fase, painel de métricas — respeita `NO_COLOR` e degrada fora de TTY). O fluxo `planner → builder → reviewer` roda por um harness externo, com decisões humanas no início:
 
 1. **Escolha do harness** — opencode (nativo) ou codex (adaptador).
-2. **Limpar `.planning/`** — lista STATE.md/HANDOFF.md/specs e pergunta se começa do zero (apaga só `.md`/`.json` de `.planning/`, com confirmação).
-3. **Issue do GitHub** — link `github.com/owner/repo/issues/N`, `owner/repo#N` ou `#N` (repo do cwd); busca via `gh issue view` e vira o input das fases. Sem `gh` → cola o texto da tarefa.
-4. **Modelo por agente** — para planner/builder/reviewer: lista com preços ($/Mtok in/out) e o **★ recomendado por papel** (reusa `bin/lib/model-picker.js` — os mesmos pesos do catálogo da squad; enter = recomendado). `--model <provider/model>` força um modelo para todos.
+2. **Artefatos da squad no projeto** — instala (via `bin/sdd-harness.js --<platform> --artifacts-only`) agents/skills/commands/hooks/plugins + registro do MCP codegraph para o harness escolhido (já instalados → pergunta se atualiza). A instalação da squad NÃO copia mais artefatos — é aqui que eles vêm, e ficam no projeto.
+3. **Limpar `.planning/`** — lista STATE.md/HANDOFF.md/specs e pergunta se começa do zero (apaga só `.md`/`.json` de `.planning/`, com confirmação).
+4. **Issue do GitHub** — link `github.com/owner/repo/issues/N`, `owner/repo#N` ou `#N` (repo do cwd); busca via `gh issue view` e vira o input das fases. Sem `gh` → cola o texto da tarefa.
+5. **Modelo por agente** — para planner/builder/reviewer: lista com preços ($/Mtok in/out) e o **★ recomendado por papel** (reusa `bin/lib/model-picker.js` — os mesmos pesos do catálogo da squad; enter = recomendado). `--model <provider/model>` força um modelo para todos.
 5. **Execução** — uma sessão ACP por papel, contexto encadeado em memória (planner → builder → reviewer), com steering do usuário em TTY e/ou `--ui lavish`.
 
 ### Interface (`--ui lavish`) — quadros ao vivo no browser

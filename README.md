@@ -1,26 +1,28 @@
 # module-sdd-commons
 Repositório central para armazenamento, versionamento e gerenciamento de artefatos de IA, como agentes, skills, prompts, instruções e configurações reutilizáveis.
 
-## Instalação multi-harness
+## Instalação
 
-O mesmo Harness V2 pode ser instalado em OpenCode, Claude Code ou Codex sem
-publicar um pacote no npm. O comando baixa e executa o `package.json` deste
-repositório:
+A instalação baixa **apenas a pilha ACP** (rtk, codegraph/ast-grep, lavish-axi,
+adaptador codex-acp e o próprio opencode). Os **artefatos da squad** (agents,
+skills, commands, hooks, plugins) e os **MCPs** são instalados no momento da
+execução, pelo wizard TMR, para o harness que você escolher lá.
 
 ```bash
-npx --yes github:tuliomourarocha/module-sdd-commons#main --opencode
-npx --yes github:tuliomourarocha/module-sdd-commons#main --claude --target /caminho/do/projeto
-npx --yes github:tuliomourarocha/module-sdd-commons#main --codex
-npx --yes github:tuliomourarocha/module-sdd-commons#main --all
+npx --yes github:tuliomourarocha/module-sdd-commons#main            # ACP-only (default)
+npx --yes github:tuliomourarocha/module-sdd-commons#main --with-artifacts --opencode   # também copia artefatos p/ .opencode
+npx --yes github:tuliomourarocha/module-sdd-commons#main --codex --with-artifacts --target /caminho/do/projeto
 ```
 
-O CLI escreve somente diretórios gerenciados pelo harness:
+| Modo | O que instala |
+| --- | --- |
+| **default (ACP-only)** | Pilha ACP: rtk + codegraph/ast-grep + lavish + adaptador codex-acp + opencode |
+| `--with-artifacts` + plataforma | Tudo acima **+ artefatos da squad** no alvo (agents/skills/commands/hooks/plugins) — caminho legado; o normal é deixar o TMR instalar no run |
 
-| Alvo | Artefatos instalados | Como iniciar |
-| --- | --- | --- |
-| OpenCode | `.opencode/agents`, `commands`, `skills` | `@harness <pedido>` |
-| Claude Code | `.claude/agents`, `commands`, `skills`, `CLAUDE.md` | `/sdd-harness <pedido>` |
-| Codex | `.codex/skills/sdd-harness`, `roles`, `skills` | `$sdd-harness <pedido>` |
+Quem instala os artefatos em runtime é o `sdd-acp` (passo 2 do wizard), via
+`--artifacts-only` — que também registra o MCP codegraph no harness escolhido.
+Os artefatos ficam no projeto ("depois pode manter"); rodar o wizard de novo
+oferece atualização.
 
 ### RTK — economia de tokens durante a instalação
 

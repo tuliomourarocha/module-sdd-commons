@@ -36,13 +36,17 @@ RTK_ENABLED=1
 RTK_EDITION="${RTK_EDITION:-full}"
 CODEGRAPH_ENABLED=1
 LAVISH_ENABLED=1
+WITH_ARTIFACTS=0
 
 usage() {
-  echo "Uso: ./install.sh [<target-dir>] [--no-rtk] [--rtk-edition full|oss] [--no-codegraph] [--no-lavish]"
-  echo "  <target-dir>           Diretório alvo (default: .opencode)"
+  echo "Uso: ./install.sh [<target-dir>] [--with-artifacts] [--no-rtk] [--rtk-edition full|oss] [--no-codegraph] [--no-lavish] [--no-acp]"
+  echo "  <target-dir>           Diretório alvo (default: .opencode) — só usado com --with-artifacts"
+  echo "  --with-artifacts       Também instala os artefatos da squad no alvo (default OFF: a instalação baixa"
+  echo "                         SÓ a pilha ACP; artefatos e MCPs são instalados pelo TMR no run, para o"
+  echo "                         harness escolhido no wizard)"
   echo "  --no-rtk               Não baixa nem vincula o rtk"
   echo "  --rtk-edition <full|>  Edição do rtk: full (padrão) ou oss (Apache-2.0)"
-  echo "  --no-codegraph         Não instala codegraph/ast-grep nem registra o MCP"
+  echo "  --no-codegraph         Não instala codegraph/ast-grep"
   echo "  --no-lavish            Não instala o lavish-axi (revisão de planos HTML; cai para npx on-demand)"
   echo "  --no-acp               Não pré-baixa o adaptador codex-acp (client ACP vai com skills/)"
 }
@@ -54,6 +58,7 @@ while [ $# -gt 0 ]; do
     --no-codegraph) CODEGRAPH_ENABLED=0 ;;
     --no-lavish) LAVISH_ENABLED=0 ;;
     --no-acp) ACP_ENABLED=0 ;;
+    --with-artifacts) WITH_ARTIFACTS=1 ;;
     --help|-h)     usage; exit 0 ;;
     -*)            echo "Argumento desconhecido: $1 (veja ./install.sh --help)" >&2; exit 1 ;;
     *)             TARGET="$1" ;;
@@ -315,6 +320,28 @@ install_github() {
 
 ACP_ENABLED=1
 
+install_acp_stack_only() {
+  # scripts do client vivem no próprio pacote/repo (SRC_ROOT) — sem TARGET
+  if [ -f "$SRC_ROOT/skills/acp-client/scripts/acp_orchestrate.mjs" ]; then
+    ok "scripts do client ACP presentes (acp_client.mjs + acp_orchestrate.mjs)"
+  else
+    error "skills/acp-client não encontrado em $SRC_ROOT — pacote incompleto"
+    return 1
+  fi
+  ensure_npm || return 1
+  if command -v codex-acp >/dev/null 2>&1; then
+    ok "adaptador codex-acp já instalado ($(codex-acp --version 2>/dev/null || echo '?'))"
+  else
+    info "pré-baixando adaptador Codex (@agentclientprotocol/codex-acp)…"
+    if npm install -g @agentclientprotocol/codex-acp >/dev/null 2>&1 && command -v codex-acp >/dev/null 2>&1; then
+      ok "codex-acp instalado — primeiro run com --agent codex não precisa de download"
+    else
+      error "npm install -g @agentclientprotocol/codex-acp falhou — o primeiro run codex usará 'npx -y' on-demand"
+      return 1
+    fi
+  fi
+}
+
 install_acp() {
   # scripts do client: fonte (repo) ou alvo instalado
   if [ -f "$TARGET/skills/acp-client/scripts/acp_orchestrate.mjs" ] || \
@@ -528,6 +555,14 @@ install_codegraph() {
   ok "CodeGraph + ast-grep prontos — semantic scope via MCP codegraph, evidência estrutural via 'ast-grep' (skill: codegraph-ast-grep)"
 }
 
+# ACP-only: só os CLIs — o MCP codegraph e o índice são configurados pelo TMR
+# no momento da execução (precisam do harness escolhido no wizard).
+install_codegraph_stack() {
+  install_codegraph_cli || return 1
+  install_ast_grep || return 1
+  ok "CodeGraph + ast-grep instalados (MCP e índice serão configurados pelo TMR no run)"
+}
+
 install_claude() {
   local src="$1"
   # CLAUDE.md → AGENTS.md
@@ -577,6 +612,26 @@ main() {
   echo ""
 
   PROJECT_ROOT="$(pwd)"
+
+  # ── Modo ACP-only (default): a instalação baixa APENAS a pilha ACP ─────
+  # Os artefatos da squad (agents/skills/commands/hooks/plugins) são instalados
+  # pelo TMR no momento da execução, para o harness escolhido no wizard.
+  if [ "$WITH_ARTIFACTS" = "0" ]; then
+    info "Modo ACP-only — instalando apenas a pilha ACP (artefatos viram com o TMR: sdd-acp)"
+    echo ""
+    if [ "$RTK_ENABLED" = "1" ]; then install_rtk || true; else skip "RTK: pulado (--no-rtk)"; fi
+    if [ "$CODEGRAPH_ENABLED" = "1" ]; then install_codegraph_stack || true; else skip "CodeGraph: pulado (--no-codegraph)"; fi
+    if [ "$LAVISH_ENABLED" = "1" ]; then install_lavish || true; else skip "Lavish: pulado (--no-lavish)"; fi
+    if [ "$ACP_ENABLED" = "1" ]; then install_acp_stack_only || true; else skip "ACP: pulado (--no-acp)"; fi
+    echo ""
+    ok "Pilha ACP pronta! Os artefatos da squad (agents/skills/hooks/plugins) e os MCPs"
+    info "são instalados no harness escolhido quando você roda:"
+    echo ""
+    info "  sdd-acp        (wizard TMR — também faz os downloads do run)"
+    info "  sdd-acp doctor (diagnóstico)"
+    echo ""
+    return 0
+  fi
 
   mkdir -p "$TARGET"
 
