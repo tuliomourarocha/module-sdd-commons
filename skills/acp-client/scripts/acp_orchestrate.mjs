@@ -30,13 +30,13 @@ import { spawn, spawnSync } from "node:child_process";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { Rpc, handleNotification, LavishUi } from "./acp_client.mjs";
 import { ensureDeps } from "./ensure_deps.mjs";
 import { loadModelPools, rankModels, chooseVariant, loadDefaults } from "../../../bin/lib/model-picker.js";
 import * as ui from "./tmr_ui.mjs";
+import * as input from "./tmr_input.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 // scripts → acp-client → skills → raiz do pacote/repo
@@ -59,14 +59,9 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 const bump = (m, k, n = 1) => m.set(k, (m.get(k) ?? 0) + n);
 const mapStr = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => `${k}×${v}`).join(", ") || "—";
 
-// ------------------------------------------------------------------- wizard IO
-let rl = null;
-// Prompts SEM ANSI — o readline calcula a posição do cursor pelo comprimento
-// visível; códigos de cor no prompt fazem o texto digitado ficar invisível.
-const ask = (q, def = "") => new Promise((res) => {
-  rl.question(`${q}${def ? ` [${def}]` : ""}: `, (a) => res(String(a.trim() || def)));
-});
-const askYN = (q, def = "n") => ask(`${q} (s/N)`, def === "s" ? "s" : "n").then((a) => /^(s|si|sim|y|yes)$/i.test(a));
+// wizard usa a camada TMR (raw mode + keypress próprios) — sempre visível e dinâmico
+const ask = input.ask;
+const askYN = input.confirm;
 
 function printMenu(title, rows) {
   ui.panel(title, rows);
@@ -166,17 +161,18 @@ async function pickModelsForRoles(harness, forcedModel) {
       chosen[role] = { modelValue: roleDefault?.model ?? roleDefault ?? "", label: String(roleDefault?.model ?? roleDefault ?? "default"), input: null, output: null };
       continue;
     }
-    printMenu(`modelo para o agente ${role.toUpperCase()}`, top.map((e, i) => {
-      const idx = i === 0 ? ui.icons.star : ui.paint.gray(`${i + 1})`);
-      const label = i === 0 ? ui.paint.bold(e.label) : e.label;
+    const options = top.map((e, i) => {
       const varHint = chooseVariant(e, role, roleDefault?.variant ?? null);
-      const price = ui.paint.dim(priceOf(e));
-      const rec = i === 0 ? `  ${ui.icons.star} ${ui.paint.brightYellow("recomendado p/ este papel")}` : "";
-      return `${idx} ${label}  ${ui.paint.gray(`[${e.modelValue}]`)}  ${price}  ${ui.paint.gray(`ctx ${fmtCtx(e.context)}`)}${varHint ? ui.paint.gray(` · var ${varHint}`) : ""}${rec}`;
-    }));
-    const ans = await ask(`Escolha o modelo do ${role} (número, enter = recomendado)`, "1");
-    const idx = Math.min(Math.max(parseInt(ans, 10) || 1, 1), top.length);
-    chosen[role] = top[idx - 1];
+      const rec = i === 0 ? `${ui.icons.star} ` : "";
+      return `${rec}${e.label}  [${e.modelValue}]  ${priceOf(e)}  ctx ${fmtCtx(e.context)}${varHint ? ` · var ${varHint}` : ""}`;
+    });
+    const idx = await input.select(
+      `Modelo para o agente ${role.toUpperCase()} (↑↓ navega, enter escolhe)`,
+      options,
+      1,
+      (i) => `${top[i].label} (${top[i].modelValue})`,
+    );
+    chosen[role] = top[idx];
     console.log(`  ${ui.icons.ok} ${role}: ${ui.paint.bold(chosen[role].label)} ${ui.paint.gray(`(${chosen[role].modelValue})`)}`);
   }
   return chosen;
@@ -361,13 +357,11 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
   const info = await rpc.request("session/new", newParams, 120_000);
   const sessionId = info?.sessionId;
 
-  // steering via terminal durante a fase (listener próprio; o wizard não pergunta nada agora)
-  const NO_STEER_RE = /^(s|si|sim|y|yes|n|nao|não|no)$/i;
+  // steering via terminal durante a fase — pela camada TMR (prompt pendente
+  // tem precedência automática; teclas de y/N não vazam como steering)
   phaseState.phaseActive = true;
   const steerInFlight = [];
-  const lineHandler = (line) => {
-    const t = line.trim();
-    if (!t || NO_STEER_RE.test(t)) return;
+  input.setSteering((t) => {
     if (steeringSupported) {
       console.log(`  ${ui.icons.arrow} ${ui.paint.yellow("steering imediato")} ${ui.paint.gray(role)} ${ui.paint.dim(t.slice(0, 160))}`);
       steerInFlight.push(
@@ -375,8 +369,7 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
           .then((r) => { metrics.addUsage(role, r?.usage); return r; })
           .catch(() => null));
     } else steeringQueue.push({ text: t, from: "terminal" });
-  };
-  rl.on("line", lineHandler);
+  });
 
   const prompt = [rolePrompt, task, prevContext].filter(Boolean).join("\n\n");
   phaseState.currentRole = role;
@@ -420,7 +413,7 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
   const finalText = phaseText.get(role) ?? "";
   phaseText.set(role, "");
 
-  rl.off("line", lineHandler);
+  input.setSteering(null);
   phaseState.phaseActive = false;
   try { rpc.notify("session/cancel", { sessionId }); } catch {}
   child.stdin?.end();
@@ -484,18 +477,21 @@ async function main() {
   ensureDeps({ log: (s) => console.error(s) });
   if (!process.stdin.isTTY) fail("o orquestrador é interativo (wizard) — precisa de TTY. Para uma subtask única use acp_client.mjs.");
   ui.banner("ACP — Squad Orchestrator");
-  rl = readline.createInterface({ input: process.stdin, terminal: true });
 
   // 1) harness
   let harness = forcedAgent;
   if (!harness) {
     ui.stepHeader(1, 5, "Escolha do harness");
-    printMenu("qual harness vai executar a squad via ACP?", [
-      `${ui.paint.brightCyan("1)")} opencode  ${ui.paint.dim("(nativo — opencode acp)")}`,
-      `${ui.paint.white("2)")} codex     ${ui.paint.dim("(adaptador oficial @agentclientprotocol/codex-acp)")}`,
-    ]);
-    const ans = await ask("Escolha o harness", "1");
-    harness = ans === "2" ? "codex" : "opencode";
+    const idx = await input.select(
+      "Qual harness vai executar a squad via ACP? (↑↓ navega, enter escolhe)",
+      [
+        "opencode  (nativo — opencode acp)",
+        "codex     (adaptador oficial @agentclientprotocol/codex-acp)",
+      ],
+      1,
+      (i) => ["opencode", "codex"][i],
+    );
+    harness = idx === 1 ? "codex" : "opencode";
   }
   if (!AGENT_PRESETS[harness]) fail(`harness desconhecido: ${harness}`, 2);
   console.log(`  ${ui.icons.ok} harness: ${ui.paint.bold(harness)}`);
@@ -540,13 +536,10 @@ async function main() {
   const uiTimer = lavish ? setInterval(() => lavish.refresh(), 2000) : null;
 
   // terminal steering fora das fases também é aceito
-  const NO_STEER_RE = /^(s|si|sim|y|yes|n|nao|não|no)$/i;
-  const idleSteer = (line) => {
-    const t = line.trim();
-    if (!t || NO_STEER_RE.test(t) || phaseState.phaseActive) return;
-    steeringQueue.push({ text: t, from: "terminal" });
-  };
-  rl.on("line", idleSteer);
+  // steering terminal entre/períodos sem fase — perguntas pendentes têm precedência
+  input.setSteering((t) => {
+    if (!phaseState.phaseActive) steeringQueue.push({ text: t, from: "terminal" });
+  });
 
   // ── fases: planner → builder → reviewer (contexto encadeado em memória)
   const rolePrompts = {};
@@ -571,7 +564,7 @@ async function main() {
   }
 
   clearInterval(uiTimer);
-  rl.off("line", idleSteer);
+  input.setSteering(null);
   console.log("");
   ui.metricsPanel(metrics, models);
   console.log(`\n  ${ui.icons.ok} ${ui.paint.bold("TMR")} ${ui.paint.dim("orquestração concluída")}`);
@@ -579,7 +572,7 @@ async function main() {
     lavish.event("■ orquestração concluída");
     await lavish.end();
   }
-  rl.close();
+  input.restore();
   process.exit(0);
 }
 

@@ -41,24 +41,23 @@ export const icons = {
 };
 
 // --------------------------------------------------------------- banner TMR
+// Fonte "ANSI Shadow" (figlet) — letterforms claras, com cor por letra.
 const TMR_ART = [
-  ["████████", "██     ██", "████████"],
-  ["   ██    ", "██     ██", "   ██    "],
-  ["   ██    ", "██     ██", "   ██    "],
-  ["   ██    ", "██     ██", "   ██    "],
-  ["   ██    ", " ███████ ", "   ██    "],
+  ["████████╗", "███╗   ███╗", "██████╗ "],
+  ["╚══██╔══╝", "████╗ ████║", "██╔══██╗"],
+  ["   ██║   ", "██╔█████╔██║", "██████╔╝"],
+  ["   ██║   ", "██║╚██╔╝██║", "██╔══██╗"],
+  ["   ██║   ", "██║ ╚═╝ ██║", "██║  ██║"],
+  ["   ╚═╝   ", "╚═╝     ╚═╝", "╚═╝  ╚═╝"],
 ];
+const LETTER_COLORS = [paint.brightCyan, paint.boldMagenta, paint.boldGreen];
 
 export function banner(subtitle = "ACP — Squad Orchestrator") {
-  const lines = ["", "", "", "", ""];
-  TMR_ART.forEach((row, i) => {
-    lines[i] = row
-      .map((seg, col) =>
-        col === 0 ? paint.boldCyan(seg) : col === 1 ? paint.boldMagenta(seg) : paint.boldCyan(seg))
-      .join(" ");
-  });
-  console.log(lines.join("\n"));
-  console.log(`  ${paint.gray("─".repeat(42))}`);
+  for (const row of TMR_ART) {
+    console.log("  " + row.map((seg, col) => LETTER_COLORS[col](seg)).join(" "));
+  }
+  console.log("");
+  console.log(`  ${paint.gray("─".repeat(46))}`);
   console.log(`  ${paint.bold("TMR")} ${paint.gray("·")} ${paint.dim(subtitle)}`);
   console.log(`  ${paint.gray("planner → builder → reviewer")} ${paint.gray("sobre Agent Client Protocol")}`);
   console.log("");

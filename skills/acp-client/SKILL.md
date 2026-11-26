@@ -21,7 +21,7 @@ O macro é o **client**; o harness externo é o **agent**. Toda a execução (me
 2. **Artefatos da squad no projeto** — instala (via `bin/sdd-harness.js --<platform> --artifacts-only`) agents/skills/commands/hooks/plugins + registro do MCP codegraph para o harness escolhido (já instalados → pergunta se atualiza). A instalação da squad NÃO copia mais artefatos — é aqui que eles vêm, e ficam no projeto.
 3. **Limpar `.planning/`** — lista STATE.md/HANDOFF.md/specs e pergunta se começa do zero (apaga só `.md`/`.json` de `.planning/`, com confirmação).
 4. **Issue do GitHub** — link `github.com/owner/repo/issues/N`, `owner/repo#N` ou `#N` (repo do cwd); busca via `gh issue view` e vira o input das fases. Sem `gh` → cola o texto da tarefa.
-5. **Modelo por agente** — para planner/builder/reviewer: lista com preços ($/Mtok in/out) e o **★ recomendado por papel** (reusa `bin/lib/model-picker.js` — os mesmos pesos do catálogo da squad; enter = recomendado). `--model <provider/model>` força um modelo para todos.
+5. **Modelo por agente** — para planner/builder/reviewer: **menu com setas ↑↓ (highlight dinâmico), números e Enter** — lista com preços ($/Mtok in/out), contexto e o **★ recomendado por papel** pré-selecionado (reusa `bin/lib/model-picker.js` — os mesmos pesos do catálogo da squad). `--model <provider/model>` força um modelo para todos.
 5. **Execução** — uma sessão ACP por papel, contexto encadeado em memória (planner → builder → reviewer), com steering do usuário em TTY e/ou `--ui lavish`.
 
 ### Interface (`--ui lavish`) — quadros ao vivo no browser

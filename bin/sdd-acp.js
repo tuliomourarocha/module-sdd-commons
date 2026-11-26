@@ -30,13 +30,13 @@ const fail = (msg, code = 2) => {
 };
 
 const usage = () => {
-  console.log(`
-${ui.paint.boldCyan("████████ ██     ██ ████████")}   ${ui.paint.bold("TMR")} ${ui.paint.gray("· ACP Squad Orchestrator")}
-${ui.paint.boldCyan("   ██     ██     ██    ██")}    ${ui.paint.dim("planner → builder → reviewer sobre Agent Client Protocol")}
-${ui.paint.boldCyan("   ██     ██     ██    ██")}
-${ui.paint.boldCyan("   ██     ██     ██    ██")}    ${ui.paint.gray("wizard:")}  ${ui.paint.green("sdd-acp")} ${ui.paint.dim("[--ui lavish] [--cwd dir] [--agent opencode|codex] [--model p/m]")}
-${ui.paint.boldCyan("   ██      ███████     ██")}    ${ui.paint.gray("doctor:")}  ${ui.paint.green("sdd-acp doctor")}
-                                ${ui.paint.gray("subtask:")} ${ui.paint.green("sdd-acp client")} ${ui.paint.dim("--agent opencode --cwd <repo> --json \"<prompt>\"")}`);
+  ui.banner("ACP — Squad Orchestrator");
+  console.log(`  ${ui.paint.bold("Uso")}`);
+  console.log(`    ${ui.paint.green("sdd-acp")} ${ui.paint.dim("[--ui lavish] [--cwd dir] [--agent opencode|codex] [--model p/m]")}   ${ui.paint.gray("wizard interativo")}`);
+  console.log(`    ${ui.paint.green("sdd-acp doctor")}      ${ui.paint.gray("diagnóstico das dependências ACP")}`);
+  console.log(`    ${ui.paint.green("sdd-acp client <args>")} ${ui.paint.gray("run de UMA subtask via acp_client.mjs")}`);
+  console.log(`    ${ui.paint.green("sdd-acp help")}         ${ui.paint.gray("esta ajuda")}`);
+  console.log("");
 };
 
 if (!scriptsDir) fail("acp_orchestrate.mjs não encontrado — instale a squad (npx sdd-harness) ou rode de dentro do projeto instalado.");
@@ -44,6 +44,7 @@ if (!scriptsDir) fail("acp_orchestrate.mjs não encontrado — instale a squad (
 const [cmd, ...rest] = process.argv.slice(2);
 if (cmd === "help" || cmd === "--help" || cmd === "-h") { usage(); process.exit(0); }
 
+// apenas subcomandos conhecidos interceptam; flags (ex.: --ui lavish) vão direto ao wizard
 if (cmd === "doctor") {
   const r = spawnSync(process.execPath, [path.join(scriptsDir, "acp_client.mjs"), "--doctor", ...rest], { stdio: "inherit" });
   process.exit(r.status ?? 1);
@@ -54,8 +55,9 @@ if (cmd === "client") {
   process.exit(r.status ?? 1);
 }
 
-if (cmd) fail(`subcomando desconhecido: ${cmd} (use sdd-acp help)`);
+if (cmd && !cmd.startsWith("-")) fail(`subcomando desconhecido: ${cmd} (use sdd-acp help)`);
 
-// default: wizard orquestrador
-const r = spawnSync(process.execPath, [path.join(scriptsDir, "acp_orchestrate.mjs"), ...rest], { stdio: "inherit" });
+// default: wizard orquestrador (cmd pode ser null ou flags como --ui)
+const wizardArgs = cmd ? [cmd, ...rest] : rest;
+const r = spawnSync(process.execPath, [path.join(scriptsDir, "acp_orchestrate.mjs"), ...wizardArgs], { stdio: "inherit" });
 process.exit(r.status ?? 1);
