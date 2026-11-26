@@ -99,8 +99,8 @@ function run(cmd, log, { inherit = false } = {}) {
   }
 }
 
-export function ensureDeps({ only = null, doctor = false, log = console.error, inherit = true } = {}) {
-  const deps = only ? DEPS.filter((d) => d.id === only || d.id.startsWith(only)) : DEPS;
+export function ensureDeps({ only = null, exclude = [], doctor = false, log = console.error, inherit = true } = {}) {
+  const deps = DEPS.filter((dep) => !exclude.includes(dep.id) && (!only || dep.id.startsWith(only)));
   const results = [];
   for (const dep of deps) {
     let version = dep.check();

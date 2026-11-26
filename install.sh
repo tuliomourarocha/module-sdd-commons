@@ -781,7 +781,7 @@ p.write_text(json.dumps(j, indent=2) + '\n')
   info "Hooks determinísticos: .opencode/plugins/guard-rails.ts (pós-edição) + supervisor.ts (final) → Ver hooks/README.md"
   info "RTK: comandos reescritos aparecem com '⟐ rtk ✓' na saída (economia acumulada: rtk gain); skills/codegraph/hooks aparecem com marcadores ⟐ no transcript"
   info "CodeGraph: MCP 'codegraph' ativo no projeto — 'opencode mcp list' para conferir; ast-grep para busca estrutural"
-  info "ACP: rode 'sdd-acp' (se instalado via npm) ou 'node $TARGET/skills/acp-client/scripts/acp_orchestrate.mjs' — wizard interativo: harness → .planning → issue gh → modelos por agente → fases (use --ui lavish para os quadros no browser)"
+  info "ACP: rode 'sdd-acp' para abrir o Console TMR no navegador."
 }
 
 main

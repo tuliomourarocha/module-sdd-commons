@@ -13,34 +13,27 @@ description: >-
 
 O macro é o **client**; o harness externo é o **agent**. Toda a execução (mensagens, tool calls, plano, permissões) é externalizada para o processo que chama — observável, gate-kept e interceptável no meio do turno.
 
-## Interface TMR — wizard da squad (substitui o harness interno)
+## Console TMR
 
-`acp_orchestrate.mjs` é a entrada quando um HUMANO quer rodar o ciclo completo, com a **identidade visual TMR** no terminal (`tmr_ui.mjs`: banner, menus em painel, spinner, headers de fase, painel de métricas — respeita `NO_COLOR` e degrada fora de TTY). O fluxo `planner → builder → reviewer` roda por um harness externo, com decisões humanas no início:
+Use `sdd-acp` para abrir o console HTML local e clique em **Nova execução**.
+No clone da squad, a entrada equivalente é `node bin/sdd-acp.js`.
+O console aceita `--cwd <repo>`, `--agent opencode|codex`, `--model <id>`,
+`--port <n>`, `--no-open` e `--no-ensure`.
 
-1. **Escolha do harness** — opencode (nativo) ou codex (adaptador).
-2. **Artefatos da squad no projeto** — instala (via `bin/sdd-harness.js --<platform> --artifacts-only`) agents/skills/commands/hooks/plugins + registro do MCP codegraph para o harness escolhido (já instalados → pergunta se atualiza). A instalação da squad NÃO copia mais artefatos — é aqui que eles vêm, e ficam no projeto.
-3. **Limpar `.planning/`** — lista STATE.md/HANDOFF.md/specs e pergunta se começa do zero (apaga só `.md`/`.json` de `.planning/`, com confirmação).
-4. **Issue do GitHub** — link `github.com/owner/repo/issues/N`, `owner/repo#N` ou `#N` (repo do cwd); busca via `gh issue view` e vira o input das fases. Sem `gh` → cola o texto da tarefa.
+Na página, escolha o harness, decida sobre a instalação de artefatos e a limpeza
+de `.planning/` e indique a issue do GitHub. O console verifica `gh auth status`
+antes de ler a issue. Aprove as fases planner, builder, reviewer, shipper e
+supervisor e escolha um modelo por fase, salvo quando `--model` estiver definido.
 
-Depois, **ciclo por agente** (planner → builder → reviewer → **shipper** → **supervisor**), um de cada vez:
-- **Anúncio + aprovação** — "PRÓXIMO AGENTE: PLANNER" com a descrição do papel; o usuário **aprova** a chamada (Enter = sim; "n" interrompe a execução com o resumo).
-- **Modelo** — **catálogo COMPLETO do harness** (não só top 10), ordenado por qualidade × custo para aquele papel — menu com setas ↑↓, ★ no recomendado pré-selecionado. `--model <provider/model>` força um modelo para todas as fases.
-- **Execução** — fase roda; ao terminar, o **quadro da squad** (box à direita, `metricsSidePanel`) atualiza: **issue em trabalho + status** (✔ fases feitas, ▶ em curso), tokens usados, valor consumido (USD real) e comandos executados (rtk/codegraph destacados).
-- Só então o próximo agente é anunciado — aprova → modelo → executa → quadro. Steering em TTY durante a fase e/ou `--ui lavish`.
+A página reúne permissões ACP, mensagens ao agente, revisão do plano e da
+auditoria, seleção de skills, logs e métricas. Skills remotas selecionadas
+passam por auditoria antes da instalação. O feedback do plano segue para o
+builder e o da auditoria pode iniciar mais um turno do supervisor. Harnesses com
+steering nativo recebem mensagens durante o turno. Os demais recebem a mensagem
+em um turno extra.
 
-**Shipper e supervisor integram o ciclo ACP**: o shipper roda git/PR/CI via `gh`, atualiza `STATE.md`/`HANDOFF.md` e encerra a issue; o supervisor produz a auditoria final (entregas, marcadores observados, `rtk gain`, riscos).
-
-**Revisão Lavish no fim do planner e do supervisor** (só nesses dois): HTML com plano/auditoria, **skills locais + sugeridas do skills.sh** (botões ✔ Aprovar / ✘ Rejeitar por skill), dúvidas/ambiguidades e campo de resposta. Skills aprovadas passam pela auditoria pública (`find_skill.py --audit`) antes do `npx skills add`; feedback do planner vira contexto do builder; feedback do supervisor dispara um turno extra do supervisor. Poll supervisionado até o usuário encerrar (Send & End).
-
-**Detecção de rtk/codegraph/hooks nas métricas**: os marcadores `⟐ rtk ✓` e `⟐ hook ✓` aparecem na **saída das tools** (`content`/`rawOutput` dos eventos `tool_call`) — o scanner de métricas analisa o evento completo (título + conteúdo + rawOutput), e o prompt de cada fase instrui o agente a usar `codegraph_explore` para exploração (comandos bash já passam pelo rtk automaticamente).
-
-### Interface (`--ui lavish`) — quadros ao vivo no browser
-
-O console HTML mostra **tudo e mais um pouco**: métricas por agente com **tokens reais** (usage do `session/prompt`) e **custo USD real** (`usage_update` do agente), quadro de **skills chamadas** (`⟐ skill ✓`), quadro de **hooks determinísticos** (`⟐ hook ✓`), comandos invocados com **rtk/codegraph destacados**, e logs de cada processo agêntico. O resumo ASCII das métricas é impresso no terminal ao fim.
-
-- Requer TTY (wizard). Run de UMA subtask continua sendo `acp_client.mjs`.
-- Steering: harness com steering nativo (OpenCode anuncia `_meta.steering.supported`) entrega a mensagem do usuário NO MEIO do turno; sem suporte (Codex), enfileira e entrega ao fim do turno.
-- Permissões: `read` é auto-permitido; `edit/delete/move` perguntam no TTY (s/N) durante a fase.
+O modo de uma subtask, `sdd-acp client`, continua disponível para macros e
+automações. As opções de Lavish abaixo são para esse modo.
 
 ## Bootstrap de dependências (automático a cada run)
 

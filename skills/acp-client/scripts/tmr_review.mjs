@@ -1,5 +1,5 @@
 /**
- * tmr_review.mjs — helpers de revisão no TERMINAL (sem Lavish):
+ * tmr_review.mjs — helpers da revisão do plano:
  *
  * - skillSuggestions(findSkillPy, task): sugestões de skills para a tarefa —
  *   LOCAIS (já instaladas) + REMOTAS (skills.sh, endpoint público /api/search).
@@ -25,7 +25,7 @@ export function skillSuggestions(findSkillPy, task) {
 }
 
 /** Aprovações: auditoria pública antes do install (regra: nunca instalar sem audit). */
-export function handleSkillFeedback(texts, findSkillPy, log = console.log) {
+export function handleSkillFeedback(texts, findSkillPy, log = console.log, cwd = process.cwd()) {
   const approved = [];
   for (const t of texts) {
     for (const m of t.matchAll(/SKILL (APROVADA|REJEITADA):\s*([\w./-]+)/gi)) {
@@ -36,7 +36,7 @@ export function handleSkillFeedback(texts, findSkillPy, log = console.log) {
       log((audit.stdout ?? audit.stderr ?? "").trim().split("\n").slice(0, 2).map((l) => `    ${l}`).join("\n") || "    (sem achados)");
       if (audit.status !== 0) { log(`  ✘ auditoria falhou — ${id} NÃO instalada`); continue; }
       log(`  ▸ instalando ${id} (npx skills add)…`);
-      const inst = spawnSync("npx", ["-y", "skills", "add", id], { stdio: "inherit", timeout: 300_000 });
+      const inst = spawnSync("npx", ["-y", "skills", "add", id, "--yes"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 300_000 });
       if (inst.status === 0) approved.push(id);
       else log(`  ✘ install falhou para ${id}`);
     }

@@ -148,11 +148,15 @@ export class Rpc {
     child.stdout.on("data", (chunk) => this.#onChunk(chunk));
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (c) => process.stderr.write(c)); // logs do agente (stdout é protocolo)
-    child.on("exit", (code, signal) => {
-      for (const { reject } of this.pending.values())
-        reject(new Error(`agente saiu (code=${code} signal=${signal})`));
+    const close = (error) => {
+      this.closed = error;
+      for (const { reject } of this.pending.values()) reject(error);
       this.pending.clear();
+    };
+    child.on("error", close);
+    child.on("exit", (code, signal) => {
       this.exited = { code, signal };
+      close(new Error(`agente saiu (code=${code} signal=${signal})`));
     });
   }
 
@@ -197,6 +201,7 @@ export class Rpc {
   }
 
   request(method, params, timeoutMs = 0) {
+    if (this.closed) return Promise.reject(this.closed);
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = timeoutMs
@@ -211,6 +216,7 @@ export class Rpc {
       });
       if (!this.#send({ jsonrpc: "2.0", id, method, params: params ?? {} })) {
         this.pending.delete(id);
+        if (timer) clearTimeout(timer);
         reject(new Error("stdin do agente fechado"));
       }
     });

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>TMR · Console ACP</title>
+  <link rel="stylesheet" href="/tmr.css">
+  <script src="/tmr.js" type="module"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell top">
+      <a class="brand" href="#overview" aria-label="TMR, visão geral"><span class="logo" aria-hidden="true">⌁</span><strong>TMR<span class="accent">.</span></strong><span class="brand-tail">CONSOLE ACP</span></a>
+      <nav aria-label="Navegação principal">
+        <button class="tab selected" data-view="overview"><span aria-hidden="true">⊞</span> Visão geral</button>
+        <button class="tab" data-view="processes"><span aria-hidden="true">◇</span> Processos</button>
+        <button class="tab" data-view="logs"><span aria-hidden="true">▣</span> Logs</button>
+      </nav>
+      <div class="controls"><span id="mode" class="pill running">Modo demo</span><button id="settings" class="icon-btn" title="Configurações" aria-label="Configurações">⚙</button></div>
+    </div>
+  </header>
+
+  <main class="shell" id="overview">
+    <section class="hero" aria-label="Centro de operações">
+      <canvas id="wave" aria-hidden="true"></canvas>
+      <div class="protocol"><span>PROTOCOLO ACP</span> V.01</div>
+      <div class="hero-copy"><div class="eyebrow">⌁ CENTRO DE OPERAÇÕES</div><h1>TMR<span class="accent">.</span></h1><p>Orquestre e acompanhe seus agentes em tempo real.</p></div>
+      <span class="hero-cross" aria-hidden="true">+</span>
+    </section>
+    <div class="page-heading"><div><h2 id="view-title">Visão geral</h2><p id="subtitle">Execuções, logs e telemetria em um só lugar.</p></div><button class="primary" id="start"><span aria-hidden="true">＋</span> Nova execução</button></div>
+    <p id="notice" role="status" hidden></p>
+    <div class="dashboard">
+      <div class="main-column">
+        <section class="panel" id="processes">
+          <header class="panel-head"><h3><span class="tile" aria-hidden="true">◇</span> Processos <span class="count" id="process-count">0</span></h3><button id="cancel" class="secondary" disabled>▫ &nbsp; Cancelar</button></header>
+          <div class="table-scroll"><table><thead><tr><th>Execução</th><th>Agente</th><th>Status</th><th>Duração</th><th><span class="sr-only">Detalhes</span></th></tr></thead><tbody id="run-rows"></tbody></table></div>
+        </section>
+        <section class="panel" id="logs">
+          <header class="panel-head"><h3><span class="tile" aria-hidden="true">▣</span> Logs dos agentes</h3><div class="controls"><button class="live" id="live" aria-pressed="true"><span class="toggle"></span> Ao vivo</button><button class="icon-btn" id="download" title="Baixar logs" aria-label="Baixar logs">↓</button></div></header>
+          <div class="log-bar">
+            <div class="filters" aria-label="Filtrar logs"><button data-filter="all" class="selected">Todos</button><button data-filter="info">Info</button><button data-filter="tool">Ferramentas</button><button data-filter="warn">Avisos</button></div>
+            <span class="mono muted" id="log-count"></span>
+          </div>
+          <ul id="log-rows" class="log-rows"></ul>
+          <footer id="log-footer" class="log-footer mono"></footer>
+        </section>
+      </div>
+      <aside class="side-column">
+        <section class="panel"><header class="panel-head"><h3><span class="tile" aria-hidden="true">⟐</span> Issue em foco</h3><span id="issue-status"></span></header><div id="issue" class="panel-body"></div></section>
+        <section class="panel"><header class="panel-head"><h3><span class="tile" aria-hidden="true">⌁</span> Uso e custos</h3><span class="mono muted metric-caption">POR SESSÃO</span></header><div id="metrics" class="metric-grid"></div></section>
+        <section class="panel"><header class="panel-head"><h3><span class="tile" aria-hidden="true">♧</span> Rastreamento de agentes <span class="count" id="agent-count">0</span></h3></header><ul id="agents" class="side-list"></ul></section>
+        <section class="panel"><header class="panel-head"><h3><span class="tile" aria-hidden="true">ϟ</span> Comandos e skills</h3></header><ul id="tools" class="side-list"></ul></section>
+      </aside>
+    </div>
+    <form id="steer" hidden class="steer"><label for="message">Enviar mensagem ao agente</label><div><input id="message" required maxlength="12000" placeholder="Escreva uma instrução"><button class="primary">Enviar</button></div></form>
+    <footer class="site-footer mono"><span>TMR<span class="accent">.</span> &nbsp; Console ACP</span><span id="workspace">Ambiente de demonstração</span></footer>
+  </main>
+
+  <dialog id="prompt"><form id="prompt-form"></form></dialog>
+  <dialog id="preferences"><form method="dialog"><div class="dialog-header"><h2>Configurações</h2><button class="icon-btn" aria-label="Fechar">×</button></div><div class="dialog-body"><label class="setting"><input type="checkbox" id="motion"> Reduzir animações</label><p class="muted" id="project"></p></div></form></dialog>
+</body>
+</html>

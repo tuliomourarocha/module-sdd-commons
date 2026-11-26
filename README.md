@@ -36,68 +36,48 @@ pelo LLM) e vincula ao harness escolhido com `rtk init`:
 
 ## Rodar a squad via ACP — **TMR** (`sdd-acp`)
 
-Além do `@harness` interno (orquestrado pelo agente `harness` no terminal), a squad
-pode rodar como **client ACP** com a interface **TMR** no terminal: OpenCode
-(`opencode acp`, nativo) ou Codex (adaptador `@agentclientprotocol/codex-acp`)
-executam o ciclo `planner → builder → reviewer` com você no comando.
+O `sdd-acp` abre o **Console TMR** no navegador. A página usa HTML e JavaScript
+e roda localmente no projeto que vai executar a squad.
 
 ```bash
-sdd-acp                       # wizard orquestrador (interativo)
-sdd-acp --ui lavish           # + quadros ao vivo no browser (localhost:4387)
+sdd-acp                       # abre o console no navegador padrão
+sdd-acp --cwd /caminho/projeto # usa outro repositório
+sdd-acp --no-open --port 4387  # imprime o link para abrir manualmente
 sdd-acp doctor                # diagnóstico das dependências
-sdd-acp client --agent opencode --cwd <repo> --json "<subtask>"   # run de UMA subtask
+sdd-acp client --agent opencode --cwd <repo> --json "<subtask>"   # uma subtask ACP
 ```
 
-Sem npm global, o mesmo wizard roda direto do projeto instalado:
+No clone deste repositório, também dá para rodar `node bin/sdd-acp.js`.
+O console escuta apenas em `127.0.0.1`. Mantenha o processo aberto durante a
+sessão. O histórico recente fica em memória e pode ser exportado pela página.
 
-```bash
-node .opencode/skills/acp-client/scripts/acp_orchestrate.mjs --ui lavish
-```
+### Fluxo no navegador
 
-> **`sdd-acp: command not found`?** O bin vem com o pacote — instale/link uma vez:
-> `npm link` (no clone do repo) ou `npm i -g github:tuliomourarocha/module-sdd-commons#main`.
-> O `install.sh` também cria um shim em `~/.local/bin/sdd-acp` apontando para o clone.
+1. Clique em **Nova execução**, escolha OpenCode ou Codex e decida se deseja
+   instalar ou atualizar os artefatos da squad. Se houver estado em `.planning/`,
+   a página lista os arquivos antes de pedir confirmação para limpar.
+2. Informe a issue por link, `owner/repo#N` ou `#N` no repositório atual. O TMR
+   verifica a autenticação do `gh` antes de carregar a issue.
+3. Aprove cada fase e escolha o modelo em ordem de custo-benefício. O ciclo inclui
+   planner, builder, reviewer, shipper e supervisor. `--model <id>` fixa um
+   modelo para todas as fases. Permissões de ferramentas, mensagens ao agente e
+   cancelamento ficam no console.
+4. Revise o plano e a auditoria no próprio painel. O planner apresenta skills
+   locais e sugestões do skills.sh. As sugestões escolhidas passam pela auditoria
+   pública antes da instalação. O feedback do plano segue para o builder e o da
+   auditoria pode iniciar mais um turno com o supervisor.
 
-### O wizard (decisões humanas no início)
-
-1. **Harness** — `opencode` (nativo) ou `codex` (adaptador oficial).
-2. **Limpar `.planning/`** — lista `STATE.md`/`HANDOFF.md`/specs e pergunta se começa do zero.
-3. **Issue do GitHub** — `https://github.com/owner/repo/issues/N`, `owner/repo#N` ou `#N`;
-   a tarefa vem de `gh issue view` (sem `gh`, cole o texto manualmente). **Obrigatória
-   antes do primeiro agente.**
-4. **Ciclo por agente (um de cada vez)** — para cada fase (planner → builder → reviewer → **shipper** → **supervisor**):
-   o TMR **anuncia o próximo agente** e **pede sua aprovação**; aprovado, você escolhe o
-   **modelo na hora** de um menu com o **catálogo completo do harness** (ordenado por
-   qualidade × custo para aquele papel, ★ no recomendado); a fase executa e o
-   **quadro da squad** (box à direita) atualiza **a issue em trabalho + status,
-   tokens usados, valor consumido (USD real) e comandos executados**; então o
-   próximo agente é anunciado. `--model <provider/model>` força um modelo para
-   todas as fases. Durante as fases **digite no terminal para falar com o agente
-   no meio do processo** (steering nativo no OpenCode; no Codex a mensagem entra
-   no fim do turno). O shipper roda git/PR/CI e encerra a issue; o supervisor
-   fecha com a auditoria final (entregas, hooks, rtk gain, riscos).
-5. **Revisão interativa no fim do planner e do supervisor (só nesses dois)** —
-   o TMR abre o plano (ou a auditoria) no Lavish Editor com as **skills locais +
-   sugeridas do skills.sh** (botões ✔ Aprovar / ✘ Rejeitar por skill),
-   dúvidas/ambiguidades e campo de resposta. Skills aprovadas passam pela
-   auditoria pública antes do `npx skills add`; o feedback do planner vira
-   contexto do builder e o do supervisor dispara um turno extra dele.
-
-### Interface (`--ui lavish`)
-
-O console no browser mostra tudo: **tokens reais + custo USD por agente**
-(usage do próprio ACP), quadro de **skills chamadas** (`⟐ skill ✓`), quadro de
-**hooks determinísticos** (`⟐ hook ✓`), **comandos invocados** com rtk/codegraph
-destacados, e logs de cada processo agêntico. Ao fim, o resumo das métricas é
-impresso no terminal.
+A visão geral começa em **Modo demo** até a primeira execução. Sessões reais
+mostram a issue, etapas, logs, comandos, skills e métricas informadas pelo ACP.
+A aba Logs permite pausar a atualização, filtrar e baixar os eventos.
 
 ### Bootstrap automático
 
-Todo run ACP garante as dependências e **baixa o que faltar** pelo método oficial
-de cada um (`ensure_deps.mjs`): `lavish-axi`, `codegraph`, `rtk` (validado com
-`rtk gain`) e `opencode`. O instalador da squad também os baixa
-(`--no-rtk`/`--no-codegraph`/`--no-lavish`/`--no-acp` para pular). Auth do harness:
-`opencode auth login` / `codex login` antes do primeiro run.
+O console verifica as dependências no início da execução e pode baixar
+`codegraph`, `rtk` e `opencode` quando necessários. Use `--no-ensure` para pular
+essa etapa. `lavish-axi` atende ao modo independente `sdd-acp client --ui lavish`. O instalador da squad também os baixa
+(`--no-rtk`/`--no-codegraph`/`--no-lavish`/`--no-acp` para pular). Configure `gh auth login` e autentique
+o harness escolhido com `opencode auth login` ou `codex login` antes da primeira execução.
 | Claude Code | `rtk init --global` | Hook nativo `PreToolUse` + patch no `settings.json` |
 | Codex | `rtk init --global --codex` | Hook `PreToolUse` (`updatedInput`) + `RTK.md` em `~/.codex` |
 
@@ -256,7 +236,7 @@ O `harness` (V2) orquestra 3 fluxos com 4 macros + hooks (`planner`, `builder`, 
 
 ### ACP Client + Plano interativo (Lavish) + Skills remotas
 
-- **Squad como ACP client (dois modos):** o **wizard orquestrador** (`skills/acp-client/scripts/acp_orchestrate.mjs`) roda o ciclo `planner → builder → reviewer` por OpenCode/Codex com decisões humanas no início — escolha do harness, limpeza opcional de `.planning/`, **issue do GitHub como input**, e **escolha de modelo por agente** (lista com custos e recomendado por papel, no runtime — não mais na instalação); durante as fases, o usuário interage no meio do processo (steering nativo em TTY) e acompanha no `--ui lavish` quadros ao vivo de **tokens reais + custo USD por agente**, skills chamadas, hooks e comandos invocados (rtk/codegraph destacados). Já o **run de subtask única** (`acp_client.mjs`) serve aos macros internos: streaming, gate de permissões (`--permission safe|allow-all|ask`) e campo de interação do usuário (TTY/`--ui lavish`).
+- **Squad como ACP client (dois modos):** o console local `sdd-acp` orquestra o ciclo com decisões humanas no navegador. `sdd-acp client` executa uma subtask e mantém o streaming JSON para automações.
 - **Plano em HTML interativo:** o `planner` apresenta o plano (decisões com escolha clicável, riscos, skills sugeridas) aberto no Lavish Editor (`npx -y lavish-axi`) e itera por long-poll até a aprovação do usuário — revisão pelo browser, não pelo terminal (skill `plan-review`).
 - **Skills remotas (skills.sh):** `find_skill.py "<termos>" --remote` sugere candidatos do catálogo público da skills.sh; instalação `npx skills add <source>` **somente** com aprovação explícita do usuário, após auditoria (`find_skill.py --audit <id>`).
 - **Bootstrap de dependências:** todo run ACP garante e instala o que faltar (`ensure_deps.mjs`) — lavish-axi, codegraph, rtk e opencode (método oficial de cada um; `--doctor` diagnostica, `--no-ensure` pula).
