@@ -61,8 +61,10 @@ const mapStr = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).
 
 // ------------------------------------------------------------------- wizard IO
 let rl = null;
+// Prompts SEM ANSI — o readline calcula a posição do cursor pelo comprimento
+// visível; códigos de cor no prompt fazem o texto digitado ficar invisível.
 const ask = (q, def = "") => new Promise((res) => {
-  rl.question(`  ${ui.icons.arrow} ${ui.paint.bold(q)}${def ? ui.paint.gray(` [${def}]`) : ""}: `, (a) => res(String(a.trim() || def)));
+  rl.question(`${q}${def ? ` [${def}]` : ""}: `, (a) => res(String(a.trim() || def)));
 });
 const askYN = (q, def = "n") => ask(`${q} (s/N)`, def === "s" ? "s" : "n").then((a) => /^(s|si|sim|y|yes)$/i.test(a));
 
@@ -84,16 +86,13 @@ async function installArtifacts(cwd, harness) {
     console.log(`  ${ui.paint.yellow("⚠")} ${ui.paint.dim("sem artefatos — o harness roda com o ambiente que já tiver")}`);
     return;
   }
-  const sp = ui.spinner(`instalando artefatos para ${harness}`);
+  console.log(`  ${ui.paint.gray("─")} instalando artefatos para ${harness} (saída ao vivo)…`);
   const installer = path.join(SOURCE_ROOT, "bin", "sdd-harness.js");
   const r = spawnSync(process.execPath, [installer, `--${harness}`, "--target", cwd, "--artifacts-only"], {
-    cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8",
+    cwd, stdio: "inherit",
   });
-  sp.stop(r.status === 0 ? `artefatos instalados (${harness}) + MCP` : "instalação falhou", r.status === 0 ? ui.paint.green : ui.paint.red);
-  if (r.status !== 0) {
-    const out = (r.stdout ?? r.stderr ?? r.error?.message ?? "").trim().split("\n").slice(-6);
-    for (const l of out) console.log(`    ${ui.paint.gray(l)}`);
-  }
+  if (r.status === 0) console.log(`  ${ui.icons.ok} ${ui.paint.green("artefatos instalados")} ${ui.paint.gray(`(${harness}) + MCP codegraph`)}`);
+  else console.log(`  ${ui.icons.fail} ${ui.paint.red("instalação falhou")} — rode manualmente: sdd-harness --${harness} --target ${cwd} --artifacts-only`);
 }
 
 // ------------------------------------------------------------------- .planning

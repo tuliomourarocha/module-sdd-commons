@@ -43,14 +43,14 @@ const DEPS = [
   {
     id: "lavish-axi",
     check: () => installed("lavish-axi"),
-    install: (log) => run(npm() ? ["npm", "install", "-g", "lavish-axi"] : null, log),
+    install: (log, o) => run(npm() ? ["npm", "install", "-g", "lavish-axi"] : null, log, o),
     fallbackHint: "npx -y lavish-axi (AXI: funciona on-demand sem install global)",
     required: false,
   },
   {
     id: "codegraph",
     check: () => installed("codegraph"),
-    install: (log) => run(npm() ? ["npm", "install", "-g", "@colbymchenry/codegraph"] : null, log),
+    install: (log, o) => run(npm() ? ["npm", "install", "-g", "@colbymchenry/codegraph"] : null, log, o),
     fallbackHint: "opencode mcp add codegraph --env CODEGRAPH_TELEMETRY=0 -- codegraph serve --mcp",
     required: false,
   },
@@ -63,10 +63,10 @@ const DEPS = [
       const gain = BIN("rtk", ["gain"]);
       return gain?.status === 0 ? v : `${v} (SUSPEITO — 'rtk gain' falhou; pode ser o Rust Type Kit homônimo)`;
     },
-    install: (log) => {
-      if (brew()) return run(["brew", "install", "rtk-ai/tap/rtk"], log);
+    install: (log, o) => {
+      if (brew()) return run(["brew", "install", "rtk-ai/tap/rtk"], log, o);
       log("sem brew — usando installer oficial (curl)");
-      return run(["sh", "-c", "curl -fsSL raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh"], log);
+      return run(["sh", "-c", "curl -fsSL raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh"], log, o);
     },
     fallbackHint: "curl -fsSL raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh",
     required: false,
@@ -74,19 +74,24 @@ const DEPS = [
   {
     id: "opencode",
     check: () => installed("opencode"),
-    install: (log) => {
+    install: (log, o) => {
       log("instalando opencode via installer oficial…");
-      return run(["sh", "-c", "curl -fsSL https://opencode.ai/install | bash"], log);
+      return run(["sh", "-c", "curl -fsSL https://opencode.ai/install | bash"], log, o);
     },
     fallbackHint: "curl -fsSL https://opencode.ai/install | bash",
     required: true, // o agente default do ACP
   },
 ];
 
-function run(cmd, log) {
+function run(cmd, log, { inherit = false } = {}) {
   if (!cmd) return { ok: false, error: "nenhum método de install disponível" };
   try {
-    const out = execFileSync(cmd[0], cmd.slice(1), { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 300_000 });
+    const out = execFileSync(cmd[0], cmd.slice(1), {
+      encoding: "utf8",
+      // install com progresso ao vivo — execução bloqueante sem saída parece tela travada
+      stdio: inherit ? "inherit" : ["ignore", "pipe", "pipe"],
+      timeout: 600_000,
+    });
     log?.((out || "").split("\n").slice(-3).join(" ").trim());
     return { ok: true };
   } catch (err) {
@@ -94,15 +99,15 @@ function run(cmd, log) {
   }
 }
 
-export function ensureDeps({ only = null, doctor = false, log = console.error } = {}) {
-  const deps = only ? DEPS.filter((d) => d.id === only) : DEPS;
+export function ensureDeps({ only = null, doctor = false, log = console.error, inherit = true } = {}) {
+  const deps = only ? DEPS.filter((d) => d.id === only || d.id.startsWith(only)) : DEPS;
   const results = [];
   for (const dep of deps) {
     let version = dep.check();
     let action = "ok";
     if (!version && !doctor) {
       log(`[ensure-deps] ${dep.id} ausente — instalando…`);
-      const r = dep.install((s) => log(`[ensure-deps] ${dep.id}: ${s}`));
+      const r = dep.install((s) => log(`[ensure-deps] ${dep.id}: ${s}`), { inherit });
       version = dep.check();
       action = r.ok && version ? "instalado" : "falhou";
       if (action === "falhou") log(`[ensure-deps] ${dep.id} NÃO instalado (${r.error ?? "?"}). Hint: ${dep.fallbackHint}`);
