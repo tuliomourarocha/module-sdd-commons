@@ -12,41 +12,6 @@ const names = {
 };
 const number = new Intl.NumberFormat("pt-BR");
 const clock = new Intl.DateTimeFormat("pt-BR", { timeStyle: "medium" });
-const demoAgents = [
-  { role: "Orquestrador", model: "Agente principal", status: "running" },
-  { role: "Revisor", model: "Revisão de código", status: "completed" },
-  { role: "Validador", model: "Testes de integração", status: "running" },
-];
-const demoLogs = [
-  ["46", "info", "ACP", "Sessão stdio iniciada para a issue ACP–128."],
-  ["48", "info", "Orquestrador", "Plano criado com 3 etapas."],
-  ["50", "info", "Orquestrador", "Etapa 1 · Mapear alterações no pipeline."],
-  ["52", "tool", "Orquestrador", "Executando git diff --stat"],
-  ["57", "info", "Orquestrador", "Diff recebido: 4 arquivos alterados."],
-  ["63", "info", "Orquestrador", "Chamou o agente Revisor."],
-  ["75", "tool", "Revisor", "Skill code-review iniciada."],
-  ["89", "tool", "Revisor", "Skill code-review concluída."],
-  ["104", "warn", "Revisor", "Arquivo de configuração sem cobertura de teste."],
-  ["116", "info", "Orquestrador", "Etapa 2 · Revisão de código concluída."],
-  ["124", "info", "Orquestrador", "Chamou o agente Validador."],
-  ["131", "tool", "Validador", "Executando npm run test:integration"],
-  ["162", "info", "Validador", "Fila de integração inicializada."],
-  ["205", "info", "Validador", "18 de 24 testes aprovados."],
-].map(([offset, level, role, text], id) => ({ id, time: new Date(2026, 0, 1, 22, 26, Number(offset)).getTime(), level, role, text }));
-const demo = [
-  { id: "run–042", issue: { number: "ACP–128", title: "Integrar o pipeline de revisão", body: "Valide as alterações da fila e os testes de integração do pipeline." },
-    agent: "Orquestrador", status: "running", duration: "00:02:45", stages: demoAgents, logs: demoLogs, progress: 67,
-    contextUsed: 38420, contextSize: 64000, cost: 0.184, tools: [
-      { title: "git diff --stat", status: "completed", kind: "Comando" },
-      { title: "code-review", status: "completed", kind: "Skill" },
-      { title: "npm run test:integration", status: "in_progress", kind: "Comando" },
-    ] },
-  { id: "run–041", issue: { number: "ACP–124", title: "Atualizar documentação da API", body: "Atualize os exemplos e a documentação dos endpoints." },
-    agent: "Documentação", status: "completed", duration: "00:01:29", progress: 100 },
-  { id: "run–043", issue: { number: "ACP–131", title: "Validar cobertura dos testes", body: "Revise os relatórios de cobertura do repositório." },
-    agent: "Validador", status: "queued", duration: "—", progress: 0 },
-];
-
 const fragment = location.hash.slice(1);
 if (/^[a-f0-9]{64}$/.test(fragment)) {
   sessionStorage.setItem("tmr-token", fragment);
@@ -55,7 +20,7 @@ if (/^[a-f0-9]{64}$/.test(fragment)) {
 const token = sessionStorage.getItem("tmr-token") ?? "";
 let runs = [];
 let revision = -1;
-let selectedId = demo[0].id;
+let selectedId;
 let view = "overview";
 let filter = "all";
 let live = true;
@@ -65,8 +30,7 @@ let stepId;
 let sending = false;
 const prompt = $("prompt");
 const form = $("prompt-form");
-const list = () => runs.length ? runs : demo;
-const selected = () => list().find(({ id }) => id === selectedId) ?? list()[0];
+const selected = () => runs.find(({ id }) => id === selectedId) ?? runs[0];
 const active = () => runs.find(({ status }) => ["running", "cancelling"].includes(status));
 const pill = (status, title = names[status] ?? status) => element("span", { class: `pill ${status}` }, title);
 const empty = (text) => element("li", { class: "empty" }, text);
@@ -102,34 +66,34 @@ function duration(run) {
 }
 
 function renderRuns(run) {
-  const rows = list();
+  const rows = runs;
   $("process-count").textContent = rows.length;
   $("run-rows").replaceChildren(...rows.map((item) => {
     const agent = item.stages?.find(({ status }) => ["running", "waiting"].includes(status))?.role ?? item.agent ?? item.harness ?? "ACP";
-    const title = element("button", { class: "row-title", type: "button", "aria-pressed": item.id === run.id }, item.issue?.title ?? "Configurando execução");
-    return element("tr", { "data-run": item.id, class: item.id === run.id ? "current" : "" },
+    const title = element("button", { class: "row-title", type: "button", "aria-pressed": item.id === run?.id }, item.issue?.title ?? "Configurando execução");
+    return element("tr", { "data-run": item.id, class: item.id === run?.id ? "current" : "" },
       element("td", {}, element("span", { class: "row-label" }, issueNumber(item)), title),
       element("td", { class: "agent-name" }, `♧  ${agent}`),
       element("td", {}, pill(item.status)),
       element("td", { class: "mono muted" }, element("span", { "data-time": item.id }, duration(item))),
       element("td", { class: "row-arrow", "aria-hidden": "true" }, "›"));
   }));
-  $("cancel").disabled = run.id !== active()?.id || run.status !== "running" || !online;
+  $("cancel").disabled = !run || run.id !== active()?.id || run.status !== "running" || !online;
 }
 
 function renderLogs(run) {
   const rows = $("log-rows");
   const atEnd = rows.scrollHeight - rows.scrollTop - rows.clientHeight < 48;
-  const source = live ? run.logs ?? [] : frozenLogs;
+  const source = live ? run?.logs ?? [] : frozenLogs;
   const items = source.filter(({ level }) => filter === "all" || filter === level);
   rows.replaceChildren(...(items.length ? items.map((log) => element("li", {},
     element("time", {}, clock.format(log.time)),
-    element("span", { class: `log-level ${log.level}` }, { info: "INFO", tool: "TOOL", warn: "AVISO" }[log.level]),
+    element("span", { class: `log-level ${log.level}` }, { info: "INFO", tool: "TOOL", warn: "AVISO", file: "ARQ" }[log.level]),
     element("span", { class: "log-role" }, log.role ?? "ACP"),
     element("span", { class: "log-text" }, log.text))) : [empty("Nenhum evento para exibir.")]));
   if (live && atEnd && runs.length) rows.scrollTop = rows.scrollHeight;
   $("log-count").textContent = `${items.length} eventos`;
-  $("log-footer").textContent = `▣ sessão ${run.id.slice(0, 8)} · ${runs.length ? run.harness ?? "ACP" : "simulação"}`;
+  $("log-footer").textContent = run ? `▣ sessão ${run.id.slice(0, 8)} · ${run.harness ?? "ACP"}` : "Aguardando execução";
   $("download").disabled = !source.length;
 }
 
@@ -138,10 +102,10 @@ function sideItem(icon, title, detail, status, caption) {
     element("div", {}, element("strong", {}, title), element("small", {}, detail ?? "")), pill(status, caption));
 }
 
-function renderDetails(run) {
+function renderDetails(run = {}) {
   const issue = run.issue;
   const stages = run.stages ?? [];
-  $("issue-status").replaceChildren(pill(run.status));
+  $("issue-status").replaceChildren(...(run.status ? [pill(run.status)] : []));
   if (issue) {
     const url = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+$/.test(issue.url) ? issue.url : null;
     const progress = run.progress ?? (stages.length ? Math.round(100 * stages.filter(({ status }) => status === "completed").length / stages.length) : 0);
@@ -162,15 +126,11 @@ function renderDetails(run) {
     metric("◎ Custo acumulado", run.cost == null ? "—" : `US$ ${new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 4 }).format(run.cost)}`, "Total da sessão", "accent"));
   $("agent-count").textContent = stages.length;
   $("agents").replaceChildren(...(stages.length ? stages.map((stage) => sideItem("♧", stage.role, stage.model, stage.status)) : [empty("Nenhum agente nesta execução.")]));
-  const reported = run.tools ?? [];
-  const tools = [
-    ...reported,
-    ...(run.commands ?? []).filter((title) => !reported.some((tool) => tool.title.includes(title)))
-      .map((title) => ({ title, kind: "Comando", status: "completed", caption: "Detectado" })),
-    ...(run.skills ?? []).map((title) => ({ title, kind: "Skill", status: "completed", caption: "Detectada" })),
-    ...(run.hooks ?? []).map((title) => ({ title, kind: "Hook", status: "completed", caption: "Detectado" })),
+  const activity = [
+    ...(run.skills ?? []).map((name) => sideItem("ϟ", name, "Skill", "completed", "Carregada")),
+    ...(run.hooks ?? []).map((name) => sideItem("▣", name, "Hook", "observed", "Acionado")),
   ];
-  $("tools").replaceChildren(...(tools.length ? tools.map((tool) => sideItem(tool.kind === "Skill" ? "ϟ" : "▣", tool.title, tool.kind ?? tool.role, tool.status, tool.caption)) : [empty("Atividade das ferramentas aparecerá aqui.")]));
+  $("activity").replaceChildren(...(activity.length ? activity : [empty("Nenhuma skill ou hook registrado nesta execução.")]));
 }
 
 function render() {
@@ -182,8 +142,7 @@ function render() {
   const pending = running?.prompts?.[0];
   $("start").disabled = !online || running?.status === "cancelling";
   $("start").textContent = pending ? "Responder à etapa" : running ? "Ver execução ativa" : "＋ Nova execução";
-  $("mode").textContent = runs.length ? "Ambiente local" : "Modo demo";
-  $("steer").hidden = !online || !running?.steering || !!pending || running.id !== run.id;
+  $("steer").hidden = !online || !running?.steering || !!pending || running.id !== run?.id;
   if (pending?.id !== stepId) {
     if (prompt.open && prompt.dataset.kind === "workflow") prompt.close();
     stepId = pending?.id;
@@ -194,7 +153,7 @@ function render() {
 function changeSelection(id) {
   if (id === selectedId) return;
   selectedId = id;
-  frozenLogs = (selected().logs ?? []).map((item) => ({ ...item }));
+  frozenLogs = (selected()?.logs ?? []).map((item) => ({ ...item }));
   render();
 }
 
@@ -337,13 +296,14 @@ document.querySelector(".filters").onclick = (event) => {
 };
 $("live").onclick = () => {
   live = !live;
-  if (!live) frozenLogs = (selected().logs ?? []).map((item) => ({ ...item }));
+  if (!live) frozenLogs = (selected()?.logs ?? []).map((item) => ({ ...item }));
   $("live").setAttribute("aria-pressed", live);
   renderLogs(selected());
 };
 $("download").onclick = () => {
   const run = selected();
-  const text = (live ? run.logs ?? [] : frozenLogs)
+  if (!run) return;
+  const text = (live ? run?.logs ?? [] : frozenLogs)
     .map((entry) => `[${clock.format(entry.time)}] [${entry.level}] [${entry.role ?? "ACP"}] ${entry.text}`).join("\n");
   const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
   element("a", { href: url, download: `tmr-${run.id}.log` }).click();
@@ -371,10 +331,11 @@ function draw(time) {
     for (let line = 0; line < 26; line++) {
       const gradient = context.createLinearGradient(0, 0, width, 0);
       const weight = line % 6 === 0 ? .62 : .19 + line / 240;
-      gradient.addColorStop(0, "#aa93ff00");
-      gradient.addColorStop(.32, `rgba(163,139,238,${weight * .6})`);
-      gradient.addColorStop(.66, `rgba(203,181,255,${weight})`);
-      gradient.addColorStop(1, `rgba(156,131,222,${weight * .38})`);
+      const rgb = line % 6 === 0 ? "247,232,231" : line % 2 ? "201,93,123" : "78,157,115";
+      gradient.addColorStop(0, `rgba(${rgb},0)`);
+      gradient.addColorStop(.32, `rgba(${rgb},${weight * .58})`);
+      gradient.addColorStop(.66, `rgba(${rgb},${weight})`);
+      gradient.addColorStop(1, `rgba(${rgb},${weight * .38})`);
       context.strokeStyle = gradient;
       context.beginPath();
       for (let x = 0; x <= width + 4; x += 4) {
@@ -427,4 +388,5 @@ navigate("overview");
 render();
 requestAnimationFrame(draw);
 await poll();
+if (online && runs.length === 0) await $("start").onclick();
 setInterval(poll, 700);

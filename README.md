@@ -37,7 +37,8 @@ pelo LLM) e vincula ao harness escolhido com `rtk init`:
 ## Rodar a squad via ACP — **TMR** (`sdd-acp`)
 
 O `sdd-acp` abre o **Console TMR** no navegador. A página usa HTML e JavaScript
-e roda localmente no projeto que vai executar a squad.
+e roda localmente no projeto que vai executar a squad. Ao abrir, o console começa
+pela escolha do harness.
 
 ```bash
 sdd-acp                       # abre o console no navegador padrão
@@ -67,9 +68,12 @@ sessão. O histórico recente fica em memória e pode ser exportado pela página
    pública antes da instalação. O feedback do plano segue para o builder e o da
    auditoria pode iniciar mais um turno com o supervisor.
 
-A visão geral começa em **Modo demo** até a primeira execução. Sessões reais
-mostram a issue, etapas, logs, comandos, skills e métricas informadas pelo ACP.
-A aba Logs permite pausar a atualização, filtrar e baixar os eventos.
+Cada sessão mostra a issue, etapas e métricas informadas pelo ACP. O quadro
+**Skills e hooks** registra a atividade observada durante a execução. A aba
+Logs mostra os comandos e permite pausar a atualização, filtrar por
+**Arquivos** e baixar os eventos. O TMR verifica o RTK e carrega o CodeGraph no projeto antes da
+primeira fase. A sessão recebe o MCP do CodeGraph diretamente e o terminal
+do harness usa seu hook nativo do RTK.
 
 ### Bootstrap automático
 

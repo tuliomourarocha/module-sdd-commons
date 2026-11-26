@@ -15,7 +15,7 @@ O macro é o **client**; o harness externo é o **agent**. Toda a execução (me
 
 ## Console TMR
 
-Use `sdd-acp` para abrir o console HTML local e clique em **Nova execução**.
+Use `sdd-acp` para abrir o console HTML local na escolha do harness.
 No clone da squad, a entrada equivalente é `node bin/sdd-acp.js`.
 O console aceita `--cwd <repo>`, `--agent opencode|codex`, `--model <id>`,
 `--port <n>`, `--no-open` e `--no-ensure`.

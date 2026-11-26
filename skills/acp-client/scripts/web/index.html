@@ -17,7 +17,7 @@
         <button class="tab" data-view="processes"><span aria-hidden="true">◇</span> Processos</button>
         <button class="tab" data-view="logs"><span aria-hidden="true">▣</span> Logs</button>
       </nav>
-      <div class="controls"><span id="mode" class="pill running">Modo demo</span><button id="settings" class="icon-btn" title="Configurações" aria-label="Configurações">⚙</button></div>
+      <div class="controls"><span id="mode" class="pill running">Ambiente local</span><button id="settings" class="icon-btn" title="Configurações" aria-label="Configurações">⚙</button></div>
     </div>
   </header>
 
@@ -39,7 +39,7 @@
         <section class="panel" id="logs">
           <header class="panel-head"><h3><span class="tile" aria-hidden="true">▣</span> Logs dos agentes</h3><div class="controls"><button class="live" id="live" aria-pressed="true"><span class="toggle"></span> Ao vivo</button><button class="icon-btn" id="download" title="Baixar logs" aria-label="Baixar logs">↓</button></div></header>
           <div class="log-bar">
-            <div class="filters" aria-label="Filtrar logs"><button data-filter="all" class="selected">Todos</button><button data-filter="info">Info</button><button data-filter="tool">Ferramentas</button><button data-filter="warn">Avisos</button></div>
+            <div class="filters" aria-label="Filtrar logs"><button data-filter="all" class="selected">Todos</button><button data-filter="info">Info</button><button data-filter="tool">Ferramentas</button><button data-filter="warn">Avisos</button><button data-filter="file">Arquivos</button></div>
             <span class="mono muted" id="log-count"></span>
           </div>
           <ul id="log-rows" class="log-rows"></ul>
@@ -50,11 +50,11 @@
         <section class="panel"><header class="panel-head"><h3><span class="tile" aria-hidden="true">⟐</span> Issue em foco</h3><span id="issue-status"></span></header><div id="issue" class="panel-body"></div></section>
         <section class="panel"><header class="panel-head"><h3><span class="tile" aria-hidden="true">⌁</span> Uso e custos</h3><span class="mono muted metric-caption">POR SESSÃO</span></header><div id="metrics" class="metric-grid"></div></section>
         <section class="panel"><header class="panel-head"><h3><span class="tile" aria-hidden="true">♧</span> Rastreamento de agentes <span class="count" id="agent-count">0</span></h3></header><ul id="agents" class="side-list"></ul></section>
-        <section class="panel"><header class="panel-head"><h3><span class="tile" aria-hidden="true">ϟ</span> Comandos e skills</h3></header><ul id="tools" class="side-list"></ul></section>
+        <section class="panel"><header class="panel-head"><h3><span class="tile" aria-hidden="true">ϟ</span> Skills e hooks</h3></header><ul id="activity" class="side-list"></ul></section>
       </aside>
     </div>
     <form id="steer" hidden class="steer"><label for="message">Enviar mensagem ao agente</label><div><input id="message" required maxlength="12000" placeholder="Escreva uma instrução"><button class="primary">Enviar</button></div></form>
-    <footer class="site-footer mono"><span>TMR<span class="accent">.</span> &nbsp; Console ACP</span><span id="workspace">Ambiente de demonstração</span></footer>
+    <footer class="site-footer mono"><span>TMR<span class="accent">.</span> &nbsp; Console ACP</span><span id="workspace">Ambiente local</span></footer>
   </main>
 
   <dialog id="prompt"><form id="prompt-form"></form></dialog>

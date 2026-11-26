@@ -12,6 +12,7 @@ import * as ui from "./tmr_ui.mjs";
 import * as input from "./tmr_web_input.mjs";
 import * as review from "./tmr_review.mjs";
 import { serveTmr } from "./tmr_web.mjs";
+import { editDetails, observeFiles, prepareTools, rtkCommandCount, rtkRewrite, toolOutput } from "./tmr_tools.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 // scripts → acp-client → skills → raiz do pacote/repo
@@ -200,26 +201,26 @@ class Metrics {
     p.tokensOut += usage.outputTokens ?? 0;
     p.turns += 1;
   }
-  scanText(role, text) {
+  scanToolOutput(role, text) {
     if (!text) return;
     const p = this.phase(role);
     for (const m of text.matchAll(MARK_SKILL)) bump(p.skills, m[1]);
     for (const m of text.matchAll(MARK_HOOK)) bump(p.hooks, m[1]);
     if (/⟐\s*rtk ✓/.test(text)) bump(p.cmds, "rtk (proxy)");
-    if (/codegraph_[a-z_]+|codegraph (explore|serve|init|status)/i.test(text)) bump(p.cmds, "codegraph");
+    if (/⟐\s*codegraph ✓/.test(text)) bump(p.cmds, "codegraph");
   }
   addTool(role, title) {
     if (!title) return;
     const p = this.phase(role);
     const first = String(title).trim().split(/\s+/).slice(0, 2).join(" ");
     if (CMD_RE.test(first)) bump(p.cmds, first);
-    this.scanText(role, String(title));
   }
   totals() {
     let tokensIn = 0, tokensOut = 0, cost = null, turns = 0;
     const skills = new Map(), hooks = new Map(), cmds = new Map();
     for (const [, p] of this.phases) {
-      tokensIn += p.tokensIn; tokensOut += p.tokensOut; cost += p.cost; turns += p.turns;
+      tokensIn += p.tokensIn; tokensOut += p.tokensOut; turns += p.turns;
+      if (p.cost != null) cost = (cost ?? 0) + p.cost;
       for (const [k, v] of p.skills) bump(skills, k, v);
       for (const [k, v] of p.hooks) bump(hooks, k, v);
       for (const [k, v] of p.cmds) bump(cmds, k, v);
@@ -233,7 +234,11 @@ const steeringQueue = [];
 const tools = new Map();
 
 // ------------------------------------------------------------------- run de fase via ACP
-async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevContext, metrics, renderer }) {
+async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevContext, metrics, renderer, mcpServer }) {
+  const toolCalls = new Map();
+  const uniqueSession = tools.size;
+  const rtkBefore = rtkCommandCount(cwd);
+  const files = await observeFiles(cwd, (message) => input.log("file", message));
   const child = spawn(preset.command, preset.args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
   let spawnError;
   child.on("error", (error) => {
@@ -242,6 +247,7 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
   });
   child.stdin.on("error", () => {});
   let sessionId;
+  let completed = false;
   const previousCost = metrics.phase(role).cost;
   const rpc = new Rpc(child, {
     onEvent: (msg) => {
@@ -254,17 +260,31 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
         phase.contextSize = u.size ?? phase.contextSize;
       }
       if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") {
-        if (u.toolCallId) {
-          const key = `${role}:${u.toolCallId}`;
-          const previous = tools.get(key);
-          tools.set(key, { title: u.title ?? previous?.title ?? "Ferramenta ACP", role, status: u.status ?? previous?.status ?? "pending" });
+        const previous = toolCalls.get(u.toolCallId);
+        const tool = { ...previous, ...u };
+        toolCalls.set(u.toolCallId, tool);
+        const key = `${uniqueSession}:${role}:${u.toolCallId}`;
+        const rawCommand = tool.rawInput?.command;
+        const title = typeof rawCommand === "string" ? rawCommand : tool.title ?? "Ferramenta ACP";
+        if (u.toolCallId) tools.set(key, { title, role, status: tool.status ?? "pending" });
+        if (u.sessionUpdate === "tool_call") {
+          metrics.addTool(role, title);
+          if (title !== u.title) input.log("tool", title);
         }
-        metrics.addTool(role, u.title);
-        // marcadores ⟐ rtk ✓ / ⟐ hook ✓ / codegraph vivem na SAÍDA da tool
-        // (content/rawOutput) — escaneia o evento inteiro, não só o título
-        metrics.scanText(role, JSON.stringify(u));
+        if (tool.status === "completed") {
+          for (const [file, action] of editDetails(tool)) files.log(file, action);
+          if (tool.name === "skill") {
+            const skill = tool.rawInput?.name ?? tool.rawInput?.id ?? tool.rawInput?.skill;
+            if (typeof skill === "string" && /^[\w.@/-]+$/.test(skill)) bump(metrics.phase(role).skills, skill);
+          }
+          if (/(?:^|[_./\s])codegraph(?:[_./\s]|$)/i.test(`${tool.name ?? ""} ${title}`)) bump(metrics.phase(role).cmds, "CodeGraph · consulta ACP");
+          if (typeof title === "string" && /^(?:rtk\s|[^\s]*[/]rtk\s)/.test(title)) bump(metrics.phase(role).cmds, "RTK · comando reescrito");
+        }
+        // ACP pode fornecer marcadores nas partes de saída, separados do título.
+        const output = toolOutput(u, tool.status);
+        if (/⟐\s*rtk ✓/.test(output) || (tool.status === "completed" && /^rtk\s/.test(title))) tool.rtkReported = true;
+        metrics.scanToolOutput(role, output);
       }
-      if (u.sessionUpdate === "agent_message_chunk" || u.sessionUpdate === "agent_thought_chunk") metrics.scanText(role, u.content?.text);
     },
     onRequest: async (req) => {
       const m = req.method;
@@ -300,6 +320,7 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
         if (!p.startsWith(cwd + path.sep) && p !== cwd) throw new Error(`fora do cwd: ${p}`);
         await fs.mkdir(path.dirname(p), { recursive: true });
         await fs.writeFile(p, req.params?.content ?? "", "utf8");
+        files.log(p, "Gravado");
         return {};
       }
       throw new Error(`método não suportado: ${m}`);
@@ -316,7 +337,7 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
     });
     const steeringSupported = Boolean(init?._meta?.steering?.supported);
 
-    const newParams = { cwd, mcpServers: [] };
+    const newParams = { cwd, mcpServers: [mcpServer] };
     if (modelValue) newParams.model = modelValue;
     const info = await rpc.request("session/new", newParams, 120_000).catch((error) => {
       if (error.acpError?.code === -32000 || /auth/i.test(error.message)) fail(`Harness requer autenticação. Execute ${preset.authHint}.`, 3);
@@ -369,6 +390,7 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
     const finalText = phaseText.get(role) ?? "";
     phaseText.set(role, "");
 
+    completed = ["end_turn", "max_tokens"].includes(res?.stopReason);
     return { stopReason: res?.stopReason ?? "error", output: finalText };
   } catch (error) {
     throw spawnError ?? error;
@@ -377,6 +399,20 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
     if (sessionId) { try { rpc.notify("session/cancel", { sessionId }); } catch {} }
     child.stdin?.end();
     child.kill();
+    await files.stop();
+    const rtkAfter = rtkCommandCount(cwd);
+    if (rtkBefore !== null && rtkAfter !== null && rtkAfter > rtkBefore) {
+      const commands = rtkAfter - rtkBefore;
+      bump(metrics.phase(role).cmds, "RTK · comandos registrados", commands);
+      input.log("tool", `RTK registrou ${commands} comando(s) no projeto durante esta fase.`);
+    } else if (completed && rtkBefore !== null && rtkAfter !== null && ![...toolCalls.values()].some((tool) => tool.rtkReported)) {
+      const commands = [...new Set([...toolCalls.values()]
+        .filter((tool) => tool.kind === "execute" && tool.status === "completed")
+        .map((tool) => tool.rawInput?.command)
+        .filter((command) => typeof command === "string"))];
+      const missing = commands.find((command) => rtkRewrite(preset.platform, cwd, command));
+      if (missing) throw new Error("O harness executou um comando elegível sem registrar uso do RTK. Confira se o plugin do OpenCode ou o hook do Codex está ativo e autorizado.");
+    }
   }
 }
 
@@ -396,10 +432,17 @@ async function rolePromptFor(role) {
             ? `Rode o fluxo de ship da squad (git + gh): branch de origin/develop atualizada, commits, push, PR --base develop, acompanhe CI, atualize .planning/STATE.md e .planning/HANDOFF.md (apenas estes dois arquivos), e ENCERRE a issue do GitHub (gh issue close + Status Done no Project) se houver issue real. Saída: === SHIP === (branch, PR url, checks, issue encerrada, pendências).`
             : `Você é o supervisor: auditoria FINAL da execução. Leia .planning/STATE.md e .planning/HANDOFF.md (se existirem), verifique o que foi entregue no repo, rode 'rtk gain' para métricas de compressão e produza o parecer de auditoria. Saída: === SUPERVISOR === (entregas, hooks/marcadores observados, métricas, riscos, pendências).`;
     return `Você é o macro ${role.toUpperCase()} da squad SDD, executando via ACP em um harness externo. Siga o seu papel:\n\n${body.slice(0, 12_000)}\n\nCONTRATO DE SAÍDA (texto, no fim da resposta): ${contract}` +
-      `\n\nFERRAMENTAS DA SQUAD: explore o repositório pelo MCP codegraph (codegraph_explore) em vez de ler arquivo a arquivo; os comandos bash passam automaticamente pelo proxy rtk (o marcador ⟐ rtk ✓ aparece na saída); os hooks determinísticos da squad (⟐ hook ✓) rodam nas edições. Use-os quando fizer sentido — eles alimentam as métricas da orquestração.`;
+      `\n\nFERRAMENTAS DA SQUAD: comece a exploração de código e impacto pelo MCP codegraph (codegraph_explore). Nos comandos shell, use o hook nativo do RTK para reescrita automática; os hooks determinísticos da squad (⟐ hook ✓) rodam nas edições. Use-os quando fizer sentido — eles alimentam as métricas da orquestração.`;
   } catch {
     return `Você é o macro ${role.toUpperCase()} da squad SDD. Retorne === ${role.toUpperCase()} === no fim da resposta.`;
   }
+}
+
+function reportSetupTool(title, status) {
+  tools.set(`setup:${title}`, { title, kind: "Comando", status });
+  input.send({ type: "state", data: { tools: [...tools.values()] } });
+  if (status === "running") input.log("tool", title);
+  else input.log(status === "failed" ? "warn" : "tool", `${title} · ${status === "failed" ? "falhou" : "concluído"}`);
 }
 
 function makeRenderer(role) {
@@ -452,6 +495,10 @@ async function main() {
     if (!issue) console.error("Issue indisponível. Confira o link e o acesso ao repositório.");
   }
 
+  input.send({ type: "state", data: { issue } });
+  const integrations = await prepareTools({ harness, cwd, ask: askYN, onTool: reportSetupTool });
+  if (!integrations) return "cancelled";
+  const semanticContext = (await integrations.semanticContext(issue.title)).slice(0, 10000);
   const outputs = {};
   const models = {};
   const statuses = Object.fromEntries(ROLES.map((role) => [role, "queued"]));
@@ -463,12 +510,13 @@ async function main() {
       issue, stages: ROLES.map((role) => ({ role, status: statuses[role], model: models[role]?.label, duration: metrics.duration(role) })),
       tokens: totals.tokensIn + totals.tokensOut, cost: totals.cost,
       contextUsed: phase.contextUsed ?? null, contextSize: phase.contextSize ?? null,
-      tools: [...tools.values()].slice(-20),
+      tools: [...[...tools].filter(([key]) => key.startsWith("setup:")).map(([, tool]) => tool),
+        ...[...tools].filter(([key]) => !key.startsWith("setup:")).slice(-20).map(([, tool]) => tool)],
       skills: [...totals.skills.keys()], hooks: [...totals.hooks.keys()], commands: [...totals.cmds.keys()],
     } });
   };
   const timer = setInterval(publish, 600);
-  const task = `Tarefa (issue #${issue.number} — ${issue.url}):\n${issue.title}\n\n${issue.body}`;
+  const task = `Tarefa (issue #${issue.number} — ${issue.url}):\n${issue.title}\n\n${issue.body}${semanticContext ? `\n\n=== CONTEXTO DO CODEGRAPH ===\n${semanticContext}` : ""}`;
   publish();
   try {
     for (const role of ROLES) {
@@ -481,7 +529,7 @@ async function main() {
       const prevContext = Object.entries(outputs).map(([name, output]) => `=== CONTEXTO · ${name.toUpperCase()} ===\n${output}`).join("\n\n");
       const run = (context) => runPhase({
         preset: AGENT_PRESETS[harness], cwd, role, modelValue: models[role].modelValue,
-        rolePrompt, task, prevContext: context, metrics, renderer: makeRenderer(role),
+        rolePrompt, task, prevContext: context, metrics, renderer: makeRenderer(role), mcpServer: integrations.mcpServer,
       });
       statuses[role] = "running";
       metrics.start(role);
