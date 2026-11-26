@@ -52,7 +52,14 @@ const AGENT_PRESETS = {
   },
 };
 
-const ROLES = ["planner", "builder", "reviewer"];
+const ROLES = ["planner", "builder", "reviewer", "shipper", "supervisor"];
+const ROLE_DESC = {
+  planner: "planeja produto e arquitetura — produz PRD + PLAN em memória",
+  builder: "implementa o plano — código, testes e verificação local",
+  reviewer: "revisa arquitetura e risco — parecer APPROVED ou CHANGES_REQUESTED",
+  shipper: "finaliza — branch/PR/CI via gh, encerra a issue, STATE/HANDOFF",
+  supervisor: "auditoria final — hooks, métricas, rtk gain, riscos e pendências",
+};
 
 const fail = (msg, code = 1) => { console.error(`acp_orchestrate: ${msg}`); process.exit(code); };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -73,7 +80,7 @@ function printMenu(title, rows) {
 async function installArtifacts(cwd, harness) {
   const marker = { opencode: ".opencode/agents", claude: ".claude/agents", codex: ".codex" }[harness];
   const already = fsSync.existsSync(path.join(cwd, marker));
-  ui.stepHeader(2, 5, "Artefatos da squad");
+  ui.stepHeader(2, 4, "Artefatos da squad");
   if (already) {
     console.log(`  ${ui.icons.info} artefatos já presentes (${marker})`);
     if (!(await askYN("Atualizar (reinstalar) os artefatos?", "n"))) { console.log(`  ${ui.paint.gray("(mantidos)")}`); return; }
@@ -141,40 +148,35 @@ const priceOf = (e) =>
 const fmt$ = (v) => (v == null ? "?" : String(v));
 const fmtCtx = (c) => (c ? Math.round(c / 1000) + "k" : "?");
 
-async function pickModelsForRoles(harness, forcedModel) {
+/** Escolhe o modelo para UM papel — catálogo COMPLETO do harness, ordenado
+ *  por qualidade × custo para o papel (rankModels). Chamada antes de cada fase. */
+async function pickModelForRole(harness, role, forcedModel) {
   const platform = AGENT_PRESETS[harness].platform;
   const pools = await loadModelPools([platform]);
   const pool = pools[platform] ?? [];
   let defaults = null;
   try { defaults = await loadDefaults(SOURCE_ROOT); } catch {}
-  const chosen = {};
-  if (forcedModel) {
-    for (const r of ROLES) chosen[r] = { modelValue: forcedModel, label: forcedModel, input: null, output: null };
-    return chosen;
+  if (forcedModel) return { modelValue: forcedModel, label: forcedModel, input: null, output: null };
+
+  const roleDefault = platform === "opencode" ? defaults?.opencode?.[role] : defaults?.codex?.[role];
+  const ranked = rankModels(pool, platform, role, roleDefault);
+  if (!ranked.length) {
+    console.error(`(sem modelos no pool de ${platform} — usando default do papel)`);
+    return { modelValue: roleDefault?.model ?? roleDefault ?? "", label: String(roleDefault?.model ?? roleDefault ?? "default"), input: null, output: null };
   }
-  for (const role of ROLES) {
-    const roleDefault = platform === "opencode" ? defaults?.opencode?.[role] : defaults?.codex?.[role];
-    const ranked = rankModels(pool, platform, role, roleDefault);
-    const top = ranked.slice(0, 10);
-    if (!top.length) {
-      console.error(`(sem modelos no pool de ${platform} — usando default do papel)`);
-      chosen[role] = { modelValue: roleDefault?.model ?? roleDefault ?? "", label: String(roleDefault?.model ?? roleDefault ?? "default"), input: null, output: null };
-      continue;
-    }
-    const options = top.map((e, i) => {
-      const varHint = chooseVariant(e, role, roleDefault?.variant ?? null);
-      const rec = i === 0 ? `${ui.icons.star} ` : "";
-      return `${rec}${e.label}  [${e.modelValue}]  ${priceOf(e)}  ctx ${fmtCtx(e.context)}${varHint ? ` · var ${varHint}` : ""}`;
-    });
-    const idx = await input.select(
-      `Modelo para o agente ${role.toUpperCase()} (↑↓ navega, enter escolhe)`,
-      options,
-      1,
-      (i) => `${top[i].label} (${top[i].modelValue})`,
-    );
-    chosen[role] = top[idx];
-    console.log(`  ${ui.icons.ok} ${role}: ${ui.paint.bold(chosen[role].label)} ${ui.paint.gray(`(${chosen[role].modelValue})`)}`);
-  }
+  const options = ranked.map((e, i) => {
+    const varHint = chooseVariant(e, role, roleDefault?.variant ?? null);
+    const rec = i === 0 ? `${ui.icons.star} ` : "";
+    return `${rec}${e.label}  [${e.modelValue}]  ${priceOf(e)}  ctx ${fmtCtx(e.context)}${varHint ? ` · var ${varHint}` : ""}`;
+  });
+  const idx = await input.select(
+    `Modelo para o agente ${role.toUpperCase()} — catálogo completo (${ranked.length}, ordenado por qualidade × custo) · ↑↓ navega, enter escolhe`,
+    options,
+    1,
+    (i) => `${ranked[i].label} (${ranked[i].modelValue})`,
+  );
+  const chosen = ranked[idx];
+  console.log(`  ${ui.icons.ok} ${role}: ${ui.paint.bold(chosen.label)} ${ui.paint.gray(`(${chosen.modelValue})`)}`);
   return chosen;
 }
 
@@ -289,6 +291,13 @@ const steeringQueue = {
 };
 const phaseState = { currentRole: null, phaseActive: false };
 
+/** Status da squad para o quadro: fases concluídas ✔, em curso ▶, pendentes ☐. */
+function squadStatus(outputs) {
+  return ROLES.map((r) =>
+    outputs[r] ? ui.paint.green(`✔${r.slice(0, 1)}`) : phaseState.currentRole === r ? ui.paint.brightCyan(`▶${r.slice(0, 1)}`) : ui.paint.gray(`☐${r.slice(0, 1)}`)
+  ).join(" ");
+}
+
 // ------------------------------------------------------------------- run de fase via ACP
 async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevContext, metrics, renderer, lavish }) {
   const child = spawn(preset.command, preset.args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
@@ -298,7 +307,12 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
       handleNotification(msg, { emit: (o) => activeRenderer.emit(o) }, lavish);
       const u = msg.params?.update ?? {};
       if (u.sessionUpdate === "usage_update") metrics.addCost(role, u.cost?.amount ?? 0);
-      if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") metrics.addTool(role, u.title);
+      if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") {
+        metrics.addTool(role, u.title);
+        // marcadores ⟐ rtk ✓ / ⟐ hook ✓ / codegraph vivem na SAÍDA da tool
+        // (content/rawOutput) — escaneia o evento inteiro, não só o título
+        metrics.scanText(role, JSON.stringify(u));
+      }
       if (u.sessionUpdate === "agent_message_chunk" || u.sessionUpdate === "agent_thought_chunk") metrics.scanText(role, u.content?.text);
     },
     onRequest: async (req) => {
@@ -432,8 +446,13 @@ async function rolePromptFor(role) {
       ? `Seu escopo é PLANEJAR — NÃO implemente nem edite arquivos de código (isso é do builder). Se a tarefa estiver clara, NÃO entreviste — produza PRD/PLAN direto; use steering só se houver ambiguidade BLOQUEANTE. Saída: === PRD === (max 1 página) e === PLAN === (subtasks [Front]/[Back]/[Infra], dependências, critérios de aceite). NÃO escreva em .planning/.`
       : role === "builder"
         ? `=== RESUMO === (o que fez, arquivos alterados, decisões, pendências). Implemente direto nos arquivos do repo.`
-        : `=== PARECER === (arquitetura/risco/bloqueios; verdict APPROVED ou CHANGES_REQUESTED).`;
-    return `Você é o macro ${role.toUpperCase()} da squad SDD, executando via ACP em um harness externo. Siga o seu papel:\n\n${body.slice(0, 12_000)}\n\nCONTRATO DE SAÍDA (texto, no fim da resposta): ${contract}`;
+        : role === "reviewer"
+          ? `=== PARECER === (arquitetura/risco/bloqueios; verdict APPROVED ou CHANGES_REQUESTED).`
+          : role === "shipper"
+            ? `Rode o fluxo de ship da squad (git + gh): branch de origin/develop atualizada, commits, push, PR --base develop, acompanhe CI, atualize .planning/STATE.md e .planning/HANDOFF.md (apenas estes dois arquivos), e ENCERRE a issue do GitHub (gh issue close + Status Done no Project) se houver issue real. Saída: === SHIP === (branch, PR url, checks, issue encerrada, pendências).`
+            : `Você é o supervisor: auditoria FINAL da execução. Leia .planning/STATE.md e .planning/HANDOFF.md (se existirem), verifique o que foi entregue no repo, rode 'rtk gain' para métricas de compressão e produza o parecer de auditoria. Saída: === SUPERVISOR === (entregas, hooks/marcadores observados, métricas, riscos, pendências).`;
+    return `Você é o macro ${role.toUpperCase()} da squad SDD, executando via ACP em um harness externo. Siga o seu papel:\n\n${body.slice(0, 12_000)}\n\nCONTRATO DE SAÍDA (texto, no fim da resposta): ${contract}` +
+      `\n\nFERRAMENTAS DA SQUAD: explore o repositório pelo MCP codegraph (codegraph_explore) em vez de ler arquivo a arquivo; os comandos bash passam automaticamente pelo proxy rtk (o marcador ⟐ rtk ✓ aparece na saída); os hooks determinísticos da squad (⟐ hook ✓) rodam nas edições. Use-os quando fizer sentido — eles alimentam as métricas da orquestração.`;
   } catch {
     return `Você é o macro ${role.toUpperCase()} da squad SDD. Retorne === ${role.toUpperCase()} === no fim da resposta.`;
   }
@@ -481,7 +500,7 @@ async function main() {
   // 1) harness
   let harness = forcedAgent;
   if (!harness) {
-    ui.stepHeader(1, 5, "Escolha do harness");
+    ui.stepHeader(1, 4, "Escolha do harness");
     const idx = await input.select(
       "Qual harness vai executar a squad via ACP? (↑↓ navega, enter escolhe)",
       [
@@ -500,11 +519,11 @@ async function main() {
   await installArtifacts(cwd, harness);
 
   // 3) limpar .planning (STATE/HANDOFF/specs) para começar do zero
-  ui.stepHeader(3, 5, "Estado da squad (.planning/)");
+  ui.stepHeader(3, 4, "Estado da squad (.planning/)");
   await maybeCleanPlanning(cwd);
 
   // 4) issue do GitHub — obrigatória antes do primeiro agente
-  ui.stepHeader(4, 5, "Tarefa — issue do GitHub");
+  ui.stepHeader(4, 4, "Tarefa — issue do GitHub");
   let issue = null;
   while (!issue) {
     const link = await ask("Link/ID da issue (https://github.com/owner/repo/issues/N, owner/repo#N ou #N)");
@@ -517,14 +536,10 @@ async function main() {
   }
   console.log(`  ${ui.icons.ok} issue: ${ui.paint.bold(`#${issue.number ?? "manual"}`)} ${issue.title}${issue.labels ? ui.paint.gray(` [${issue.labels}]`) : ""}`);
 
-  // 5) modelo por agente (lista completa + custos + recomendado por papel)
-  ui.stepHeader(5, 5, "Modelo por agente");
-  const models = await pickModelsForRoles(harness, forcedModel);
-  for (const r of ROLES) console.log(`  ${ui.icons.ok} ${ui.paint.boldCyan(r.padEnd(8))} ${models[r].label} ${ui.paint.gray(`(${models[r].modelValue})`)} ${ui.paint.dim("·")} ${ui.paint.dim(priceOf(models[r]))}`);
-
   // UI/console Lavish com dashboards (opcional)
   const metrics = new Metrics();
   const renderer = makeRenderer();
+  const models = {}; // escolhido POR FASE (gate de aprovação + select antes de cada agente)
   let lavish = null;
   if (uiFlag) {
     lavish = new LavishUi({ cwd }, { agentLabel: `squad ${harness}`, render: orchestratorHtml });
@@ -535,13 +550,14 @@ async function main() {
   // re-render periódico dos dashboards
   const uiTimer = lavish ? setInterval(() => lavish.refresh(), 2000) : null;
 
-  // terminal steering fora das fases também é aceito
-  // steering terminal entre/períodos sem fase — perguntas pendentes têm precedência
+  // steering terminal entre fases — perguntas pendentes têm precedência
   input.setSteering((t) => {
     if (!phaseState.phaseActive) steeringQueue.push({ text: t, from: "terminal" });
   });
 
   // ── fases: planner → builder → reviewer (contexto encadeado em memória)
+  // Por fase: anuncia o próximo agente → usuário APROVA → escolhe o modelo
+  // (catálogo completo do harness) → executa → quadro de métricas atualiza.
   const rolePrompts = {};
   for (const r of ROLES) rolePrompts[r] = await rolePromptFor(r);
   const task = `Tarefa (issue #${issue.number} — ${issue.url ?? "manual"}):\n${issue.title}\n\n${issue.body}`;
@@ -550,6 +566,14 @@ async function main() {
   for (const role of ROLES) {
     phaseState.currentRole = role;
     lavish?.event(`══ FASE ${role.toUpperCase()} ══`);
+    console.log(`\n  ${ui.icons.agent} ${ui.paint.boldMagenta(`PRÓXIMO AGENTE: ${role.toUpperCase()}`)} ${ui.paint.gray("·")} ${ui.paint.dim(ROLE_DESC[role] ?? "")}`);
+    if (!(await askYN(`Chamar o ${role.toUpperCase()} agora?`, "s"))) {
+      console.log(`  ${ui.icons.warn} ${ui.paint.yellow(`execução interrompida pelo usuário antes de ${role}`)}`);
+      break;
+    }
+    const chosen = await pickModelForRole(harness, role, forcedModel);
+    models[role] = chosen;
+    lavish?.event(`modelo do ${role}: ${chosen.modelValue}`);
     const prev = role === "planner" ? "" : role === "builder"
       ? `=== CONTEXTO DO PLANNER ===\n${outputs.planner ?? ""}`
       : `=== CONTEXTO DO BUILDER (resumo de implementação) ===\n${outputs.builder ?? ""}`;
@@ -561,11 +585,14 @@ async function main() {
     outputs[role] = run.output;
     const t = metrics.totals();
     console.log(`  ${ui.icons.ok} ${ui.paint.bold(role)} concluído ${ui.paint.gray(`(${run.stopReason})`)} — ${ui.paint.dim(`acumulado: ${t.tokensIn} in / ${t.tokensOut} out · $${t.cost.toFixed(4)}`)}`);
+    // quadro do lado: issue+status, tokens, valor consumido e comandos — após cada fase
+    ui.metricsSidePanel(metrics, models, { issue, status: squadStatus(outputs) });
   }
 
   clearInterval(uiTimer);
   input.setSteering(null);
   console.log("");
+  ui.metricsSidePanel(metrics, models, { issue, status: `${squadStatus(outputs)} · concluída` });
   ui.metricsPanel(metrics, models);
   console.log(`\n  ${ui.icons.ok} ${ui.paint.bold("TMR")} ${ui.paint.dim("orquestração concluída")}`);
   if (lavish) {

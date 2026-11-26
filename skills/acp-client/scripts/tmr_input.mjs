@@ -90,7 +90,7 @@ function renderSelect(p) {
   process.stdout.write(`  ${ui.paint.bold(p.question)}\n`);
   p.options.forEach((opt, i) => {
     const active = i === p.idx;
-    const bullet = active ? ui.paint.brightCyan("❯") : ui.paint.gray(i === 9 ? ")" : String(i + 1) + ")");
+    const bullet = active ? ui.paint.brightCyan("❯") : ui.paint.gray(`${i + 1})`);
     const label = active ? ui.paint.bold(opt) : ui.paint.dim(opt);
     process.stdout.write(`\x1b[2K  ${bullet} ${label}\n`);
   });

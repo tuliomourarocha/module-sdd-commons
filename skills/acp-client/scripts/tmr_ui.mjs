@@ -123,8 +123,7 @@ export function confirmLabel(q) {
 // ------------------------------------------------------------------- métricas
 const fmtNum = (n) => String(n ?? 0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 
-export function metricsPanel(metrics, models) {
-  const t = metrics.totals();
+export function metricsPanel(metrics, models) {  const t = metrics.totals();
   const rows = [];
   const W = [10, 30, 9, 9, 10];
   const cell = (s, w, align = "left") => {
@@ -150,6 +149,48 @@ export function metricsPanel(metrics, models) {
     `${paint.bold("comandos")} ${[...t.cmds.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)
       .map(([k, v]) => (/rtk|codegraph|ast-grep|sg/i.test(k) ? paint.brightGreen(`${k}×${v}`) : `${k}×${v}`)).join("  ") || paint.gray("—")}`,
   ]);
+}
+
+/** Quadro lateral — impresso à direita (coluna) após cada fase, com os números
+ *  correntes: issue em trabalho + status, tokens usados, valor consumido e
+ *  comandos executados. */
+export function metricsSidePanel(metrics, models, { issue = null, status = "", width = 46 } = {}) {
+  const t = metrics.totals();
+  const terms = process.stdout.columns ?? 80;
+  const pad = Math.max(2, Math.min(28, terms - width - 12));
+  const padStr = " ".repeat(pad);
+  const line = (s) => console.log(padStr + s);
+  const visLen = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, "").length;
+  const cell = (s, w) => { s = String(s ?? ""); return s + " ".repeat(Math.max(0, w - visLen(s))); };
+  const bar = paint.gray("┌" + "─".repeat(width - 2) + "┐");
+  const mid = (s) => paint.gray("│") + " " + s + " ".repeat(Math.max(0, width - 3 - visLen(s))) + paint.gray("│");
+  const bottom = paint.gray("└" + "─".repeat(width - 2) + "┘");
+  line("");
+  line(bar);
+  if (issue) {
+    line(mid(`${paint.bold("ISSUE")}  ${paint.boldCyan(`#${issue.number ?? "manual"}`)} ${paint.dim(String(issue.title ?? "").slice(0, 24))}`));
+    line(mid(`${paint.bold("status")}  ${paint.brightCyan(status || "—")}`));
+    line(mid(paint.gray("─".repeat(width - 4))));
+  }
+  line(mid(paint.bold("QUADRO DA SQUAD") + paint.dim("  (após a última fase)")));
+  line(mid(paint.gray("─".repeat(width - 4))));
+  line(mid(`${paint.boldCyan("tokens")}   ${String(t.tokensIn).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} in · ${String(t.tokensOut).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} out`));
+  line(mid(`${paint.boldCyan("custo")}    ${t.cost > 0 ? paint.brightYellow("$" + t.cost.toFixed(4)) : paint.gray("$0.0000")} (USD, real do harness)`));
+  line(mid(paint.gray("─".repeat(width - 4))));
+  const cmds = [...t.cmds.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+  line(mid(paint.bold("comandos executados")));
+  for (const [k, v] of cmds) {
+    const mark = /rtk|codegraph|ast-grep|sg/i.test(k) ? paint.brightGreen("●") : paint.gray("○");
+    line(mid(`  ${mark} ${cell(k, 22)} ${paint.dim("×" + v)}`));
+  }
+  if (!cmds.length) line(mid(`  ${paint.gray("— nenhum ainda")}`));
+  const skills = [...t.skills.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+  if (skills.length) {
+    line(mid(paint.gray("─".repeat(width - 4))));
+    line(mid(paint.bold("skills chamadas")));
+    for (const [k, v] of skills) line(mid(`  ${paint.magenta("◆")} ${cell(k, 22)} ${paint.dim("×" + v)}`));
+  }
+  line(bottom);
 }
 
 export { fmtNum };

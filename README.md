@@ -65,13 +65,17 @@ node .opencode/skills/acp-client/scripts/acp_orchestrate.mjs --ui lavish
 3. **Issue do GitHub** — `https://github.com/owner/repo/issues/N`, `owner/repo#N` ou `#N`;
    a tarefa vem de `gh issue view` (sem `gh`, cole o texto manualmente). **Obrigatória
    antes do primeiro agente.**
-4. **Modelo por agente** — para planner/builder/reviewer: lista com **custos
-   ($/Mtok in·out)**, contexto e o **★ recomendado por papel** (catálogo da squad);
-   `enter` aceita o recomendado. A escolha acontece aqui, no runtime — a instalação
-   grava só o padrão da squad.
-5. **Fases** — planner → builder → reviewer, contexto encadeado; durante as fases
-   **digite no terminal para falar com o agente no meio do processo** (steering nativo
-   no OpenCode; no Codex a mensagem entra no fim do turno).
+4. **Ciclo por agente (um de cada vez)** — para cada fase (planner → builder → reviewer → **shipper** → **supervisor**):
+   o TMR **anuncia o próximo agente** e **pede sua aprovação**; aprovado, você escolhe o
+   **modelo na hora** de um menu com o **catálogo completo do harness** (ordenado por
+   qualidade × custo para aquele papel, ★ no recomendado); a fase executa e o
+   **quadro da squad** (box à direita) atualiza **a issue em trabalho + status,
+   tokens usados, valor consumido (USD real) e comandos executados**; então o
+   próximo agente é anunciado. `--model <provider/model>` força um modelo para
+   todas as fases. Durante as fases **digite no terminal para falar com o agente
+   no meio do processo** (steering nativo no OpenCode; no Codex a mensagem entra
+   no fim do turno). O shipper roda git/PR/CI e encerra a issue; o supervisor
+   fecha com a auditoria final (entregas, hooks, rtk gain, riscos).
 
 ### Interface (`--ui lavish`)
 

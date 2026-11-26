@@ -21,8 +21,16 @@ O macro é o **client**; o harness externo é o **agent**. Toda a execução (me
 2. **Artefatos da squad no projeto** — instala (via `bin/sdd-harness.js --<platform> --artifacts-only`) agents/skills/commands/hooks/plugins + registro do MCP codegraph para o harness escolhido (já instalados → pergunta se atualiza). A instalação da squad NÃO copia mais artefatos — é aqui que eles vêm, e ficam no projeto.
 3. **Limpar `.planning/`** — lista STATE.md/HANDOFF.md/specs e pergunta se começa do zero (apaga só `.md`/`.json` de `.planning/`, com confirmação).
 4. **Issue do GitHub** — link `github.com/owner/repo/issues/N`, `owner/repo#N` ou `#N` (repo do cwd); busca via `gh issue view` e vira o input das fases. Sem `gh` → cola o texto da tarefa.
-5. **Modelo por agente** — para planner/builder/reviewer: **menu com setas ↑↓ (highlight dinâmico), números e Enter** — lista com preços ($/Mtok in/out), contexto e o **★ recomendado por papel** pré-selecionado (reusa `bin/lib/model-picker.js` — os mesmos pesos do catálogo da squad). `--model <provider/model>` força um modelo para todos.
-5. **Execução** — uma sessão ACP por papel, contexto encadeado em memória (planner → builder → reviewer), com steering do usuário em TTY e/ou `--ui lavish`.
+
+Depois, **ciclo por agente** (planner → builder → reviewer → **shipper** → **supervisor**), um de cada vez:
+- **Anúncio + aprovação** — "PRÓXIMO AGENTE: PLANNER" com a descrição do papel; o usuário **aprova** a chamada (Enter = sim; "n" interrompe a execução com o resumo).
+- **Modelo** — **catálogo COMPLETO do harness** (não só top 10), ordenado por qualidade × custo para aquele papel — menu com setas ↑↓, ★ no recomendado pré-selecionado. `--model <provider/model>` força um modelo para todas as fases.
+- **Execução** — fase roda; ao terminar, o **quadro da squad** (box à direita, `metricsSidePanel`) atualiza: **issue em trabalho + status** (✔ fases feitas, ▶ em curso), tokens usados, valor consumido (USD real) e comandos executados (rtk/codegraph destacados).
+- Só então o próximo agente é anunciado — aprova → modelo → executa → quadro. Steering em TTY durante a fase e/ou `--ui lavish`.
+
+**Shipper e supervisor integram o ciclo ACP**: o shipper roda git/PR/CI via `gh`, atualiza `STATE.md`/`HANDOFF.md` e encerra a issue; o supervisor produz a auditoria final (entregas, marcadores observados, `rtk gain`, riscos).
+
+**Detecção de rtk/codegraph/hooks nas métricas**: os marcadores `⟐ rtk ✓` e `⟐ hook ✓` aparecem na **saída das tools** (`content`/`rawOutput` dos eventos `tool_call`) — o scanner de métricas analisa o evento completo (título + conteúdo + rawOutput), e o prompt de cada fase instrui o agente a usar `codegraph_explore` para exploração (comandos bash já passam pelo rtk automaticamente).
 
 ### Interface (`--ui lavish`) — quadros ao vivo no browser
 
