@@ -37,10 +37,12 @@ import { ensureDeps } from "./ensure_deps.mjs";
 import { loadModelPools, rankModels, chooseVariant, loadDefaults } from "../../../bin/lib/model-picker.js";
 import * as ui from "./tmr_ui.mjs";
 import * as input from "./tmr_input.mjs";
+import * as review from "./tmr_review.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 // scripts → acp-client → skills → raiz do pacote/repo
 const SOURCE_ROOT = path.resolve(SCRIPT_DIR, "../../..");
+const REVIEW_FIND_SKILL = path.join(SOURCE_ROOT, "skills", "find-skills", "scripts", "find_skill.py");
 
 const AGENT_PRESETS = {
   opencode: { command: "opencode", args: ["acp"], authHint: "opencode auth login", platform: "opencode" },
@@ -587,6 +589,46 @@ async function main() {
     console.log(`  ${ui.icons.ok} ${ui.paint.bold(role)} concluído ${ui.paint.gray(`(${run.stopReason})`)} — ${ui.paint.dim(`acumulado: ${t.tokensIn} in / ${t.tokensOut} out · $${t.cost.toFixed(4)}`)}`);
     // quadro do lado: issue+status, tokens, valor consumido e comandos — após cada fase
     ui.metricsSidePanel(metrics, models, { issue, status: squadStatus(outputs) });
+
+    // ── Revisão Lavish: SOMENTE no fim do planner e do supervisor ──
+    if (role === "planner") {
+      const suggestions = review.skillSuggestions(REVIEW_FIND_SKILL, task);
+      const html = review.buildReviewHtml({
+        title: `Plano — ${issue.title}`,
+        subtitle: `TMR · revisão do PLANNER · issue #${issue.number ?? "manual"} — aprove o plano, as skills e responda as dúvidas`,
+        planText: outputs.planner,
+        localSkills: suggestions.local,
+        remoteSkills: suggestions.remote,
+      });
+      const feedback = await review.runLavishReview("planner", html);
+      const approvedSkills = review.handleSkillFeedback(feedback, REVIEW_FIND_SKILL);
+      if (feedback.length) {
+        outputs.planner += `\n\n=== FEEDBACK DA REVISÃO (Lavish) ===\n${feedback.join("\n")}` +
+          (approvedSkills.length ? `\n=== SKILLS INSTALADAS COM APROVAÇÃO ===\n${approvedSkills.join("\n")}` : "");
+        console.log(`  ${ui.icons.ok} ${ui.paint.bold(feedback.length)} feedback(s) incorporados ao contexto do builder`);
+      }
+    }
+    if (role === "supervisor") {
+      const t2 = metrics.totals();
+      const html = review.buildReviewHtml({
+        title: `Auditoria — ${issue.title}`,
+        subtitle: `TMR · revisão do SUPERVISOR — tokens ${t2.tokensIn} in / ${t2.tokensOut} out · $${t2.cost.toFixed(4)} · status: ${squadStatus(outputs)}`,
+        planText: outputs.supervisor,
+        extraSections: [{ title: "Contexto do ciclo", body: `Issue: #${issue.number ?? "manual"} ${issue.title}\nHarness: ${harness}\nModelos: ${ROLES.map((r) => `${r}=${models[r]?.modelValue ?? "?"}`).join(", ")}` }],
+      });
+      const feedback = await review.runLavishReview("supervisor", html);
+      if (feedback.length) {
+        console.log(`  ${ui.icons.ok} ${ui.paint.bold(feedback.length)} observação(ões) do usuário na auditoria — repassando ao supervisor…`);
+        const extra = await runPhase({
+          preset: AGENT_PRESETS[harness], cwd, role: "supervisor", modelValue: models.supervisor?.modelValue,
+          rolePrompt: rolePrompts.supervisor, task,
+          prevContext: `=== AUDITORIA ANTERIOR ===\n${outputs.supervisor ?? ""}\n\n=== FEEDBACK DO USUÁRIO (revisão Lavish) ===\n${feedback.join("\n")}`,
+          metrics, renderer, lavish,
+        });
+        outputs.supervisor = extra.output;
+        ui.metricsSidePanel(metrics, models, { issue, status: `${squadStatus(outputs)} · revisão aplicada` });
+      }
+    }
   }
 
   clearInterval(uiTimer);

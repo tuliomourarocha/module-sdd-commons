@@ -454,7 +454,7 @@ export class LavishUi {
 }
 
 /** Resposta do poll: leniente — extrai prompts/texto de qualquer shape. */
-function parsePollResponse(raw) {
+export function parsePollResponse(raw) {
   let data = null;
   try { data = JSON.parse(raw); } catch { /* TOON/linha única */ }
   const status = data?.status ?? (raw.includes("ended") ? "ended" : "feedback");

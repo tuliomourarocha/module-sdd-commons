@@ -30,6 +30,8 @@ Depois, **ciclo por agente** (planner → builder → reviewer → **shipper** �
 
 **Shipper e supervisor integram o ciclo ACP**: o shipper roda git/PR/CI via `gh`, atualiza `STATE.md`/`HANDOFF.md` e encerra a issue; o supervisor produz a auditoria final (entregas, marcadores observados, `rtk gain`, riscos).
 
+**Revisão Lavish no fim do planner e do supervisor** (só nesses dois): HTML com plano/auditoria, **skills locais + sugeridas do skills.sh** (botões ✔ Aprovar / ✘ Rejeitar por skill), dúvidas/ambiguidades e campo de resposta. Skills aprovadas passam pela auditoria pública (`find_skill.py --audit`) antes do `npx skills add`; feedback do planner vira contexto do builder; feedback do supervisor dispara um turno extra do supervisor. Poll supervisionado até o usuário encerrar (Send & End).
+
 **Detecção de rtk/codegraph/hooks nas métricas**: os marcadores `⟐ rtk ✓` e `⟐ hook ✓` aparecem na **saída das tools** (`content`/`rawOutput` dos eventos `tool_call`) — o scanner de métricas analisa o evento completo (título + conteúdo + rawOutput), e o prompt de cada fase instrui o agente a usar `codegraph_explore` para exploração (comandos bash já passam pelo rtk automaticamente).
 
 ### Interface (`--ui lavish`) — quadros ao vivo no browser

@@ -76,6 +76,12 @@ node .opencode/skills/acp-client/scripts/acp_orchestrate.mjs --ui lavish
    no meio do processo** (steering nativo no OpenCode; no Codex a mensagem entra
    no fim do turno). O shipper roda git/PR/CI e encerra a issue; o supervisor
    fecha com a auditoria final (entregas, hooks, rtk gain, riscos).
+5. **Revisão interativa no fim do planner e do supervisor (só nesses dois)** —
+   o TMR abre o plano (ou a auditoria) no Lavish Editor com as **skills locais +
+   sugeridas do skills.sh** (botões ✔ Aprovar / ✘ Rejeitar por skill),
+   dúvidas/ambiguidades e campo de resposta. Skills aprovadas passam pela
+   auditoria pública antes do `npx skills add`; o feedback do planner vira
+   contexto do builder e o do supervisor dispara um turno extra dele.
 
 ### Interface (`--ui lavish`)
 
