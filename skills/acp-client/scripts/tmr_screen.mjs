@@ -1,21 +1,19 @@
 /**
- * tmr_screen.mjs — layout split ao vivo do TMR: logs dos agentes à ESQUERDA,
- * quadro de métricas fixo à DIREITA, durante todo o processo (alternate screen
- * ANSI, zero dependências).
+ * tmr_screen.mjs — layout split ao vivo do TMR (alternate screen ANSI, zero
+ * dependências). Simples e fixo:
+ *
+ *   ┌ TOPO-ESQUERDA: caixa TMR — escolhas/prompts, evidente o processo TODO ┐
+ *   ├ BAIXO-ESQUERDA: processo e logs dos agentes (rolando)                 ┤
+ *   └ DIREITA: quadro de métricas enquadrado, centralizado verticalmente    ┘
  *
  * - enter(): entra no buffer alternativo, esconde cursor, liga o render loop
- *   coalescido (~120ms) — cada linha da tela = log esquerdo (clipado) + gutter
- *   + linha do quadro direito.
- * - log(text): append no buffer esquerdo (suporta chunks sem \n — buffer de
- *   linha parcial; \r isolado vira quebra).
- * - setRight(lines): substitui o conteúdo do quadro direito (linhas SEM borda —
- *   a moldura ┌─┐…└─┘ e o centralizador vertical são do render).
- *   A coluna direita é SÓ métricas — issue/status, tokens/custo — nunca escolhas.
- * - setPrompt({question, typed, hint, menu}): prompt TMR ativo renderiza como
- *   MODAL centralizado sobre a coluna ESQUERDA (faz parte do processo: escolha
- *   do harness, confirms, issue, modelo — tudo à esquerda, bem visível).
- * - exit(): restaura o terminal principal, despeja TODO o log esquerdo no
- *   scrollback real e devolve o cursor.
+ *   coalescido (~120ms).
+ * - log(text): append no buffer de logs (suporta chunks sem \n; \r vira quebra).
+ * - setRight(lines): conteúdo do quadro direito (linhas SEM borda — a moldura
+ *   e o centralizador vertical são do render). SÓ métricas, nunca escolhas.
+ * - setPrompt({question, typed, hint, menu}): prompt TMR ativo aparece dentro
+ *   da caixa TMR no topo; sem prompt, a caixa fica compacta (idle/steering).
+ * - exit(): restaura o terminal principal, despeja TODO o log no scrollback real.
  *
  * Fallback: activate() retorna false fora de TTY, com NO_COLOR ou terminal
  * estreito (< 80 colunas) — o orquestrador usa o comportamento legado.
@@ -128,22 +126,14 @@ function render() {
   const gutter = ui.paint.gray(" ┊ ");
   const rightBlock = buildRightBlock(); // exatamente `visible` linhas
 
-  // coluna esquerda: log corrente; com prompt ativo, o MODAL centraliza sobre
-  // ela e o log contorna (linhas acima/abaixo continuam visíveis)
-  const promptRows = buildPromptRows();
-  const leftRows = [];
-  if (promptRows) {
-    const H = Math.min(promptRows.length, visible);
-    const top = Math.max(0, Math.floor((visible - H) / 2));
-    const bottom = Math.max(0, visible - H - top);
-    const logs = state.left.slice(Math.max(0, state.left.length - (top + bottom)));
-    while (logs.length < top + bottom) logs.unshift("");
-    leftRows.push(...logs.slice(0, top), ...promptRows.slice(0, H), ...logs.slice(top));
-  } else {
-    const leftStart = Math.max(0, state.left.length - visible);
-    for (let r = 0; r < visible; r++) {
-      leftRows.push(clipAnsi(state.left[leftStart + r] ?? "", state.leftW).replace(/\t/g, "  "));
-    }
+  // coluna esquerda: CAIXA TMR no topo (sempre presente) + logs embaixo
+  const tmrBlock = buildTmrBlock();
+  const H = Math.min(tmrBlock.length, Math.max(3, visible - 3)); // deixa ≥3 linhas de log
+  const leftRows = [...tmrBlock.slice(0, H)];
+  const logAvail = Math.max(1, visible - H);
+  const logStart = Math.max(0, state.left.length - logAvail);
+  for (let r = 0; r < logAvail; r++) {
+    leftRows.push(clipAnsi(state.left[logStart + r] ?? "", state.leftW).replace(/\t/g, "  "));
   }
 
   const rows = [];
@@ -157,35 +147,40 @@ function render() {
   process.stdout.write("\x1b[H\x1b[J" + rows.join("\n") + "\x1b[H");
 }
 
-/** Prompt TMR ativo → MODAL centralizado (vertical na coluna esquerda,
- *  horizontal dentro dela). A coluna direita fica só com o quadro de métricas. */
-function buildPromptRows() {
-  const p = state.prompt;
-  if (!p) return null;
-  const w = Math.min(state.leftW - 2, 62);
-  const innerW = w - 6;
+/** Caixa TMR no TOPO da coluna esquerda — presente durante TODO o processo.
+ *  Com prompt ativo: pergunta, digitação, menu e rodapé dentro dela.
+ *  Sem prompt: compacta, mostra o estado (idle ou steering). */
+function buildTmrBlock() {
+  const w = state.leftW;
+  const innerW = w - 4;
   const border = ui.paint.boldMagenta;
+  const p = state.prompt;
   const inner = [];
-  inner.push(ui.paint.boldMagenta("◈ PROMPT TMR"));
-  for (const ql of String(p.question ?? "").split("\n")) inner.push(ui.paint.bold(ql));
-  if (p.hint) inner.push(ui.paint.gray(p.hint));
-  if (p.kind === "select" && p.menu) {
-    // payload do tmr_input: {search, window:[{bullet,label}], footer}
-    if (p.menu.search) inner.push(`${ui.paint.gray("buscar:")} ${ui.paint.bold(p.menu.search)}${ui.paint.gray("▌")}`);
-    for (const r of p.menu.window ?? []) inner.push(`${r.bullet} ${r.label}`);
-    if (p.menu.footer) inner.push(ui.paint.gray(p.menu.footer));
-  } else if (p.kind === "text" || p.kind === "confirm") {
-    inner.push(p.typed ? `${ui.paint.bold(p.typed)}${ui.paint.gray("▌")}` : ui.paint.gray("▌"));
+  if (p && p.kind === "steering") {
+    inner.push(`${ui.paint.boldMagenta("◈ TMR · steering")} ${ui.paint.gray("— enter envia ao agente em curso")}`);
+    inner.push(p.typed ? `${ui.paint.gray("▸ ")}${ui.paint.bold(p.typed)}${ui.paint.gray("▌")}` : `${ui.paint.gray("▸ ▌")}`);
+  } else if (p) {
+    inner.push(`${ui.paint.boldMagenta("◈ TMR")} ${ui.paint.brightCyan("· aguardando você")}`);
+    for (const ql of String(p.question ?? "").split("\n")) inner.push(ui.paint.bold(ql));
+    if (p.hint) inner.push(ui.paint.gray(p.hint));
+    if (p.kind === "select" && p.menu) {
+      // payload do tmr_input: {search, window:[{bullet,label}], footer}
+      if (p.menu.search) inner.push(`${ui.paint.gray("buscar:")} ${ui.paint.bold(p.menu.search)}${ui.paint.gray("▌")}`);
+      for (const r of p.menu.window ?? []) inner.push(`${r.bullet} ${r.label}`);
+      if (p.menu.footer) inner.push(ui.paint.gray(p.menu.footer));
+    } else if (p.kind === "text" || p.kind === "confirm") {
+      inner.push(p.typed ? `${ui.paint.gray("▸ ")}${ui.paint.bold(p.typed)}${ui.paint.gray("▌")}` : `${ui.paint.gray("▸ ▌")}`);
+    }
+  } else {
+    inner.push(`${ui.paint.boldMagenta("◈ TMR")} ${ui.paint.gray("— processo em curso · digite para steering ao agente")}`);
   }
-  // moldura + centralização horizontal: padL desloca a caixa pro meio da esquerda
-  const padL = " ".repeat(Math.max(1, Math.floor((state.leftW - w) / 2)));
-  const maxInner = Math.max(2, state.rows - 6); // cabe no terminal mesmo pequeno
-  const rows = [padL + border("┌" + "─".repeat(w - 2) + "┐")];
+  const rows = [border("┌" + "─".repeat(w - 2) + "┐")];
+  const maxInner = Math.max(2, Math.floor(state.rows * 0.6) - 2);
   for (const l of inner.slice(0, maxInner)) {
     const c = clipAnsi(l, innerW);
-    rows.push(padL + border("│") + "  " + c + " ".repeat(Math.max(0, innerW - visLen(c))) + "  " + border("│"));
+    rows.push(border("│") + "  " + c + " ".repeat(Math.max(0, innerW - visLen(c))) + "  " + border("│"));
   }
-  rows.push(padL + border("└" + "─".repeat(w - 2) + "┘"));
+  rows.push(border("└" + "─".repeat(w - 2) + "┘"));
   return rows;
 }
 

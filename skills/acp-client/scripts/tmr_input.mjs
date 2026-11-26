@@ -211,20 +211,33 @@ export function select(question, options, defaultIdx1 = 1, answerLabel = (i) => 
 }
 
 // ------------------------------------------------------------------ steering (fases)
-/** Modo livre: enquanto ativo, o que o usuário digita vai para onLine no Enter. */
-export function setSteering(onLine) { state.steering = onLine ? { onLine } : null; }
+/** Modo livre: enquanto ativo, o que o usuário digita vai para onLine no Enter.
+ *  No split screen o eco vai para a caixa TMR (via display fn) — nunca direto
+ *  no stdout, que corromperia o alt screen. */
+export function setSteering(onLine) { state.steering = onLine ? { onLine, line: "" } : null; }
+
+const steerRefresh = (s) => ({ kind: "steering", question: "", hint: "enter envia ao agente em curso", typed: s.line ?? "" });
 
 function handleSteering(str, key) {
   const s = state.steering;
+  if (s.line == null) s.line = "";
   if (isEnter(key)) {
     const t = s.line.trim();
     s.line = "";
-    process.stdout.write("\n");
+    if (state.display) show(steerRefresh(s));
+    else process.stdout.write("\n");
     if (t && !/^(s|si|sim|y|yes|n|nao|não|no)$/i.test(t)) s.onLine(t);
     return;
   }
-  if (isBackspace(key)) { if (s.line.length) { s.line = s.line.slice(0, -1); process.stdout.write("\b \b"); } return; }
-  if (printable(str, key)) { s.line += str; process.stdout.write(str); }
+  if (isBackspace(key)) {
+    if (s.line.length) { s.line = s.line.slice(0, -1); if (!state.display) process.stdout.write("\b \b"); else show(steerRefresh(s)); }
+    return;
+  }
+  if (printable(str, key)) {
+    s.line += str;
+    if (state.display) show(steerRefresh(s));
+    else process.stdout.write(str);
+  }
 }
 
 /** Info do prompt pendente (para render de status no console HTML, se preciso). */
