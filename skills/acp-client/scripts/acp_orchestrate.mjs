@@ -20,6 +20,7 @@ import { deliveryStart, prepareDevelopmentBase, runDelivery } from "./tmr_delive
 import { phaseProblem, reviewFailure, settleStage } from "./tmr_recovery.mjs";
 import { observeRtk } from "./tmr_rtk.mjs";
 import { SessionUsage, summarizeUsage } from "./tmr_usage.mjs";
+import { resetLocalArtifacts, trackedArtifactRoots } from "./tmr_artifacts.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 // scripts → acp-client → skills → raiz do pacote/repo
@@ -43,14 +44,21 @@ const askYN = input.confirm;
 // ------------------------------------------------------------------- artefatos da squad
 /** Instala os artefatos da squad (agents/skills/commands/hooks/plugins) + MCP
  *  para o harness escolhido — no RUNTIME, via bin/sdd-harness.js --artifacts-only. */
-async function installArtifacts(cwd, harness) {
+async function installArtifacts(cwd, harness, resetApproved) {
   const marker = { opencode: ".opencode/agents", claude: ".claude/agents", codex: ".codex" }[harness];
   const already = fsSync.existsSync(path.join(cwd, marker));
   ui.stepHeader(2, 4, "Artefatos da squad");
   if (already) {
     console.log(`  ${ui.icons.info} artefatos já presentes (${marker})`);
-    if (!(await askYN("Atualizar (reinstalar) os artefatos?", "n"))) { console.log(`  ${ui.paint.gray("(mantidos)")}`); return; }
-  } else if (!(await askYN(`Instalar artefatos da squad para ${harness} neste projeto? (agents/skills/hooks/plugins + MCP)`, "s"))) {
+    return;
+  }
+  const destinations = harness === "claude" ? [".claude", ".mcp.json"] : [`.${harness}`];
+  const tracked = await trackedArtifactRoots(cwd, destinations);
+  if (tracked.length) {
+    input.log("warn", `Reinstalação de ${harness} pulada para preservar arquivos rastreados · ${tracked.join(", ")}`);
+    return;
+  }
+  if (!resetApproved && !(await askYN(`Instalar artefatos da squad para ${harness} neste projeto? (agents/skills/hooks/plugins + MCP)`, "s"))) {
     console.log(`  ${ui.paint.yellow("⚠")} ${ui.paint.dim("sem artefatos — o harness roda com o ambiente que já tiver")}`);
     return;
   }
@@ -65,21 +73,7 @@ async function installArtifacts(cwd, harness) {
     child.on("close", (code) => resolve(code));
   });
   if (status === 0) console.log(`  ${ui.icons.ok} ${ui.paint.green("artefatos instalados")} ${ui.paint.gray(`(${harness}) + MCP codegraph`)}`);
-  else console.log(`  ${ui.icons.fail} ${ui.paint.red("instalação falhou")} — rode manualmente: sdd-harness --${harness} --target ${cwd} --artifacts-only`);
-}
-
-// ------------------------------------------------------------------- .planning
-async function maybeCleanPlanning(cwd) {
-  const dir = path.join(cwd, ".planning");
-  let files = [];
-  try {
-    files = (await fs.readdir(dir)).filter((f) => f.endsWith(".md") || f.endsWith(".json"));
-  } catch { console.log("(.planning/ inexistente ou vazio — nada a limpar)"); return false; }
-  if (!files.length) { console.log("(.planning/ vazio — nada a limpar)"); return false; }
-  if (!(await askYN("Apagar estes arquivos de .planning/?", "n", files.join("\n")))) { console.log("(mantidos)"); return false; }
-  for (const f of files) await fs.rm(path.join(dir, f), { force: true });
-  console.log(`✓ .planning/ limpo (${files.length} arquivos)`);
-  return true;
+  else fail(`Falha ao instalar os artefatos para ${harness} (código ${status}).`, 4);
 }
 
 // ------------------------------------------------------------------- issue gh
@@ -512,10 +506,13 @@ async function main() {
   if (saved && !(await askYN("Retomar a execução anterior?", "s", `Issue: ${saved.issue?.title ?? "—"}\nO contexto está disponível enquanto este servidor permanecer aberto.`))) {
     saved = null;
   }
+  let resetApproved = false;
   if (!saved) {
+    resetApproved = await resetLocalArtifacts(cwd, { confirm: askYN, log: input.log });
+    if (resetApproved) input.send({ type: "clear_checkpoint" });
     input.log("info", "Preparando develop · git pull --ff-only origin develop");
     await prepareDevelopmentBase(cwd);
-    input.send({ type: "clear_checkpoint" });
+    if (!resetApproved) input.send({ type: "clear_checkpoint" });
     input.log("info", "Develop atualizada. Iniciando novo ciclo ACP.");
   }
   const delivery = saved?.delivery ?? deliveryStart(cwd);
@@ -533,10 +530,7 @@ async function main() {
   }
 
   let catalog;
-  if (!saved) {
-    await installArtifacts(cwd, harness);
-    await maybeCleanPlanning(cwd);
-  }
+  if (!saved) await installArtifacts(cwd, harness, resetApproved);
 
   let issue = saved?.issue;
   while (!issue) {

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, fork, spawnSync } from "node:child_process";
+import { once } from "node:events";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -46,6 +48,90 @@ test("um ciclo novo parte da develop atualizada e para se ela divergir", async (
   git(source, "push", remote, "develop");
   await assert.rejects(prepareDevelopmentBase(project), /git pull --ff-only origin develop falhou/);
   assert.equal(deliveryStart(project).from, local);
+});
+
+test("nova execução limpa com autorização antes do pull e reinstala após a atualização", { skip: process.platform === "win32", timeout: 20_000 }, async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "sdd-acp-reset-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const cwd = path.join(root, "project");
+  const remote = path.join(root, "remote.git");
+  const git = (dir, ...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const commit = (dir, message) => git(dir, "-c", "user.name=Tester", "-c", "user.email=tester@example.com", "commit", "-m", message);
+
+  git(root, "init", "-b", "develop", "upstream");
+  const upstream = path.join(root, "upstream");
+  await mkdir(path.join(upstream, ".claude"));
+  await writeFile(path.join(upstream, ".claude", "CLAUDE.md"), "Configuração versionada\n");
+  await writeFile(path.join(upstream, "app.txt"), "base\n");
+  git(upstream, "add", "--", ".");
+  commit(upstream, "Base");
+  git(root, "clone", "--bare", upstream, remote);
+  git(root, "clone", remote, cwd);
+  git(cwd, "switch", "-c", "anterior");
+  await writeFile(path.join(upstream, "app.txt"), "atualizado\n");
+  git(upstream, "add", "--", "app.txt");
+  commit(upstream, "Atualização");
+  git(upstream, "push", remote, "develop");
+
+  await mkdir(path.join(cwd, ".opencode"));
+  await writeFile(path.join(cwd, ".opencode", "stale"), "antigo");
+  await writeFile(path.join(cwd, ".git", "hooks", "post-merge"), [
+    "#!/bin/sh",
+    'test ! -e .opencode && echo "ausente no pull" > .git/estado-durante-pull',
+    "",
+  ].join("\n"), { mode: 0o700 });
+
+  async function runUntilIssue(approve) {
+    const script = fileURLToPath(new URL("../skills/acp-client/scripts/acp_orchestrate.mjs", import.meta.url));
+    const child = fork(script, ["--agent", "opencode", "--no-ensure"], { cwd, stdio: ["ignore", "ignore", "inherit", "ipc"] });
+    try {
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("O ACP não chegou ao prompt da issue.")), 5000);
+        child.on("error", reject);
+        child.on("exit", (code) => { clearTimeout(timeout); reject(new Error(`ACP saiu com código ${code}`)); });
+        child.on("message", (event) => {
+          if (event.type !== "prompt") return;
+          try {
+            const { id, title, defaultValue, hint } = event.prompt;
+            if (title.startsWith("Apagar artefatos")) {
+              assert.equal(defaultValue, false);
+              assert.equal(git(cwd, "branch", "--show-current"), "anterior");
+              assert.equal(existsSync(path.join(cwd, ".opencode", "stale")), true);
+              assert.match(hint, /\.opencode/);
+              assert.doesNotMatch(hint, /\.claude/);
+              child.send({ type: "answer", id, value: approve });
+            } else {
+              assert.equal(title, "Issue do GitHub");
+              clearTimeout(timeout);
+              resolve();
+            }
+          } catch (error) {
+            clearTimeout(timeout);
+            reject(error);
+          }
+        });
+        child.send({ type: "resume", data: null });
+      });
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill();
+        await once(child, "exit");
+      }
+    }
+  }
+
+  await runUntilIssue(true);
+  assert.equal(await readFile(path.join(cwd, ".git", "estado-durante-pull"), "utf8"), "ausente no pull\n");
+  assert.equal(await readFile(path.join(cwd, "app.txt"), "utf8"), "atualizado\n");
+  assert.equal(existsSync(path.join(cwd, ".opencode", "stale")), false);
+  assert.equal(existsSync(path.join(cwd, ".opencode", "agents", "builder.md")), true);
+  assert.equal(await readFile(path.join(cwd, ".claude", "CLAUDE.md"), "utf8"), "Configuração versionada\n");
+
+  git(cwd, "switch", "anterior");
+  await writeFile(path.join(cwd, ".opencode", "stale"), "preservar\n");
+  await runUntilIssue(false);
+  assert.equal(git(cwd, "branch", "--show-current"), "develop");
+  assert.equal(await readFile(path.join(cwd, ".opencode", "stale"), "utf8"), "preservar\n");
 });
 
 test("o gate do ACP rejeita o hook que saiu com zero sem comprovar commit e push", async (t) => {

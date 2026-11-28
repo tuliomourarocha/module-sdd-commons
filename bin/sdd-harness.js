@@ -7,15 +7,12 @@ import { spawnSync } from "node:child_process";
 
 import { CLAUDE_DEFAULT_MODELS, CODEX_DEFAULT_MODELS, ROLE_ORDER } from "./lib/model-catalog.js";
 import { applyOpenCodeSelections, selectModels } from "./lib/model-picker.js";
+import { artifactIgnores } from "../skills/acp-client/scripts/tmr_artifacts.mjs";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const platforms = new Set(["opencode", "claude", "codex"]);
 const claudeRoleModels = { ...CLAUDE_DEFAULT_MODELS };
 const codexRoleModels = { ...CODEX_DEFAULT_MODELS };
-const artifactIgnores = [
-  "/.opencode/", "/.claude/", "/.codex/", "/.agents/", "/.planning/",
-  "/.codegraph/", "/.rtk/", "/.mcp.json", "/opencode.json", "/skills-lock.json", "/RTK.md",
-];
 
 async function ignoreArtifacts(target, dryRun) {
   if (dryRun) return;

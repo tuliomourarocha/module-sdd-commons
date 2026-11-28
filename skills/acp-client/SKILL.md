@@ -21,8 +21,11 @@ No clone da squad, a entrada equivalente é `node bin/sdd-acp.js`.
 O console aceita `--cwd <repo>`, `--agent opencode|codex|claude`, `--model <id>`,
 `--port <n>`, `--no-open` e `--no-ensure`.
 
-Na página, escolha o harness, decida sobre a instalação de artefatos e a limpeza
-de `.planning/` e indique a issue do GitHub. O console verifica `gh auth status`
+Em uma nova execução, confirme se deseja apagar os artefatos locais listados.
+Se aceitar, o console limpa esses caminhos, entra na `develop`, faz
+`git pull --ff-only origin develop` e reinstala os artefatos do harness escolhido.
+Ao recusar, os artefatos existentes são mantidos e a atualização segue.
+Depois, indique a issue do GitHub. O console verifica `gh auth status`
 antes de ler a issue. Aprove as fases planner, builder, reviewer, shipper e
 supervisor e escolha um modelo por fase, salvo quando `--model` estiver definido.
 

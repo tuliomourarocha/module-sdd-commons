@@ -60,12 +60,13 @@ sessão. O histórico recente fica em memória e pode ser exportado pela página
 
 ### Fluxo no navegador
 
-1. Clique em **Nova execução**. O TMR entra na `develop` e executa
-   `git pull --ff-only origin develop` antes de abrir a escolha do harness.
-   Ao retomar uma execução, o TMR preserva a branch atual. Escolha OpenCode,
-   Codex ou Claude Code e decida se deseja instalar ou atualizar os artefatos da squad.
-   Se houver estado em `.planning/`, a página lista os arquivos antes de
-   pedir confirmação para limpar.
+1. Clique em **Nova execução**. O TMR lista os artefatos locais que pode apagar
+   e pede confirmação. Se você aceitar, ele apaga esses caminhos, entra na
+   `develop`, executa `git pull --ff-only origin develop` e instala novamente
+   os artefatos do harness escolhido. Uma recusa mantém os artefatos locais e
+   segue para a atualização de `develop`. A limpeza preserva caminhos que
+   contêm arquivos rastreados pelo Git. Ao retomar uma execução, o TMR usa a
+   branch e os artefatos do ciclo em andamento.
 2. Informe a issue por link, `owner/repo#N` ou `#N` no repositório atual. O TMR
    verifica a autenticação do `gh` antes de carregar a issue.
 3. Aprove cada fase e escolha o modelo em ordem de custo-benefício. O ciclo inclui
@@ -97,7 +98,7 @@ antes da primeira execução.
 - Claude Code usa `npx -y @agentclientprotocol/claude-agent-acp --cli auth login` com Node.js 22 ou superior.
 
 Em projetos com artefatos da squad para Claude Code instalados anteriormente,
-aceite a atualização no console para evitar que o hook de auditoria do Claude
+aceite a limpeza e a reinstalação no console para evitar que o hook de auditoria do Claude
 rode durante as fases já orquestradas pelo TMR.
 
 | Claude Code | `rtk init --global` | Hook nativo `PreToolUse` + patch no `settings.json` |
