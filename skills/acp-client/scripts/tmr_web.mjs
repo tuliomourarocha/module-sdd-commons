@@ -1,7 +1,9 @@
 import { fork, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -53,6 +55,7 @@ export async function serveTmr(argv) {
   let sequence = 0;
   let origin;
   let revision = 0;
+  let checkpoint = null;
 
   function append(run, { level, text, role, append }) {
     const last = run.logs.at(-1);
@@ -66,6 +69,7 @@ export async function serveTmr(argv) {
   }
 
   function start() {
+    const scratch = mkdtempSync(path.join(os.tmpdir(), "sdd-tmr-"));
     const run = {
       id: randomUUID(), status: "running", startedAt: Date.now(),
       issue: null, stages: [], prompts: [], logs: [], tools: [], skills: [], hooks: [],
@@ -74,7 +78,9 @@ export async function serveTmr(argv) {
     if (runs.length > 12) runs.pop();
     const worker = fork(fileURLToPath(new URL("./acp_orchestrate.mjs", import.meta.url)), argv, {
       cwd, stdio: ["ignore", "pipe", "pipe", "ipc"], detached: process.platform !== "win32",
+      env: { ...process.env, SDD_TMR_TMP: scratch },
     });
+    worker.send({ type: "resume", data: checkpoint });
     const job = { run, worker, outcome: null, cancelling: false, timer: null };
     active = job;
     revision++;
@@ -85,6 +91,8 @@ export async function serveTmr(argv) {
       if (job.cancelling) return;
       if (message.type === "log") return append(run, message);
       if (message.type === "state") Object.assign(run, message.data);
+      if (message.type === "checkpoint") checkpoint = message.data;
+      if (message.type === "clear_checkpoint") checkpoint = null;
       if (message.type === "prompt") run.prompts.push(message.prompt);
       if (message.type === "answered") run.prompts = run.prompts.filter(({ id }) => id !== message.id);
       if (message.type === "finish") job.outcome = message.status;
@@ -94,6 +102,8 @@ export async function serveTmr(argv) {
     worker.on("exit", () => stopWorker(worker, "SIGKILL"));
     worker.on("close", () => {
       clearTimeout(job.timer);
+      try { rmSync(scratch, { recursive: true, force: true }); }
+      catch (error) { append(run, { text: error.message, level: "warn" }); }
       run.status = job.cancelling ? "cancelled" : job.outcome ?? "failed";
       for (const stage of run.stages) {
         if (["running", "waiting"].includes(stage.status)) stage.status = run.status;
@@ -154,6 +164,11 @@ export async function serveTmr(argv) {
         revision++;
         stopWorker(worker);
         active.timer = setTimeout(() => stopWorker(worker, "SIGKILL"), 1500);
+      } else if (route === "/api/stop-phase") {
+        if (!run.steering) return json(409, { error: "Nenhum agente está em execução." });
+        run.steering = false;
+        revision++;
+        worker.send({ type: "stop-phase" });
       } else if (route === "/api/answer") {
         const prompt = run.prompts[0];
         if (!prompt || prompt.id !== body.id || prompt.sent || !validAnswer(prompt, body.value)) return json(409, { error: "Resposta inválida ou pergunta já respondida." });

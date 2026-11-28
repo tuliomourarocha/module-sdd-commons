@@ -525,7 +525,12 @@ async function main() {
         steerPromises.push(
           rpc.request("session/prompt", { sessionId, prompt: [{ type: "text", text: item.text }] })
             .then((r) => renderer.emit({ type: "result", sessionId, stopReason: r?.stopReason ?? "steer_end" }))
-            .catch((e) => renderer.emit({ type: "status", message: `steering falhou: ${e.message}` }))
+            .catch((e) => {
+              if (!this.cancelled) {
+                this.queue.push(item);
+                renderer.emit({ type: "status", message: `envio imediato falhou (${e.message}); mensagem na fila para o próximo turno` });
+              }
+            })
         );
         return;
       }

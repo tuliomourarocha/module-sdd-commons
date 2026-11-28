@@ -11,6 +11,7 @@ const names = {
   cancelled: "Cancelado", cancelling: "Cancelando", pending: "Na fila", in_progress: "Em execução",
 };
 const number = new Intl.NumberFormat("pt-BR");
+const usd = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 6 });
 const clock = new Intl.DateTimeFormat("pt-BR", { timeStyle: "medium" });
 const fragment = location.hash.slice(1);
 if (/^[a-f0-9]{64}$/.test(fragment)) {
@@ -79,6 +80,7 @@ function renderRuns(run) {
       element("td", { class: "row-arrow", "aria-hidden": "true" }, "›"));
   }));
   $("cancel").disabled = !run || run.id !== active()?.id || run.status !== "running" || !online;
+  $("stop-phase").disabled = !run || run.id !== active()?.id || !run.steering || !online;
 }
 
 function renderLogs(run) {
@@ -120,10 +122,13 @@ function renderDetails(run = {}) {
 
   const metric = (title, value, detail, accent = "") => element("div", { class: "metric" },
     element("p", {}, title), element("b", { class: accent }, value), element("span", { class: "mono muted" }, detail));
-  const context = run.contextUsed != null;
+  const context = run.contextUsed == null ? "Entrada e saída" :
+    `Contexto da fase · ${number.format(run.contextUsed)}${run.contextSize ? ` de ${number.format(run.contextSize)}` : ""}`;
+  const costDetail = run.cost == null ? (run.status === "running" ? "Aguardando dados de custo" : "Sem dados de custo") :
+    [run.costEstimated ? "Estimativa por tokens" : "Informado pelo harness", run.costPartial ? "total parcial" : null].filter(Boolean).join(" · ");
   $("metrics").replaceChildren(
-    metric(context ? "♯ Tokens no contexto" : "♯ Tokens na sessão", number.format(context ? run.contextUsed : run.tokens ?? 0), run.contextSize ? `de ${number.format(run.contextSize)}` : "Entrada e saída"),
-    metric("◎ Custo acumulado", run.cost == null ? "—" : `US$ ${new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 4 }).format(run.cost)}`, "Total da sessão", "accent"));
+    metric("♯ Tokens na sessão", number.format(run.tokens ?? 0), context),
+    metric("◎ Custo acumulado", run.cost == null ? "—" : `US$ ${usd.format(run.cost)}`, costDetail, "accent"));
   $("agent-count").textContent = stages.length;
   $("agents").replaceChildren(...(stages.length ? stages.map((stage) => sideItem("♧", stage.role, stage.model, stage.status)) : [empty("Nenhum agente nesta execução.")]));
   const activity = [
@@ -246,6 +251,13 @@ $("cancel").onclick = () => {
   const stop = element("button", { class: "primary" }, "Encerrar execução");
   openDialog("Cancelar execução?", [element("p", {}, "A sessão ACP será encerrada. Alterações e operações já realizadas ficam no projeto.")],
     [stop], () => api("/api/cancel", { runId: run.id }), "cancel");
+};
+$("stop-phase").onclick = async () => {
+  try {
+    $("stop-phase").disabled = true;
+    await api("/api/stop-phase", { runId: selected().id });
+    await poll();
+  } catch (error) { notice(error.message); render(); }
 };
 $("steer").onsubmit = async (event) => {
   event.preventDefault();

@@ -7,12 +7,15 @@ import { fileURLToPath } from "node:url";
 
 import { Rpc, handleNotification } from "./acp_client.mjs";
 import { ensureDeps } from "./ensure_deps.mjs";
-import { loadModelPools, rankModels, chooseVariant, loadDefaults } from "../../../bin/lib/model-picker.js";
+import { loadModelPools, modelPricing, rankModels, chooseVariant, loadDefaults } from "../../../bin/lib/model-picker.js";
+import { mergeAvailableModels, modelDisplayName } from "./tmr_models.mjs";
 import * as ui from "./tmr_ui.mjs";
 import * as input from "./tmr_web_input.mjs";
 import * as review from "./tmr_review.mjs";
 import { serveTmr } from "./tmr_web.mjs";
-import { editDetails, observeFiles, prepareTools, rtkCommandCount, rtkRewrite, toolOutput } from "./tmr_tools.mjs";
+import { editDetails, observeFiles, prepareTools, toolOutput } from "./tmr_tools.mjs";
+import { observeRtk } from "./tmr_rtk.mjs";
+import { SessionUsage, summarizeUsage } from "./tmr_usage.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 // scripts → acp-client → skills → raiz do pacote/repo
@@ -136,7 +139,7 @@ function probeAvailableModels(harness) {
 }
 
 async function pickModelForRole(harness, role, forcedModel, available) {
-  if (forcedModel) return { modelValue: forcedModel, label: forcedModel, input: null, output: null };
+  if (forcedModel) return modelPricing(harness, forcedModel);
   const platform = AGENT_PRESETS[harness].platform;
   const pools = await loadModelPools([platform]);
   const pool = pools[platform] ?? [];
@@ -152,18 +155,11 @@ async function pickModelForRole(harness, role, forcedModel, available) {
   // disponíveis no harness: filtra o pool ranqueado; modelos fora do catálogo
   // de preços entram no fim com "custo desconhecido" — a lista é a COMPLETA
   // de disponíveis, estável por run (sondada uma vez, nunca re-cresce)
-  const availSet = new Set((available ?? []).map((a) => a.value));
-  const inPool = availSet.size ? ranked.filter((e) => availSet.has(e.modelValue)) : ranked;
-  const inPoolSet = new Set(inPool.map((e) => e.modelValue));
-  const extras = (available ?? [])
-    .filter((a) => !inPoolSet.has(a.value))
-    .map((a) => ({ modelValue: a.value, label: a.name ?? a.value, input: null, output: null, context: null }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-  const ranked_all = [...inPool, ...extras];
+  const ranked_all = mergeAvailableModels(ranked, available);
   const options = ranked_all.map((e, i) => {
     const varHint = e.input != null ? chooseVariant(e, role, roleDefault?.variant ?? null) : null;
     const rec = i === 0 ? `${ui.icons.star} ` : "";
-    return `${rec}${e.label}  [${e.modelValue}]  ${priceOf(e)}  ctx ${fmtCtx(e.context)}${varHint ? ` · var ${varHint}` : ""}`;
+    return `${rec}${modelDisplayName(e)}  ${priceOf(e)}  ctx ${fmtCtx(e.context)}${varHint ? ` · var ${varHint}` : ""}`;
   });
   const idx = await input.select(
     `Modelo para o agente ${role.toUpperCase()} — ${ranked_all.length} disponíveis no ${harness} (ordenado por qualidade × custo)`,
@@ -182,10 +178,10 @@ const CMD_RE = /^(rtk|codegraph|ast-grep|sg|git|npm|npx|gh|node|py(thon3?)?|pyte
 
 class Metrics {
   constructor() {
-    this.phases = new Map(ROLES.map((r) => [r, { tokensIn: 0, tokensOut: 0, cost: null, turns: 0, skills: new Map(), hooks: new Map(), cmds: new Map() }]));
+    this.phases = new Map(ROLES.map((r) => [r, { sessions: [], skills: new Map(), hooks: new Map(), cmds: new Map() }]));
     this.times = new Map(); // role -> { startedAt, endedAt }
   }
-  phase(role) { return this.phases.get(role) ?? { tokensIn: 0, tokensOut: 0, cost: null, turns: 0, skills: new Map(), hooks: new Map(), cmds: new Map() }; }
+  phase(role) { return this.phases.get(role); }
   start(role) { if (!this.times.get(role)) this.times.set(role, { startedAt: Date.now() }); }
   end(role) { const t = this.times.get(role); if (t && !t.endedAt) t.endedAt = Date.now(); }
   duration(role) {
@@ -194,19 +190,11 @@ class Metrics {
     const s = Math.max(0, Math.floor(((t.endedAt ?? Date.now()) - t.startedAt) / 1000));
     return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
   }
-  addUsage(role, usage) {
-    const p = this.phase(role);
-    if (!usage) return;
-    p.tokensIn += usage.inputTokens ?? 0;
-    p.tokensOut += usage.outputTokens ?? 0;
-    p.turns += 1;
-  }
   scanToolOutput(role, text) {
     if (!text) return;
     const p = this.phase(role);
     for (const m of text.matchAll(MARK_SKILL)) bump(p.skills, m[1]);
     for (const m of text.matchAll(MARK_HOOK)) bump(p.hooks, m[1]);
-    if (/⟐\s*rtk ✓/.test(text)) bump(p.cmds, "rtk (proxy)");
     if (/⟐\s*codegraph ✓/.test(text)) bump(p.cmds, "codegraph");
   }
   addTool(role, title) {
@@ -216,16 +204,15 @@ class Metrics {
     if (CMD_RE.test(first)) bump(p.cmds, first);
   }
   totals() {
-    let tokensIn = 0, tokensOut = 0, cost = null, turns = 0;
+    const sessions = [];
     const skills = new Map(), hooks = new Map(), cmds = new Map();
     for (const [, p] of this.phases) {
-      tokensIn += p.tokensIn; tokensOut += p.tokensOut; turns += p.turns;
-      if (p.cost != null) cost = (cost ?? 0) + p.cost;
+      sessions.push(...p.sessions);
       for (const [k, v] of p.skills) bump(skills, k, v);
       for (const [k, v] of p.hooks) bump(hooks, k, v);
       for (const [k, v] of p.cmds) bump(cmds, k, v);
     }
-    return { tokensIn, tokensOut, cost, turns, skills, hooks, cmds };
+    return { ...summarizeUsage(sessions), skills, hooks, cmds };
   }
 }
 
@@ -234,12 +221,22 @@ const steeringQueue = [];
 const tools = new Map();
 
 // ------------------------------------------------------------------- run de fase via ACP
-async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevContext, metrics, renderer, mcpServer }) {
+async function runPhase({ preset, cwd, role, model, rolePrompt, task, prevContext, metrics, renderer, mcpServer }) {
   const toolCalls = new Map();
   const uniqueSession = tools.size;
-  const rtkBefore = rtkCommandCount(cwd);
+  const modelValue = model.modelValue;
+  const usage = new SessionUsage();
+  metrics.phase(role).sessions.push(usage);
+  let rtkCalls = 0;
+  const warn = (message) => input.log("warn", message);
+  const audit = observeRtk(({ status, command }) => {
+    rtkCalls++;
+    bump(metrics.phase(role).cmds, `RTK · ${status}`);
+    const marker = status === "reescrito" ? "⟐ rtk ✓" : "⟐ rtk";
+    input.log(status === "falhou" ? "warn" : "tool", `${marker} · ${status} · ${command}`);
+  }, warn);
   const files = await observeFiles(cwd, (message) => input.log("file", message));
-  const child = spawn(preset.command, preset.args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(preset.command, preset.args, { cwd, env: audit?.env, stdio: ["pipe", "pipe", "pipe"] });
   let spawnError;
   child.on("error", (error) => {
     spawnError = error;
@@ -247,17 +244,12 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
   });
   child.stdin.on("error", () => {});
   let sessionId;
-  let completed = false;
-  const previousCost = metrics.phase(role).cost;
   const rpc = new Rpc(child, {
     onEvent: (msg) => {
       handleNotification(msg, { emit: (o) => renderer.emit(o) });
       const u = msg.params?.update ?? {};
-      if (u.sessionUpdate === "usage_update") {
-        const phase = metrics.phase(role);
-        if (typeof u.cost?.amount === "number" && u.cost.currency === "USD") phase.cost = (previousCost ?? 0) + u.cost.amount;
-        phase.contextUsed = u.used ?? phase.contextUsed;
-        phase.contextSize = u.size ?? phase.contextSize;
+      if (u.sessionUpdate === "usage_update" && msg.params.sessionId === sessionId && !u._meta?.["opencode/child-session"]) {
+        usage.update(u);
       }
       if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") {
         const previous = toolCalls.get(u.toolCallId);
@@ -278,11 +270,9 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
             if (typeof skill === "string" && /^[\w.@/-]+$/.test(skill)) bump(metrics.phase(role).skills, skill);
           }
           if (/(?:^|[_./\s])codegraph(?:[_./\s]|$)/i.test(`${tool.name ?? ""} ${title}`)) bump(metrics.phase(role).cmds, "CodeGraph · consulta ACP");
-          if (typeof title === "string" && /^(?:rtk\s|[^\s]*[/]rtk\s)/.test(title)) bump(metrics.phase(role).cmds, "RTK · comando reescrito");
         }
         // ACP pode fornecer marcadores nas partes de saída, separados do título.
         const output = toolOutput(u, tool.status);
-        if (/⟐\s*rtk ✓/.test(output) || (tool.status === "completed" && /^rtk\s/.test(title))) tool.rtkReported = true;
         metrics.scanToolOutput(role, output);
       }
     },
@@ -345,20 +335,38 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
     });
     sessionId = info?.sessionId;
     if (!sessionId) throw new Error("O harness não abriu uma sessão ACP.");
-    const model = info.configOptions?.find((option) => option.category === "model" && option.type === "select");
-    if (model && modelValue && model.currentValue !== modelValue) {
-      await rpc.request("session/set_config_option", { sessionId, configId: model.id, value: modelValue }, 30_000);
-    } else if (!model && info.models && modelValue && info.models.currentModelId !== modelValue) {
+    const modelOption = info.configOptions?.find((option) => option.category === "model" && option.type === "select");
+    if (modelOption && modelValue && modelOption.currentValue !== modelValue) {
+      await rpc.request("session/set_config_option", { sessionId, configId: modelOption.id, value: modelValue }, 30_000);
+    } else if (!modelOption && info.models && modelValue && info.models.currentModelId !== modelValue) {
       await rpc.request("session/set_model", { sessionId, modelId: modelValue }, 30_000);
     }
+    const activeModel = modelValue || modelOption?.currentValue || info.models?.currentModelId;
+    const pricing = activeModel && activeModel !== modelValue ? await modelPricing(preset.platform, activeModel) : model;
 
+    let stopRequested = false;
+    let resolveStopped;
+    const stopped = new Promise((resolve) => { resolveStopped = resolve; });
+    input.setStopPhase(() => {
+      if (stopRequested) return;
+      stopRequested = true;
+      steeringQueue.length = 0;
+      try { rpc.notify("session/cancel", { sessionId }); } catch {}
+      console.log("Parando agente; a fase poderá ser iniciada novamente.");
+      resolveStopped({ stopReason: "cancelled" });
+    });
     const steerInFlight = [];
     input.setSteering((t) => {
       if (steeringSupported) {
         steerInFlight.push(
           rpc.request("session/prompt", { sessionId, prompt: [{ type: "text", text: t }] })
-            .then((r) => metrics.addUsage(role, r?.usage))
-            .catch((error) => console.error(`Falha no envio ao agente: ${error.message}`)));
+            .then((r) => usage.addTurn(r?.usage, pricing, { steering: true }))
+            .catch((error) => {
+              if (!stopRequested) {
+                steeringQueue.push(t);
+                console.error(`Envio imediato falhou (${error.message}); mensagem na fila para o próximo turno.`);
+              }
+            }));
       } else {
         steeringQueue.push(t);
         console.log("Mensagem na fila para o próximo turno.");
@@ -366,53 +374,51 @@ async function runPhase({ preset, cwd, role, modelValue, rolePrompt, task, prevC
     });
 
     const prompt = [rolePrompt, task, prevContext].filter(Boolean).join("\n\n");
-    const res = await rpc.request("session/prompt", {
+    const res = await Promise.race([stopped, rpc.request("session/prompt", {
       sessionId,
       prompt: [{ type: "text", text: prompt }],
     }).catch((e) => {
       if (e.acpError?.code === -32003 || /auth/i.test(e.message)) fail(`auth exigida — rode: ${preset.authHint}`, 3);
       throw e;
-    });
+    })]);
     input.setSteering(null);
-    metrics.addUsage(role, res?.usage);
+    if (stopRequested) {
+      phaseText.set(role, "");
+      return { stopReason: "cancelled", output: "" };
+    }
+    usage.addTurn(res?.usage, pricing);
 
     // steering não-nativo (fila) ou pós-turno: entrega o resto como turno extra
+    await Promise.allSettled(steerInFlight);
     const leftover = steeringQueue.splice(0);
     if (leftover.length) {
       const res2 = await rpc.request("session/prompt", {
         sessionId,
         prompt: [{ type: "text", text: leftover.join("\n\n") }],
-      }).catch(() => null);
-      metrics.addUsage(role, res2?.usage);
+      });
+      usage.addTurn(res2?.usage, pricing);
     }
-    await Promise.allSettled(steerInFlight);
 
     const finalText = phaseText.get(role) ?? "";
     phaseText.set(role, "");
 
-    completed = ["end_turn", "max_tokens"].includes(res?.stopReason);
     return { stopReason: res?.stopReason ?? "error", output: finalText };
   } catch (error) {
     throw spawnError ?? error;
   } finally {
+    input.setStopPhase(null);
     input.setSteering(null);
     if (sessionId) { try { rpc.notify("session/cancel", { sessionId }); } catch {} }
     child.stdin?.end();
     child.kill();
-    await files.stop();
-    const rtkAfter = rtkCommandCount(cwd);
-    if (rtkBefore !== null && rtkAfter !== null && rtkAfter > rtkBefore) {
-      const commands = rtkAfter - rtkBefore;
-      bump(metrics.phase(role).cmds, "RTK · comandos registrados", commands);
-      input.log("tool", `RTK registrou ${commands} comando(s) no projeto durante esta fase.`);
-    } else if (completed && rtkBefore !== null && rtkAfter !== null && ![...toolCalls.values()].some((tool) => tool.rtkReported)) {
-      const commands = [...new Set([...toolCalls.values()]
-        .filter((tool) => tool.kind === "execute" && tool.status === "completed")
-        .map((tool) => tool.rawInput?.command)
-        .filter((command) => typeof command === "string"))];
-      const missing = commands.find((command) => rtkRewrite(preset.platform, cwd, command));
-      if (missing) throw new Error("O harness executou um comando elegível sem registrar uso do RTK. Confira se o plugin do OpenCode ou o hook do Codex está ativo e autorizado.");
+    try { audit?.close(); } catch (error) { warn(`Falha ao concluir o log do RTK · ${error.message}`); }
+    const shellCalls = [...toolCalls.values()].filter((tool) => tool.status === "completed" &&
+      (tool.kind === "execute" && typeof tool.rawInput?.command === "string" ||
+        /^(?:bash|shell|exec_command|unifiedExec)$/.test(tool.name ?? ""))).length;
+    if (audit && rtkCalls < shellCalls) {
+      warn("Há comandos de shell no ACP sem registro do RTK. Confira se o hook nativo está carregado e autorizado.");
     }
+    await files.stop();
   }
 }
 
@@ -470,7 +476,12 @@ async function main() {
   const cwd = process.cwd();
   const forcedModel = flag("--model");
 
-  let harness = flag("--agent");
+  let saved = await input.receiveResume();
+  if (saved && !(await askYN("Retomar a execução anterior?", "s", `Issue: ${saved.issue?.title ?? "—"}\nO contexto está disponível enquanto este servidor permanecer aberto.`))) {
+    input.send({ type: "clear_checkpoint" });
+    saved = null;
+  }
+  let harness = saved?.harness ?? flag("--agent");
   if (!harness) {
     const options = ["OpenCode · ACP nativo", "Codex · adaptador oficial"];
     harness = ["opencode", "codex"][await input.select("Escolha o harness", options, 1)];
@@ -478,14 +489,17 @@ async function main() {
   if (!Object.hasOwn(AGENT_PRESETS, harness)) fail(`Harness desconhecido: ${harness}`, 2);
   input.send({ type: "state", data: { harness } });
   if (!argv.includes("--no-ensure") && process.env.ACP_SKIP_ENSURE !== "1") {
-    ensureDeps({ inherit: false, exclude: ["lavish-axi", ...(harness === "codex" ? ["opencode"] : [])] });
+    ensureDeps({ inherit: false, exclude: ["lavish-axi", ...(harness === "codex" ? ["opencode"] : [])],
+      log: (message) => input.log(/falhou|NÃO instalado|não iniciou|aviso:/i.test(message) ? "warn" : "info", message) });
   }
 
   const available = forcedModel ? null : probeAvailableModels(harness);
-  await installArtifacts(cwd, harness);
-  await maybeCleanPlanning(cwd);
+  if (!saved) {
+    await installArtifacts(cwd, harness);
+    await maybeCleanPlanning(cwd);
+  }
 
-  let issue;
+  let issue = saved?.issue;
   while (!issue) {
     const link = await ask("Issue do GitHub", { hint: "Link da issue, organização/repo#123 ou #123", required: true });
     while (spawnSync("gh", ["auth", "status"], { cwd, stdio: "ignore", timeout: 20_000 }).status !== 0) {
@@ -498,18 +512,20 @@ async function main() {
   input.send({ type: "state", data: { issue } });
   const integrations = await prepareTools({ harness, cwd, ask: askYN, onTool: reportSetupTool });
   if (!integrations) return "cancelled";
-  const semanticContext = (await integrations.semanticContext(issue.title)).slice(0, 10000);
-  const outputs = {};
-  const models = {};
-  const statuses = Object.fromEntries(ROLES.map((role) => [role, "queued"]));
+  const semanticContext = saved?.semanticContext ?? (await integrations.semanticContext(issue.title)).slice(0, 10000);
+  const outputs = saved?.outputs ?? {};
+  const models = saved?.models ?? {};
+  const statuses = Object.fromEntries(ROLES.map((role) => [role, saved?.statuses?.[role] === "completed" ? "completed" : "queued"]));
+  const checkpoint = () => input.send({ type: "checkpoint", data: { harness, issue, semanticContext, outputs, models, statuses } });
+  checkpoint();
   const metrics = new Metrics();
   const publish = () => {
     const totals = metrics.totals();
-    const phase = metrics.phase(input.role());
+    const session = metrics.phase(input.role())?.sessions.at(-1);
     input.send({ type: "state", data: {
       issue, stages: ROLES.map((role) => ({ role, status: statuses[role], model: models[role]?.label, duration: metrics.duration(role) })),
-      tokens: totals.tokensIn + totals.tokensOut, cost: totals.cost,
-      contextUsed: phase.contextUsed ?? null, contextSize: phase.contextSize ?? null,
+      tokens: totals.tokens, cost: totals.cost, costEstimated: totals.costEstimated, costPartial: totals.costPartial,
+      contextUsed: session?.contextUsed ?? null, contextSize: session?.contextSize ?? null,
       tools: [...[...tools].filter(([key]) => key.startsWith("setup:")).map(([, tool]) => tool),
         ...[...tools].filter(([key]) => !key.startsWith("setup:")).slice(-20).map(([, tool]) => tool)],
       skills: [...totals.skills.keys()], hooks: [...totals.hooks.keys()], commands: [...totals.cmds.keys()],
@@ -520,6 +536,7 @@ async function main() {
   publish();
   try {
     for (const role of ROLES) {
+      if (statuses[role] === "completed") continue;
       input.setRole(role);
       statuses[role] = "waiting";
       publish();
@@ -528,13 +545,28 @@ async function main() {
       const rolePrompt = await rolePromptFor(role);
       const prevContext = Object.entries(outputs).map(([name, output]) => `=== CONTEXTO · ${name.toUpperCase()} ===\n${output}`).join("\n\n");
       const run = (context) => runPhase({
-        preset: AGENT_PRESETS[harness], cwd, role, modelValue: models[role].modelValue,
+        preset: AGENT_PRESETS[harness], cwd, role, model: models[role],
         rolePrompt, task, prevContext: context, metrics, renderer: makeRenderer(role), mcpServer: integrations.mcpServer,
       });
       statuses[role] = "running";
       metrics.start(role);
       publish();
-      const result = await run(prevContext);
+      const runWithRestart = async (context) => {
+        let result = await run(context);
+        while (result.stopReason === "cancelled") {
+          phaseText.set(role, "");
+          statuses[role] = "waiting";
+          checkpoint();
+          publish();
+          if (!(await askYN(`Reiniciar o agente ${role}?`, "s", "O agente interrompido será iniciado novamente com o contexto das etapas concluídas."))) return null;
+          statuses[role] = "running";
+          publish();
+          result = await run(context);
+        }
+        return result;
+      };
+      const result = await runWithRestart(prevContext);
+      if (!result) return "cancelled";
       if (!["end_turn", "max_tokens"].includes(result.stopReason)) throw new Error(`${role}: ${result.stopReason}`);
       outputs[role] = result.output;
 
@@ -551,15 +583,18 @@ async function main() {
         } else if (feedback.text) {
           statuses[role] = "running";
           publish();
-          const extra = await run(`${prevContext}\n\n=== AUDITORIA ANTERIOR ===\n${outputs.supervisor}\n\n=== FEEDBACK DO USUÁRIO ===\n${feedback.text}`);
+          const extra = await runWithRestart(`${prevContext}\n\n=== AUDITORIA ANTERIOR ===\n${outputs.supervisor}\n\n=== FEEDBACK DO USUÁRIO ===\n${feedback.text}`);
+          if (!extra) return "cancelled";
           if (!["end_turn", "max_tokens"].includes(extra.stopReason)) throw new Error(`${role}: ${extra.stopReason}`);
           outputs[role] = extra.output;
         }
       }
       metrics.end(role);
       statuses[role] = "completed";
+      checkpoint();
       publish();
     }
+    input.send({ type: "clear_checkpoint" });
     return "completed";
   } catch (error) {
     if (input.role()) {

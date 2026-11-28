@@ -20,7 +20,9 @@
  * dependência que falha não derruba o run — vira warning + hint.
  */
 import { execFileSync, spawnSync } from "node:child_process";
+import { accessSync, constants } from "node:fs";
 import os from "node:os";
+import path from "node:path";
 
 const BIN = (name, args) => {
   try {
@@ -38,6 +40,18 @@ const installed = (name, args = ["--version"]) => {
 
 const npm = () => installed("npm", ["--version"]) ? "npm" : null;
 const brew = () => installed("brew", ["--version"]) ? "brew" : null;
+
+function executableExists(name) {
+  return (process.env.PATH ?? "").split(path.delimiter).some((dir) => {
+    try { accessSync(path.join(dir || ".", name), constants.X_OK); return true; } catch { return false; }
+  });
+}
+
+function checkError(name) {
+  const result = BIN(name, ["--version"]);
+  const detail = String(result?.stderr || result?.error?.message || result?.stdout || `código ${result?.status ?? "desconhecido"}`).trim().split("\n")[0];
+  return `${name} existe no PATH, mas não iniciou: ${detail}`;
+}
 
 const DEPS = [
   {
@@ -61,7 +75,8 @@ const DEPS = [
       const v = installed("rtk");
       if (!v) return null;
       const gain = BIN("rtk", ["gain"]);
-      return gain?.status === 0 ? v : `${v} (SUSPEITO — 'rtk gain' falhou; pode ser o Rust Type Kit homônimo)`;
+      const detail = String(gain?.stderr || gain?.error?.message || "erro desconhecido").trim().split("\n")[0];
+      return gain?.status === 0 ? v : `${v} (aviso: 'rtk gain' falhou: ${detail})`;
     },
     install: (log, o) => {
       if (brew()) return run(["brew", "install", "rtk-ai/tap/rtk"], log, o);
@@ -105,7 +120,10 @@ export function ensureDeps({ only = null, exclude = [], doctor = false, log = co
   for (const dep of deps) {
     let version = dep.check();
     let action = "ok";
-    if (!version && !doctor) {
+    if (!version && executableExists(dep.id)) {
+      action = "falhou";
+      log(`[ensure-deps] ${checkError(dep.id)}. Verifique permissões e configuração; a instalação não será repetida.`);
+    } else if (!version && !doctor) {
       log(`[ensure-deps] ${dep.id} ausente — instalando…`);
       const r = dep.install((s) => log(`[ensure-deps] ${dep.id}: ${s}`), { inherit });
       version = dep.check();

@@ -4,6 +4,9 @@ import { stripVTControlCharacters } from "node:util";
 const pending = new Map();
 let currentRole = null;
 let steering = null;
+let stopPhase = null;
+let resolveResume;
+const resumePromise = new Promise((resolve) => { resolveResume = resolve; });
 
 export const send = (message) => { if (process.connected) process.send(message); };
 export const role = () => currentRole;
@@ -15,13 +18,22 @@ export function log(level, text, append = false) {
 export function connect() {
   console.log = (...args) => log("info", args.map(String).join(" "));
   console.error = (...args) => log("warn", args.map(String).join(" "));
-  process.on("message", ({ type, id, value }) => {
+  process.on("message", ({ type, id, value, data }) => {
+    if (type === "resume") resolveResume(data ?? null);
     if (type === "answer" && pending.has(id)) {
       pending.get(id)(value);
       pending.delete(id);
       send({ type: "answered", id });
     }
     if (type === "steer" && pending.size === 0) steering?.(value);
+    if (type === "stop-phase" && stopPhase) {
+      for (const [promptId, resolve] of pending) {
+        resolve(false);
+        send({ type: "answered", id: promptId });
+      }
+      pending.clear();
+      stopPhase();
+    }
   });
   process.on("disconnect", () => process.exit(process.exitCode ?? 0));
 }
@@ -42,3 +54,5 @@ export function setSteering(callback) {
   steering = callback;
   send({ type: "state", data: { steering: !!callback } });
 }
+export function setStopPhase(callback) { stopPhase = callback; }
+export function receiveResume() { return resumePromise; }

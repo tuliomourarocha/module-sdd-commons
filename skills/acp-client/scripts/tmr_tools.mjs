@@ -51,7 +51,7 @@ function rtkSetup(harness, cwd) {
 export async function prepareTools({ harness, cwd, ask, onTool }) {
   const opts = { cwd, onTool };
   if (process.env.RTK_DISABLED === "1") throw new Error("RTK está desativado por RTK_DISABLED=1. Habilite-o antes de executar.");
-  await command("rtk", ["gain", "--project", "--text", "--format", "json"], opts);
+  await command("rtk", ["hook", harness, "--help"], opts);
   if (!rtkSetup(harness, cwd)) {
     const flags = harness === "opencode" ? ["--global", "--opencode"] : ["--codex"];
     if (!await ask(`Vincular o RTK ao ${harness}?`, "s", harness === "opencode"
@@ -59,22 +59,6 @@ export async function prepareTools({ harness, cwd, ask, onTool }) {
       : "O RTK instalará o hook do Codex neste projeto. O Codex pode solicitar a revisão do hook.")) return null;
     await command("rtk", ["init", ...flags, "--hook-only", "--no-patch", "--no-trust-filters"], { ...opts, showOutput: true });
     if (!rtkSetup(harness, cwd)) throw new Error(`O vínculo nativo do RTK com ${harness} não foi encontrado após a configuração.`);
-  }
-
-  // O próprio RTK escolhe a reescrita. O único comando aceito neste teste
-  // é o equivalente de leitura para git status, sem interpretação por shell.
-  const probe = "git status --short";
-  const rewritten = rtkRewrite(harness, cwd, probe);
-  onTool(`rtk hook ${harness}`, rewritten ? "completed" : "failed");
-  if (rewritten !== "rtk git status --short") {
-    throw new Error("O RTK não reescreveu git status --short para o teste do proxy. Verifique os filtros e a instalação do RTK.");
-  }
-  const before = rtkCommandCount(cwd);
-  await command("rtk", rewritten.split(" ").slice(1), { ...opts, label: "RTK · git status --short" });
-
-  const after = rtkCommandCount(cwd);
-  if (before === null || after === null || after <= before) {
-    throw new Error("RTK executou o teste, mas não registrou o comando nas métricas do projeto.");
   }
 
   const graph = { ...opts, env: graphEnv };
@@ -88,30 +72,6 @@ export async function prepareTools({ harness, cwd, ask, onTool }) {
     mcpServer: { name: "codegraph", command: "codegraph", args, env: graphMcpEnv },
     semanticContext: (title) => command("codegraph", ["context", "--path", cwd, "--max-nodes", "12", "--", title], { ...graph, label: "codegraph context · issue" }),
   };
-}
-
-export function rtkRewrite(harness, cwd, command) {
-  const codex = harness === "codex";
-  const args = codex ? ["hook", "codex"] : ["hook", "opencode", "--", command];
-  const input = codex ? JSON.stringify({
-    cwd, session_id: "tmr", transcript_path: "", hook_event_name: "PreToolUse",
-    tool_name: "Bash", tool_input: { command }, permission_mode: "default",
-  }) : undefined;
-  const result = spawnSync("rtk", args, { cwd, input, encoding: "utf8", timeout: 5000 });
-  if (result.status !== 0) return null;
-  try {
-    const rewrite = JSON.parse(result.stdout || "{}");
-    return (codex ? rewrite.hookSpecificOutput?.updatedInput?.command : rewrite.command) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export function rtkCommandCount(cwd) {
-  const result = spawnSync("rtk", ["gain", "--project", "--text", "--format", "json"], { cwd, encoding: "utf8", timeout: 5000 });
-  if (result.status !== 0) return null;
-  try { return JSON.parse(result.stdout).summary?.total_commands ?? 0; }
-  catch { return null; }
 }
 
 // A comparação do worktree cobre CLIs que escrevem por comandos de shell

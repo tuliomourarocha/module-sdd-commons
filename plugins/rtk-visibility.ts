@@ -110,7 +110,8 @@ async function handleBefore(
   command: unknown,
   agent?: string
 ): Promise<void> {
-  if (!visibilityEnabled()) return
+  // O TMR já registra a resposta real do hook nativo para cada chamada.
+  if (!visibilityEnabled() || process.env.SDD_TMR_RTK_AUDIT === "1") return
   const toolName = String(tool ?? "").toLowerCase()
   if (!BASH_TOOLS.has(toolName)) return
   if (typeof command !== "string" || !command.trim()) return

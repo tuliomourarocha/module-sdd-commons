@@ -158,6 +158,8 @@ function buildEntry({ id, modelValue, provider, underlying, cache, label, note, 
     note: note ?? configNote ?? "",
     input,
     output,
+    cacheRead: meta?.cost?.cache_read ?? info.cacheRead ?? null,
+    cacheWrite: meta?.cost?.cache_write ?? info.cacheWrite ?? null,
     context,
     variants,
     info,
@@ -284,6 +286,13 @@ export async function loadModelPools(platforms) {
     if (platform === "codex") pools.codex = await buildCodexPool(cache);
   }
   return pools;
+}
+
+export async function modelPricing(platform, modelValue) {
+  const id = modelValue.replace(/\[.*\]$/, "");
+  const provider = platform === "codex" ? "openai" : id.split("/")[0];
+  const cache = await loadOpenCodeCache();
+  return buildEntry({ id, modelValue, provider, cache });
 }
 
 // ── Ranking por papel ──────────────────────────────────────────────────────
