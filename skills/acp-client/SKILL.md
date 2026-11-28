@@ -34,6 +34,12 @@ console, o feedback da auditoria pode iniciar mais um turno do supervisor.
 Harnesses com steering nativo recebem mensagens durante o turno. Os demais
 recebem a mensagem em um turno extra.
 
+No gate do shipper, o ACP executa o hook determinístico e exige que `origin`
+confirme o SHA da entrega. Se uma fase falhar, um agente diagnostica o bloqueio
+e encaminha a correção ao papel responsável. Depois da correção, a fase é
+verificada novamente. Bloqueios que exigem intervenção humana ficam no console
+com opção de verificar novamente ou pausar e retomar pelo checkpoint da sessão.
+
 O modo de uma subtask, `sdd-acp client`, continua disponível para macros e
 automações. A opção `--ui lavish` desse modo abre um console de steering durante o turno.
 

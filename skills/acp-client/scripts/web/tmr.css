@@ -97,7 +97,7 @@ tbody tr[data-run] { cursor: pointer; }
 .pill.observed { color: #ecc6d1; background: var(--accent-soft); border-color: var(--accent-line); }
 .pill.completed { color: #b1e0bd; background: #1e3427; border-color: #34543f; }
 .pill.queued, .pill.waiting, .pill.cancelling { color: #edca92; background: #322a20; border-color: #51422c; }
-.pill.failed { color: #f2a6ab; background: #36252c; border-color: #593842; }
+.pill.failed, .pill.blocked { color: #f2a6ab; background: #36252c; border-color: #593842; }
 .panel-body { padding: 13px 16px 14px; }
 .panel-body h4 { font-size: 18px; line-height: 1.2; margin: 6px 0; letter-spacing: -.02em; overflow-wrap: anywhere; }
 .issue-body { color: var(--muted); overflow-wrap: anywhere; line-height: 1.3; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }

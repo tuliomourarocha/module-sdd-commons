@@ -14,6 +14,9 @@ import * as input from "./tmr_web_input.mjs";
 import * as review from "./tmr_review.mjs";
 import { serveTmr } from "./tmr_web.mjs";
 import { editDetails, observeFiles, prepareTools, toolOutput } from "./tmr_tools.mjs";
+import { observeMcp } from "./tmr_mcp.mjs";
+import { deliveryStart, runDelivery } from "./tmr_delivery.mjs";
+import { phaseProblem, recoveryOwner, settleStage } from "./tmr_recovery.mjs";
 import { observeRtk } from "./tmr_rtk.mjs";
 import { SessionUsage, summarizeUsage } from "./tmr_usage.mjs";
 
@@ -37,7 +40,7 @@ const ROLE_DESC = {
   planner: "planeja produto e arquitetura — produz PRD + PLAN em memória",
   builder: "implementa o plano — código, testes e verificação local",
   reviewer: "revisa arquitetura e risco — parecer APPROVED ou CHANGES_REQUESTED",
-  shipper: "finaliza — branch/PR/CI via gh, encerra a issue, STATE/HANDOFF",
+  shipper: "autoriza o hook de entrega a criar o commit, publicar em origin, abrir o PR e sincronizar a issue",
   supervisor: "auditoria final — hooks, métricas, rtk gain, riscos e pendências",
 };
 
@@ -214,7 +217,7 @@ async function finishCancelledPrompt(response) {
 }
 
 // ------------------------------------------------------------------- run de fase via ACP
-async function runPhase({ preset, cwd, role, model, selectModel, rolePrompt, task, prevContext, metrics, renderer, mcpServer }) {
+async function runPhase({ preset, cwd, role, model, selectModel, rolePrompt, task, prevContext, metrics, renderer, mcpServer, reportMcp, skillsPrompt }) {
   const toolCalls = new Map();
   const uniqueSession = tools.size;
   const usage = new SessionUsage();
@@ -228,7 +231,9 @@ async function runPhase({ preset, cwd, role, model, selectModel, rolePrompt, tas
     input.log(status === "falhou" ? "warn" : "tool", `${marker} · ${status} · ${command}`);
   }, warn);
   const files = await observeFiles(cwd, (message) => input.log("file", message));
-  const child = spawn(preset.command, preset.args, { cwd, env: audit?.env, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(preset.command, preset.args, {
+    cwd, env: { ...(audit?.env ?? process.env), SDD_ACP_MANAGES_SHIPPER: "1" }, stdio: ["pipe", "pipe", "pipe"],
+  });
   let spawnError;
   child.on("error", (error) => {
     spawnError = error;
@@ -236,6 +241,7 @@ async function runPhase({ preset, cwd, role, model, selectModel, rolePrompt, tas
   });
   child.stdin.on("error", () => {});
   let sessionId;
+  let mcp;
   const rpc = new Rpc(child, {
     onEvent: (msg) => {
       handleNotification(msg, { emit: (o) => renderer.emit(o) });
@@ -319,7 +325,8 @@ async function runPhase({ preset, cwd, role, model, selectModel, rolePrompt, tas
     });
     const steeringSupported = Boolean(init?._meta?.steering?.supported);
 
-    const newParams = { cwd, mcpServers: [mcpServer] };
+    mcp = observeMcp(mcpServer, reportMcp);
+    const newParams = { cwd, mcpServers: [mcp.server] };
     if (model?.modelValue) newParams.model = model.modelValue;
     const info = await rpc.request("session/new", newParams, 120_000).catch((error) => {
       if (error.acpError?.code === -32000 || /auth/i.test(error.message)) fail(`Harness requer autenticação. Execute ${preset.authHint}.`, 3);
@@ -327,6 +334,7 @@ async function runPhase({ preset, cwd, role, model, selectModel, rolePrompt, tas
     });
     sessionId = info?.sessionId;
     if (!sessionId) throw new Error("O harness não abriu uma sessão ACP.");
+    mcp.update();
     const { option, available, current } = sessionModels(info);
     const selected = model ?? await selectModel(available);
     const modelValue = selected.modelValue;
@@ -371,7 +379,7 @@ async function runPhase({ preset, cwd, role, model, selectModel, rolePrompt, tas
       }
     });
 
-    const prompt = [rolePrompt, task, prevContext].filter(Boolean).join("\n\n");
+    const prompt = [rolePrompt, task, skillsPrompt, prevContext].filter(Boolean).join("\n\n");
     const reportVersion = usage.reportVersion;
     const promptResponse = rpc.request("session/prompt", {
       sessionId,
@@ -412,6 +420,7 @@ async function runPhase({ preset, cwd, role, model, selectModel, rolePrompt, tas
   } finally {
     input.setStopPhase(null);
     input.setSteering(null);
+    try { mcp?.close(); } catch (error) { warn(`Falha ao concluir o monitoramento MCP · ${error.message}`); }
     if (sessionId) { try { rpc.notify("session/cancel", { sessionId }); } catch {} }
     child.stdin?.end();
     child.kill();
@@ -439,10 +448,10 @@ async function rolePromptFor(role) {
         : role === "reviewer"
           ? `=== PARECER === (arquitetura/risco/bloqueios; verdict APPROVED ou CHANGES_REQUESTED).`
           : role === "shipper"
-            ? `Rode o fluxo de ship da squad (git + gh): branch de origin/develop atualizada, commits, push, PR --base develop, acompanhe CI, atualize .planning/STATE.md e .planning/HANDOFF.md (apenas estes dois arquivos), e ENCERRE a issue do GitHub (gh issue close + Status Done no Project) se houver issue real. Saída: === SHIP === (branch, PR url, checks, issue encerrada, pendências).`
+            ? `No ACP, o orquestrador executa e verifica o hook de entrega no seu gate. Sua tarefa é examinar se a entrega está pronta e informar impedimentos; use apenas inspeção para esta fase. Saída: === SHIP === com pendências concretas, se houver.`
             : `Você é o supervisor: auditoria FINAL da execução. Leia .planning/STATE.md e .planning/HANDOFF.md (se existirem), verifique o que foi entregue no repo, rode 'rtk gain' para métricas de compressão e produza o parecer de auditoria. Saída: === SUPERVISOR === (entregas, hooks/marcadores observados, métricas, riscos, pendências).`;
     return `Você é o macro ${role.toUpperCase()} da squad SDD, executando via ACP em um harness externo. Siga o seu papel:\n\n${body.slice(0, 12_000)}\n\nCONTRATO DE SAÍDA (texto, no fim da resposta): ${contract}` +
-      `\n\nFERRAMENTAS DA SQUAD: comece a exploração de código e impacto pelo MCP codegraph (codegraph_explore). Nos comandos shell, use o hook nativo do RTK para reescrita automática; os hooks determinísticos da squad (⟐ hook ✓) rodam nas edições. Use-os quando fizer sentido — eles alimentam as métricas da orquestração.`;
+      `\n\nFERRAMENTAS DA SQUAD: comece a exploração de código e impacto pelo MCP codegraph (codegraph_explore). Nos comandos shell, use o hook nativo do RTK para reescrita automática; os hooks determinísticos da squad (⟐ hook ✓) rodam nas edições. Se algo impedir a conclusão da fase, escreva uma linha BLOQUEIO: <causa concreta e evidência>.`;
   } catch {
     return `Você é o macro ${role.toUpperCase()} da squad SDD. Retorne === ${role.toUpperCase()} === no fim da resposta.`;
   }
@@ -504,8 +513,7 @@ async function reviewPlanner({ issue, plan, cwd, harness }) {
   const selected = suggestions.remote.filter((_, index) => state.decisions.get(index) === "aprovar");
   const installed = await review.installApprovedSkills(selected, REVIEW_FIND_SKILL, cwd, harness, input.log);
   if (state.notes.length) plan += `\n\n=== FEEDBACK DA REVISÃO ===\n${state.notes.join("\n\n")}`;
-  if (installed.length) plan += `\n\n=== SKILLS INSTALADAS COM APROVAÇÃO ===\n${installed.join("\n")}`;
-  return plan;
+  return { plan, installed };
 }
 
 async function main() {
@@ -552,11 +560,21 @@ async function main() {
   if (!integrations) return "cancelled";
   const semanticContext = saved?.semanticContext ?? (await integrations.semanticContext(issue.title)).slice(0, 10000);
   const outputs = saved?.outputs ?? {};
+  let installedSkills = saved?.installedSkills ?? [];
+  let availableSkills = await review.availableApprovedSkills(installedSkills, cwd, harness);
+  let mcpStatus = { name: integrations.mcpServer.name, status: "queued" };
   const models = saved?.models ?? {};
+  const delivery = saved?.delivery ?? deliveryStart(cwd);
+  const recoveryNotes = saved?.recoveryNotes ?? [];
+  let blocker = saved?.blocker ?? null;
   const statuses = Object.fromEntries(ROLES.map((role) => [role, saved?.statuses?.[role] === "completed" ? "completed" : "queued"]));
+  if (!delivery.verified) {
+    statuses.shipper = "queued";
+    statuses.supervisor = "queued";
+  }
   const metrics = new Metrics(saved?.usage);
   const checkpoint = () => input.send({ type: "checkpoint", data: {
-    harness, issue, semanticContext, outputs, models, statuses, usage: metrics.usageByRole(),
+    harness, issue, semanticContext, outputs, installedSkills, models, statuses, delivery, recoveryNotes, blocker, usage: metrics.usageByRole(),
   } });
   checkpoint();
   const publish = () => {
@@ -572,12 +590,97 @@ async function main() {
       tools: [...[...tools].filter(([key]) => key.startsWith("setup:")).map(([, tool]) => tool),
         ...[...tools].filter(([key]) => !key.startsWith("setup:")).slice(-20).map(([, tool]) => tool)],
       skills: [...totals.skills.keys()], hooks: [...totals.hooks.keys()], commands: [...totals.cmds.keys()],
-      mcpServers: [integrations.mcpServer.name],
+      mcpStatus, availableSkills, blocker, delivery: delivery.verified,
     } });
   };
   const timer = setInterval(publish, 600);
   const task = `Tarefa (issue #${issue.number} — ${issue.url}):\n${issue.title}\n\n${issue.body}${semanticContext ? `\n\n=== CONTEXTO DO CODEGRAPH ===\n${semanticContext}` : ""}`;
   publish();
+  const contextFor = () => [
+    ...Object.entries(outputs).filter(([name]) => statuses[name] === "completed")
+      .map(([name, output]) => `=== CONTEXTO · ${name.toUpperCase()} ===\n${output}`),
+    ...recoveryNotes.slice(-6).map((note) => `=== RECUPERAÇÃO ===\n${note}`),
+  ].join("\n\n");
+
+  const runAgent = async (role, context, instructions = "") => {
+    input.setRole(role);
+    if (forcedModel && !models[role]) models[role] = await modelPricing(harness, forcedModel);
+    const selectModel = async (available) => {
+      catalog ??= Promise.all([
+        loadModelPools([harness], available.map(({ value }) => value)),
+        loadDefaults(SOURCE_ROOT),
+      ]).then(([pools, defaults]) => ({ pool: pools[harness] ?? [], available, defaults }));
+      return models[role] = await pickModelForRole(harness, role, catalog);
+    };
+    const rolePrompt = [await rolePromptFor(role), instructions].filter(Boolean).join("\n\n");
+    do {
+      statuses[role] = "running";
+      metrics.start(role);
+      publish();
+      availableSkills = await review.availableApprovedSkills(installedSkills, cwd, harness);
+      phaseText.set(role, "");
+      const result = await runPhase({
+        preset: AGENT_PRESETS[harness], cwd, role, model: models[role], selectModel,
+        rolePrompt, task, prevContext: context, metrics, renderer: makeRenderer(role), mcpServer: integrations.mcpServer,
+        skillsPrompt: review.approvedSkillsPrompt(availableSkills),
+        reportMcp: (status) => {
+          mcpStatus = { ...mcpStatus, status, role };
+          if (status === "connected") input.log("tool", `CodeGraph · conexão MCP verificada · ${role}`);
+          if (status === "failed") input.log("warn", `CodeGraph · falha na conexão MCP · ${role}`);
+          publish();
+        },
+      });
+      if (result.stopReason !== "cancelled") return result;
+      statuses[role] = "waiting";
+      checkpoint();
+      publish();
+    } while (await askYN(`Reiniciar o agente ${role}?`, "s", "O agente retoma com o mesmo contexto."));
+    return null;
+  };
+
+  const callRecoveryAgent = async (role, context, instructions) => {
+    const status = statuses[role];
+    const previousRole = input.role();
+    input.setRole(role);
+    statuses[role] = "waiting";
+    publish();
+    try {
+      if (!await askYN(`Acionar ${role} para o desbloqueio?`, "s", instructions)) return null;
+      return await runAgent(role, context, instructions);
+    } finally {
+      statuses[role] = status;
+      input.setRole(previousRole);
+      publish();
+    }
+  };
+
+  async function recover(role, error) {
+    const context = `${contextFor()}\n\n=== BLOQUEIO EM ${role.toUpperCase()} ===\n${error}`;
+    const diagnostic = role === "supervisor" ? "reviewer" : "supervisor";
+    const diagnosis = await callRecoveryAgent(diagnostic, context,
+      "Somente diagnóstico. Investigue o bloqueio, indique a correção mínima e termine com RESPONSÁVEL: planner, builder, reviewer, shipper, supervisor ou humano (escolha um). Use humano para credenciais, acessos ou decisões que dependem dele.");
+    if (!diagnosis) return null;
+    const failed = phaseProblem(diagnosis);
+    const owner = failed ? "humano" : recoveryOwner(diagnosis.output);
+    input.log("info", `${diagnostic} encaminhou o bloqueio de ${role} a ${owner}`);
+    if (owner === "humano") return { notes: failed ?? diagnosis.output };
+    const repair = await callRecoveryAgent(owner, `${context}\n\n=== DIAGNÓSTICO · ${diagnostic} ===\n${diagnosis.output}`,
+      "Corrija somente o bloqueio encaminhado dentro do escopo do seu papel. O orquestrador cuida do commit, push e PR no gate do shipper. Registre a evidência da correção ou informe BLOQUEIO: <ação necessária>.");
+    if (!repair) return { notes: diagnosis.output };
+    const problem = phaseProblem(repair);
+    const notes = `${diagnostic} → ${owner}\n${diagnosis.output}\n\n${repair.output}`.slice(-8000);
+    if (problem) return { notes: `${notes}\n${problem}` };
+    recoveryNotes.push(notes);
+    checkpoint();
+    if (owner === "builder" && role === "shipper") {
+      const reviewed = await callRecoveryAgent("reviewer", contextFor(), "Revise a correção do builder para liberar a entrega.");
+      const reviewProblem = reviewed ? phaseProblem(reviewed, { requireVerdict: true }) : "Correção aguarda revisão.";
+      if (reviewProblem) return { notes: `${notes}\n${reviewProblem}`, retryRecovery: !!reviewed };
+      outputs.reviewer = reviewed.output;
+    }
+    return { ready: true, notes };
+  }
+
   try {
     for (const role of ROLES) {
       if (statuses[role] === "completed") continue;
@@ -585,66 +688,64 @@ async function main() {
       statuses[role] = "waiting";
       publish();
       if (!(await askYN(`Iniciar o agente ${role}?`, "s", ROLE_DESC[role]))) return "cancelled";
-      models[role] = forcedModel ? await modelPricing(harness, forcedModel) : null;
-      const selectModel = async (available) => {
-        catalog ??= Promise.all([
-          loadModelPools([harness], available.map(({ value }) => value)),
-          loadDefaults(SOURCE_ROOT),
-        ]).then(([pools, defaults]) => ({ pool: pools[harness] ?? [], available, defaults }));
-        models[role] = await pickModelForRole(harness, role, catalog);
-        statuses[role] = "running";
-        metrics.start(role);
-        publish();
-        return models[role];
-      };
-      const rolePrompt = await rolePromptFor(role);
-      const prevContext = Object.entries(outputs).filter(([name]) => statuses[name] === "completed")
-        .map(([name, output]) => `=== CONTEXTO · ${name.toUpperCase()} ===\n${output}`).join("\n\n");
-      const run = (context) => runPhase({
-        preset: AGENT_PRESETS[harness], cwd, role, model: models[role], selectModel,
-        rolePrompt, task, prevContext: context, metrics, renderer: makeRenderer(role), mcpServer: integrations.mcpServer,
-      });
-      if (forcedModel) {
-        statuses[role] = "running";
-        metrics.start(role);
-        publish();
-      }
-      const runWithRestart = async (context) => {
-        let result = await run(context);
-        while (result.stopReason === "cancelled") {
-          phaseText.set(role, "");
-          statuses[role] = "waiting";
-          checkpoint();
-          publish();
-          if (!(await askYN(`Reiniciar o agente ${role}?`, "s", "O agente interrompido será iniciado novamente com o contexto das etapas concluídas."))) return null;
-          statuses[role] = "running";
-          publish();
-          result = await run(context);
-        }
-        return result;
-      };
-      const result = await runWithRestart(prevContext);
-      if (!result) return "cancelled";
-      if (!["end_turn", "max_tokens"].includes(result.stopReason)) throw new Error(`${role}: ${result.stopReason}`);
-      outputs[role] = result.output;
+      let shipperReady = false;
+      const settled = await settleStage({
+        resumeContext: blocker?.role === role ? blocker.error : "",
+        async run(previous) {
+          const context = [contextFor(), previous && `=== RETOMADA ===\n${previous}`].filter(Boolean).join("\n\n");
+          if (role !== "shipper" || !shipperReady) {
+            const result = await runAgent(role, context);
+            if (!result) return null;
+            const error = phaseProblem(result, { requireVerdict: role === "reviewer" });
+            if (error) return { error };
+            outputs[role] = result.output;
+          }
 
-      if (role === "planner" || role === "supervisor") {
-        statuses[role] = "waiting";
-        publish();
-        if (role === "planner") {
-          outputs.planner = await reviewPlanner({ issue, plan: result.output, cwd, harness });
-        } else {
-          const feedback = await input.review("Revisar auditoria", result.output, null);
-          if (feedback.text) {
+          if (role === "shipper") {
+            shipperReady = true;
             statuses[role] = "running";
             publish();
-            const extra = await runWithRestart(`${prevContext}\n\n=== AUDITORIA ANTERIOR ===\n${outputs.supervisor}\n\n=== FEEDBACK DO USUÁRIO ===\n${feedback.text}`);
-            if (!extra) return "cancelled";
-            if (!["end_turn", "max_tokens"].includes(extra.stopReason)) throw new Error(`${role}: ${extra.stopReason}`);
-            outputs[role] = extra.output;
+            const published = await runDelivery({ root: SOURCE_ROOT, cwd, issue, delivery, checkpoint,
+              outputs: { ...outputs, builder: [outputs.builder, ...recoveryNotes.slice(-6)].filter(Boolean).join("\n\n") },
+              report: (level, line) => { input.log(level, line); metrics.scanToolOutput(role, line); } });
+            delivery.verified = published.verified;
+            if (published.error) return published;
+            outputs.shipper += `\n\nCommit ${published.verified.commit} confirmado em origin/${published.verified.branch}\n${published.details}`;
+          } else if (role === "planner") {
+            statuses[role] = "waiting";
+            publish();
+            const { plan, installed } = await reviewPlanner({ issue, plan: outputs.planner, cwd, harness });
+            outputs.planner = plan;
+            installedSkills = installed;
+            availableSkills = installed;
+          } else if (role === "supervisor") {
+            statuses[role] = "waiting";
+            publish();
+            const feedback = await input.review("Revisar auditoria", outputs.supervisor, null);
+            if (feedback.text) {
+              const extra = await runAgent(role, `${context}\n\n=== AUDITORIA ANTERIOR ===\n${outputs.supervisor}\n\n=== FEEDBACK DO USUÁRIO ===\n${feedback.text}`);
+              if (!extra) return null;
+              const error = phaseProblem(extra);
+              if (error) return { error };
+              outputs.supervisor = extra.output;
+            }
           }
-        }
-      }
+          return { completed: true };
+        },
+        recover: (error) => recover(role, error),
+        wait: (error) => askYN("Verificar o bloqueio novamente?", "s", `${error}\n\nEscolha Não para pausar e retomar depois.`),
+        onBlocked(error) {
+          statuses[role] = "blocked";
+          input.setRole(role);
+          blocker = { role, error };
+          input.log("warn", error);
+          checkpoint();
+          publish();
+        },
+      });
+      if (!settled) return "cancelled";
+      if (settled.blocked) return "blocked";
+      blocker = null;
       metrics.end(role);
       statuses[role] = "completed";
       checkpoint();

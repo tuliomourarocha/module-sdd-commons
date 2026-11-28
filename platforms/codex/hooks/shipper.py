@@ -102,10 +102,14 @@ def get_git_branch(repo: Path) -> str:
     code, out, _ = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo)
     return out.strip() if code == 0 else "main"
 
-def get_git_status(repo: Path) -> dict[str, Any]:
-    code, out, _ = run(["git", "status", "--porcelain"], cwd=repo)
-    code2, diff_stat, _ = run(["git", "diff", "--stat", "HEAD"], cwd=repo)
-    code3, diff_names, _ = run(["git", "diff", "--name-only", "HEAD"], cwd=repo)
+DELIVERY_PATHS = [".", ":(exclude).planning/**", ":(exclude).opencode/hooks/hook-audit.jsonl"]
+
+
+def get_git_status(repo: Path, delivery: bool = False) -> dict[str, Any]:
+    paths = ["--", *DELIVERY_PATHS] if delivery else []
+    code, out, _ = run(["git", "status", "--porcelain", *paths], cwd=repo)
+    code2, diff_stat, _ = run(["git", "diff", "--stat", "HEAD", *paths], cwd=repo)
+    code3, diff_names, _ = run(["git", "diff", "--name-only", "HEAD", *paths], cwd=repo)
     code4, log, _ = run(["git", "log", "--oneline", "-5"], cwd=repo)
     return {
         "porcelain": out.strip(),
@@ -176,7 +180,7 @@ def _ahead_behind(repo: Path, left: str, right: str) -> tuple[int, int]:
         return int(parts[0]), int(parts[1])
     return -1, -1
 
-def prepare_feature_branch(repo: Path, base: str, commit_msg: str, dry_run: bool) -> dict[str, Any]:
+def prepare_feature_branch(repo: Path, base: str, commit_msg: str, dry_run: bool, delivery_from: str = "", resume_branch: str = "") -> dict[str, Any]:
     """SEMPRE: baixa a `<base>` (develop), atualiza-a e cria branch de trabalho A PARTIR
     DELA antes de commitar e fazer push — nunca push direto na `<base>`/main.
 
@@ -195,6 +199,7 @@ def prepare_feature_branch(repo: Path, base: str, commit_msg: str, dry_run: bool
     """
     res: dict[str, Any] = {"base": base, "branch": get_git_branch(repo), "created": False, "updated_base": False, "blocked_base": False, "notes": []}
     cur = res["branch"]
+    delivery = bool(delivery_from)
     if dry_run:
         res["notes"].append(f"dry-run: `{base}` não baixada/atualizada e branch de trabalho a partir dela não criada")
         return res
@@ -203,26 +208,46 @@ def prepare_feature_branch(repo: Path, base: str, commit_msg: str, dry_run: bool
     fetch_note = git_fetch_base(repo, base)
     if fetch_note:
         res["notes"].append(fetch_note)
+        if delivery:
+            res["blocked_base"] = True
+            return res
     origin_tip = f"refs/remotes/origin/{base}"
     code_o, _, _ = run(["git", "rev-parse", "--verify", origin_tip], cwd=repo)
     if code_o != 0:
-        res["blocked_base"] = cur in (base, "main", "master")
+        res["blocked_base"] = delivery or cur in (base, "develop", "main", "master", "HEAD")
         res["notes"].append(f"sem `origin/{base}` — branch a partir da `{base}` atualizada não criada; permanecendo em `{cur}`")
         return res
 
-    info = get_git_status(repo)
+    if delivery and resume_branch and cur != resume_branch:
+        res["blocked_base"] = True
+        res["notes"].append(f"retome a branch `{resume_branch}` para preservar os commits desta entrega")
+        return res
+    if delivery and cur == resume_branch and cur not in (base, "develop", "main", "master", "HEAD"):
+        res["notes"].append(f"branch `{cur}` retomada com os commits desta entrega")
+        return res
+
+    info = get_git_status(repo, delivery)
+    start_point = origin_tip
+    if delivery and info["has_changes"]:
+        code, own_commits, _ = run(["git", "rev-list", "-1", "HEAD", "--not", delivery_from, origin_tip], cwd=repo)
+        if code != 0 or (own_commits and run(["git", "merge-base", "--is-ancestor", origin_tip, "HEAD"], cwd=repo)[0] != 0):
+            res["blocked_base"] = True
+            res["notes"].append(f"incorpore `origin/{base}` aos commits do ciclo antes de enviar")
+            return res
+        if own_commits:
+            start_point = "HEAD"
     name = _work_branch_name(commit_msg)
 
     def _switch_fail_note(out: str, err: str) -> None:
         res["notes"].append(f"falha ao criar branch `{name}` a partir de `origin/{base}`: {(out+err).strip()[:200]} — permanecendo em `{cur}`")
         res["branch"] = get_git_branch(repo)
-        res["blocked_base"] = res["branch"] in (base, "main", "master")
+        res["blocked_base"] = delivery or res["branch"] in (base, "develop", "main", "master", "HEAD")
 
-    if cur in (base, "main", "master"):
+    if cur in (base, "develop", "main", "master"):
         ahead, behind = _ahead_behind(repo, "HEAD", origin_tip)
         if info["has_changes"]:
             # 3. branch nova a partir da develop atualizada, carregando as alterações
-            code, out, err = run(["git", "switch", "-c", name, origin_tip], cwd=repo)
+            code, out, err = run(["git", "switch", "-c", name, start_point], cwd=repo)
             if code == 0:
                 res["branch"] = name; res["created"] = True
                 res["notes"].append(f"branch `{name}` criada a partir da `{base}` ATUALIZADA (`origin/{base}` baixado da origin) — alterações pendentes carregadas")
@@ -268,11 +293,12 @@ def prepare_feature_branch(repo: Path, base: str, commit_msg: str, dry_run: bool
     if note_u:
         res["notes"].append(f"develop `{base}` local: {note_u}")
     if info["has_changes"]:
-        code, out, err = run(["git", "switch", "-c", name, origin_tip], cwd=repo)
+        code, out, err = run(["git", "switch", "-c", name, start_point], cwd=repo)
         if code == 0:
             res["branch"] = name; res["created"] = True
             res["notes"].append(f"branch `{name}` criada a partir da `{base}` ATUALIZADA — alterações pendentes carregadas")
-            res["notes"].append(f"commits anteriores de `{cur}` permanecem na branch anterior (branch nova por ciclo)")
+            if start_point != "HEAD":
+                res["notes"].append(f"commits anteriores de `{cur}` permanecem na branch anterior (branch nova por ciclo)")
         else:
             _switch_fail_note(out, err)
     else:
@@ -286,6 +312,8 @@ def prepare_feature_branch(repo: Path, base: str, commit_msg: str, dry_run: bool
 def load_context(context_file: str | None) -> dict[str, Any]:
     if not context_file:
         return {}
+    if context_file == "-":
+        return json.load(sys.stdin)
     p = Path(context_file)
     if not p.exists():
         return {}
@@ -420,7 +448,7 @@ def generate_handoff(repo: Path, git_info: dict[str, Any], context: dict[str, An
     lines.append(f"_Gerado por `hooks/shipper.py` em {now} — hook determinístico. Se conteúdo estiver minimal, fallback para `task shipper` minimal para enriquecer STATE/HANDOFF._")
     return "\n".join(lines)
 
-def generate_state(repo: Path, git_info: dict[str, Any], context: dict[str, Any], args, pr_url: str | None, github: dict[str, Any] | None = None, branch_prep: dict[str, Any] | None = None) -> str:
+def generate_state(repo: Path, git_info: dict[str, Any], context: dict[str, Any], args, pr_url: str | None, github: dict[str, Any] | None = None, branch_prep: dict[str, Any] | None = None, gate: str = "done") -> str:
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     branch = git_info.get("branch", "main")
     bp = branch_prep or {}
@@ -439,7 +467,7 @@ def generate_state(repo: Path, git_info: dict[str, Any], context: dict[str, Any]
     branch_disp = f"`{branch}`" + (f" (criada de `origin/{base}` atualizada)" if bp.get("created") else "")
     if bp.get("updated_base"):
         branch_disp += f" ({base} local baixada/atualizada da origin)"
-    lines.append(f"**Flow:** `{flow}` | **Gate:** `done` | **Branch:** {branch_disp}")
+    lines.append(f"**Flow:** `{flow}` | **Gate:** `{gate}` | **Branch:** {branch_disp}")
     lines.append(f"**PR base:** `{base}` (develop, nunca main) | **Repo:** `{args.repo_slug}` | **Gerado por:** `hooks/shipper.py`")
     if pr_url:
         lines.append(f"**PR:** {pr_url}")
@@ -473,23 +501,27 @@ def generate_state(repo: Path, git_info: dict[str, Any], context: dict[str, Any]
     lines.append(f"_Atualizado por `hooks/shipper.py` em {now}_")
     return "\n".join(lines)
 
-def do_git_commit(repo: Path, message: str, dry_run: bool) -> tuple[bool, str]:
-    info = get_git_status(repo)
-    if not info["has_changes"]:
-        code, out, _ = run(["git", "status", "--porcelain"], cwd=repo)
-        if not out.strip():
-            return True, "sem alterações para commit"
+def do_git_commit(repo: Path, message: str, dry_run: bool, delivery: bool = False) -> tuple[bool, str]:
+    paths = ["--", *DELIVERY_PATHS] if delivery else []
+    code, out, err = run(["git", "status", "--porcelain", *paths], cwd=repo)
+    if code != 0:
+        return False, f"git status falhou: {err}"
+    if not out.strip():
+        return True, "sem alterações para commit"
     if dry_run:
         return True, f"dry-run: commit não executado ({message})"
     # add
-    code, out, err = run(["git", "add", "-A"], cwd=repo)
+    code, out, err = run(["git", "add", "-A", *paths], cwd=repo)
     if code != 0:
         return False, f"git add falhou: {err or out}"
     # commit — se já tem staged?
-    code, out, err = run(["git", "diff", "--cached", "--name-only"], cwd=repo)
+    code, out, err = run(["git", "diff", "--cached", "--name-only", *paths], cwd=repo)
+    if code != 0:
+        return False, f"git diff --cached falhou: {err}"
     if not out.strip():
         return True, "nada staged após add"
-    code, out, err = run(["git", "commit", "-m", message], cwd=repo)
+    commit_paths = ["--only", *paths] if delivery else []
+    code, out, err = run(["git", "commit", "-m", message, *commit_paths], cwd=repo)
     if code != 0:
         # pode ser "nothing to commit"
         if "nothing to commit" in (out+err).lower():
@@ -503,11 +535,33 @@ def do_git_push(repo: Path, branch: str, dry_run: bool) -> tuple[bool, str]:
     # verifica remote
     code, out, _ = run(["git", "remote", "get-url", "origin"], cwd=repo)
     if code != 0:
-        return True, "sem remote origin — push pulado"
+        return False, "remote origin não configurado"
     code, out, err = run(["git", "push", "-u", "origin", branch], cwd=repo)
     if code != 0:
         return False, f"git push falhou: {out} {err}"
     return True, out.strip()[:500]
+
+
+def delivery_head(repo: Path, start: str, branch: str, base: str) -> str:
+    if branch in (base, "develop", "main", "master", "HEAD"):
+        raise RuntimeError(f"branch de entrega inválida: {branch}")
+    code, pending, err = run(["git", "status", "--porcelain", "--untracked-files=all", "--", *DELIVERY_PATHS], cwd=repo)
+    if code != 0 or pending.strip():
+        raise RuntimeError(f"arquivos da entrega pendentes após o commit: {err or pending}")
+    code, diff, err = run(["git", "log", "-1", "--format=%H", "HEAD", "--not", start, f"refs/remotes/origin/{base}", "--", *DELIVERY_PATHS], cwd=repo)
+    if code != 0 or not diff.strip():
+        raise RuntimeError(f"nenhum commit da entrega desde o início do ciclo: {err}".strip())
+    code, head, err = run(["git", "rev-parse", "--verify", "HEAD"], cwd=repo)
+    if code != 0:
+        raise RuntimeError(f"não foi possível verificar HEAD: {err}")
+    return head.strip()
+
+
+def verify_push(repo: Path, branch: str, head: str) -> None:
+    ref = f"refs/heads/{branch}"
+    code, remote, err = run(["git", "ls-remote", "--exit-code", "origin", ref], cwd=repo, timeout=30)
+    if code != 0 or remote.strip() != f"{head}\t{ref}":
+        raise RuntimeError(f"origin não confirmou {head} em {ref}: {err}".strip())
 
 def do_gh_pr(repo: Path, title: str, body_file: Path, branch: str, base: str, dry_run: bool) -> tuple[bool, str, str | None]:
     """PR de `<branch>` para `<base>` (develop) — explícito em --base/--head, nunca depende do default."""
@@ -527,7 +581,7 @@ def do_gh_pr(repo: Path, title: str, body_file: Path, branch: str, base: str, dr
                 code_e, out_e, err_e = run(["gh", "pr", "edit", str(existing["number"]), "--base", base], cwd=repo)
                 note = f"PR existente {existing['url']} — base ajustada `{existing['baseRefName']}` → `{base}`" if code_e == 0 \
                     else f"PR existente {existing['url']} — base continua `{existing['baseRefName']}` ({(err_e or '').strip()[:120]})"
-                return True, note, existing["url"]
+                return code_e == 0, note, existing["url"] if code_e == 0 else None
             return True, f"PR já existe: {existing['url']}", existing["url"]
     code2, out2, err2 = run(["gh", "pr", "create", "--base", base, "--head", branch, "--title", title, "--body-file", str(body_file)], cwd=repo)
     if code2 == 0:
@@ -561,6 +615,29 @@ def do_ci_check(repo: Path, dry_run: bool) -> tuple[bool | None, str]:
     if code2 == 0:
         return None, out2[:1000]
     return None, f"CI check não disponível: {out[:500]}"
+
+
+def check_delivery_ci(repo: Path, pr_url: str) -> tuple[bool | None, str]:
+    """Consulta o PR publicado, usando os estados estruturados do gh."""
+    command = ["gh", "pr", "checks", pr_url]
+    code, out, err = run([*command, "--json", "name,bucket"], cwd=repo, timeout=30)
+    try:
+        checks = json.loads(out)
+    except ValueError:
+        checks = None
+    if not isinstance(checks, list):
+        if "no checks reported" in err.lower():
+            return None, "o PR ainda não tem checks reportados"
+        return False, f"consulta ao CI falhou (exit {code}): {err or out}"
+    if not checks:
+        return None, "o PR ainda não tem checks reportados"
+    if any(check.get("bucket") in ("fail", "cancel") for check in checks):
+        return False, out
+    if any(check.get("bucket") == "pending" for check in checks):
+        timeout = int(os.environ.get("CI_WATCH_TIMEOUT", "600"))
+        code, out, err = run([*command, "--watch", "--fail-fast"], cwd=repo, timeout=timeout)
+        return code == 0, out or err
+    return all(check.get("bucket") in ("pass", "skipping") for check in checks), out
 
 # ── GitHub Issues — sync real via gh CLI (determinístico, sem LLM) ────────────
 GITHUB_HANDOFF_START = "<!-- GITHUB_REPORT:START -->"
@@ -753,13 +830,19 @@ def _github_sync(repo: Path, pr_url: str | None, dry_run: bool, args, context: d
         result["message"] = f"GITHUB_AUTH_REQUIRED: falha de autenticação ({msg_a})"
         return result
 
-    explicit = explicit_issue_numbers(args, context)
+    if args.delivery_from:
+        number = issue_number_from_ref(args.issue)
+        explicit = [number] if number is not None else []
+    else:
+        explicit = explicit_issue_numbers(args, context)
     auto = collect_issue_hints(
         branch=(git_info or {}).get("branch", ""),
         log=(git_info or {}).get("log", ""),
         context=context,
     )
-    pr_close = pr_closes_issues(repo) if pr_url else []
+    pr_close = pr_closes_issues(repo) if pr_url and not args.delivery_from else []
+    if args.delivery_from:
+        auto = []
     if dry_run:
         ok_c, issue = locate_github_issue(repo, explicit, pr_close, auto)
         if not ok_c:
@@ -799,7 +882,7 @@ def _github_sync(repo: Path, pr_url: str | None, dry_run: bool, args, context: d
 
     # 2. Opcional: comentar link do PR (flag --no-issue-comment)
     comment_note = ""
-    if pr_url and not getattr(args, "no_issue_comment", False):
+    if pr_url and issue.get("state") != "CLOSED" and not getattr(args, "no_issue_comment", False):
         ok_c2, _, err_c2 = gh_run(repo, ["issue", "comment", number, "--body", f"🚢 PR entregue — {pr_url}"], timeout=30)
         result["commented"] = ok_c2 == 0
         if ok_c2 != 0:
@@ -883,6 +966,8 @@ def main():
     parser.add_argument("--project", default="", help="GitHub Project (título/número/URL) para mover Status → Done (default env SDD_GITHUB_PROJECT)")
     parser.add_argument("--no-issue-comment", action="store_true", help="Não comentar link do PR na issue")
     parser.add_argument("--fail-on-issue", action="store_true", help="Exit 2 se sync de issue falhar (por padrão falha é visível mas não bloqueante)")
+    parser.add_argument("--delivery-from", default="", help="Exige commit posterior ao HEAD informado e confirma o SHA publicado em origin")
+    parser.add_argument("--resume-branch", default="", help="Retoma a branch de trabalho da entrega anterior")
     args = parser.parse_args()
 
     repo = Path(args.repo).resolve()
@@ -893,7 +978,16 @@ def main():
         print(f"⚠️ Não é repo git: {repo}", file=sys.stderr)
         sys.exit(1)
 
-    git_info = get_git_status(repo)
+    delivery = bool(args.delivery_from)
+    if delivery and (args.dry_run or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", args.delivery_from)
+                     or run(["git", "cat-file", "-e", f"{args.delivery_from}^{{commit}}"], cwd=repo)[0] != 0):
+        parser.error("--delivery-from exige o SHA de um commit local e é incompatível com --dry-run")
+    git_info = get_git_status(repo, delivery)
+    if delivery and not git_info["has_changes"]:
+        code, new_commits, err = run(["git", "rev-list", "-1", "HEAD", "--not", args.delivery_from, "--", *DELIVERY_PATHS], cwd=repo)
+        if code != 0 or not new_commits.strip():
+            print(f"❌ Git commit: nenhum arquivo ou commit da entrega desde o início do ciclo {err}".strip())
+            sys.exit(2)
     context = load_context(args.context_file) if args.context_file else {}
 
     # commit message
@@ -911,7 +1005,6 @@ def main():
             files = ", ".join(git_info.get("diff_names", [])[:3])
             commit_msg = f"{prefix}: entrega via shipper hook ({branch}) — {files[:120]}" if files else f"{prefix}: entrega via shipper hook ({branch})"
 
-    ensure_planning_dir(repo)
     handoff_path = Path(args.handoff_out) if args.handoff_out else repo / ".planning" / "HANDOFF.md"
     state_path = Path(args.state_out) if args.state_out else repo / ".planning" / "STATE.md"
 
@@ -919,30 +1012,55 @@ def main():
     pr_base, pr_base_note = determine_pr_base(repo, args.pr_base)
     if pr_base_note:
         print(f"⚠️ PR base: {pr_base_note}")
-    branch_prep = prepare_feature_branch(repo, pr_base, commit_msg, args.dry_run)
+    branch_prep = prepare_feature_branch(repo, pr_base, commit_msg, args.dry_run, args.delivery_from, args.resume_branch)
     for note in branch_prep["notes"]:
         print(f"ℹ️ Branch: {note}")
     if branch_prep["created"]:
         print(f"✅ Branch: `{branch_prep['branch']}` criada de `origin/{pr_base}` (atualizada)")
     if branch_prep["branch"] != git_info.get("branch"):
-        git_info = get_git_status(repo)  # branch mudou — recarregar status/diff
+        git_info = get_git_status(repo, delivery)
 
     # Push/PR bloqueados se a branch final ainda for a base — shipper NUNCA envia a develop/main direto
-    push_blocked = bool(branch_prep.get("blocked_base")) and not args.dry_run
+    branch = branch_prep["branch"]
+    push_blocked = not args.dry_run and (branch_prep.get("blocked_base") or branch in (pr_base, "develop", "main", "master", "HEAD"))
     if push_blocked:
-        print(f"⛔ Push/PR bloqueados: branch final é `{branch_prep['branch']}` (base `{pr_base}`) — crie a branch manualmente e reexecute o shipper")
+        print(f"⛔ Push/PR bloqueados na branch `{branch}` (base `{pr_base}`) — confira o diagnóstico acima")
+        if delivery:
+            sys.exit(2)
+    if delivery:
+        print(f"SDD_DELIVERY_BRANCH {branch}", flush=True)
 
     # 1. Git commit
-    commit_ok, commit_msg_out = do_git_commit(repo, commit_msg, args.dry_run)
+    commit_ok, commit_msg_out = do_git_commit(repo, commit_msg, args.dry_run, delivery)
     print(f"{'✅' if commit_ok else '❌'} Git commit: {commit_msg_out}")
+    if delivery:
+        if not commit_ok:
+            sys.exit(2)
+        try:
+            head = delivery_head(repo, args.delivery_from, branch, pr_base)
+        except RuntimeError as error:
+            print(f"❌ Git commit: {error}")
+            sys.exit(2)
 
     # 2. Push
-    if push_blocked:
-        push_ok, push_out = False, f"push bloqueado: branch final é `{branch_prep['branch']}` (base `{pr_base}`) — shipper nunca faz push direto na develop/main"
+    if push_blocked or not commit_ok:
+        push_ok, push_out = False, "push bloqueado pela preparação da branch ou pelo commit"
         print(f"⛔ Git push: {push_out}")
     else:
         push_ok, push_out = do_git_push(repo, git_info.get("branch", pr_base), args.dry_run)
         print(f"{'✅' if push_ok else '⚠️'} Git push: {push_out}")
+    if delivery:
+        if not push_ok:
+            sys.exit(2)
+        try:
+            verify_push(repo, branch, head)
+        except RuntimeError as error:
+            print(f"❌ Git push: {error}")
+            sys.exit(2)
+        print("SDD_DELIVERY_VERIFIED " + json.dumps({"branch": branch, "commit": head}), flush=True)
+        if not gh_auth_ok(repo)[0]:
+            print("❌ GitHub CLI sem autenticação para abrir PR e sincronizar a issue. Execute gh auth login.")
+            sys.exit(2)
 
     # 3. Gera HANDOFF e STATE (sempre, mesmo se git falhou)
     handoff_md = generate_handoff(repo, git_info, context, args, branch_prep)
@@ -957,8 +1075,8 @@ def main():
         sys.exit(1)
 
     # 4. PR — explícito para a base develop (`--base develop --head <branch>`), nunca para main
-    if push_blocked:
-        pr_ok, pr_out, pr_url = False, f"PR bloqueado: branch final é `{branch_prep['branch']}` (base `{pr_base}`)", None
+    if not push_ok:
+        pr_ok, pr_out, pr_url = False, "PR bloqueado pela falha no Git", None
         print(f"⛔ PR: {pr_out}")
     else:
         pr_title = args.pr_title.strip() or commit_msg.split("\n")[0][:80]
@@ -967,8 +1085,17 @@ def main():
     if pr_url:
         state_pr_url = pr_url
 
+    if delivery and pr_url:
+        ci_pass, ci_out = check_delivery_ci(repo, pr_url)
+    else:
+        ci_pass, ci_out = (None, "aguardando PR") if delivery else do_ci_check(repo, args.dry_run)
+    ci_label = "pass" if ci_pass else "fail" if ci_pass is False else "unknown"
+    print(f"CI check [{ci_label}]: {ci_out[:600]}")
+
     # 5. Issue GitHub — sync real ANTES do STATE (status precisa aparecer em STATE/HANDOFF/HOOKS.log)
-    github = do_github_sync(repo, pr_url, args.dry_run, args, context=context, git_info=git_info)
+    github = (do_github_sync(repo, pr_url, args.dry_run, args, context=context, git_info=git_info)
+              if (pr_ok and pr_url and (not delivery or ci_pass is not False)) or args.dry_run
+              else {"status": "skipped", "message": "Git, PR e checks disponíveis devem ser concluídos antes de fechar a issue"})
     gh_status = github.get("status", "skipped")
     if gh_status == "ok":
         print(f"✅ Issue GitHub: GITHUB_SYNC_OK — {github['message']}")
@@ -985,7 +1112,10 @@ def main():
     upsert_handoff_github(handoff_path, github)
 
     # 6. STATE.md (agora com PR url e status GitHub)
-    state_md = generate_state(repo, git_info, context, args, state_pr_url, github, branch_prep)
+    project_ok = not github.get("project") or github.get("project_status") == "Done"
+    delivery_ok = pr_ok and pr_url and gh_status == "ok" and project_ok and ci_pass is not False
+    gate = "done" if push_ok and (not delivery or delivery_ok) else "blocked"
+    state_md = generate_state(repo, git_info, context, args, state_pr_url, github, branch_prep, gate)
     try:
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(state_md, encoding="utf-8")
@@ -993,11 +1123,6 @@ def main():
     except Exception as e:
         print(f"❌ Falha ao escrever STATE.md: {e}", file=sys.stderr)
         sys.exit(1)
-
-    # 7. CI check
-    ci_pass, ci_out = do_ci_check(repo, args.dry_run)
-    ci_label = "pass" if ci_pass else "fail" if ci_pass is False else "unknown"
-    print(f"CI check [{ci_label}]: {ci_out[:600]}")
 
     # Resumo
     print("\n" + "="*60)
@@ -1011,7 +1136,7 @@ def main():
     try:
         import datetime
 
-        status = "success" if commit_ok and pr_ok else "critical" if not commit_ok else "warn"
+        status = "success" if push_ok and pr_ok else "critical" if not push_ok else "warn"
         if push_blocked:
             status = "critical"  # push/PR bloqueados — branch final é a base (develop/main)
         if args.fail_on_ci and ci_pass is False:
@@ -1050,7 +1175,7 @@ def main():
         }
         line = json.dumps(entry, ensure_ascii=False)
         seen = set()
-        for log_path in [repo / ".planning/HOOKS.log", Path(".opencode/hooks/hook-audit.jsonl")]:
+        for log_path in ([] if delivery else [repo / ".planning/HOOKS.log", Path(".opencode/hooks/hook-audit.jsonl")]):
             try:
                 resolved = log_path.resolve()
                 if str(resolved) in seen:
@@ -1061,12 +1186,12 @@ def main():
                     lf.write(line + "\n")
             except Exception:
                 pass
-        print(f"📝 Log garantia: .planning/HOOKS.log (status={status})")
+        print(f"⟐ hook ✓ shipper — {status}" if delivery else f"📝 Log garantia: .planning/HOOKS.log (status={status})")
     except Exception:
         pass
 
     # Exit codes
-    if not commit_ok or push_blocked:
+    if not push_ok or (delivery and not delivery_ok):
         sys.exit(2)
     if args.fail_on_ci and ci_pass is False:
         sys.exit(2)

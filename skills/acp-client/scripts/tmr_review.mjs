@@ -209,11 +209,47 @@ export async function installApprovedSkills(skills, findSkillPy, cwd, harness, l
       await exec("npx", ["-y", "skills", "add", source, "--skill", slug, "--agent", harness, "--yes"], {
         cwd, timeout: 300_000,
       });
-      await fs.access(path.join(cwd, ".agents", "skills", slug, "SKILL.md"));
-      installed.push(id);
+      const file = await installedSkillFile(cwd, harness, slug);
+      if (!file) throw new Error("SKILL.md não encontrado no projeto");
+      installed.push({ id, slug, file });
+      log("info", `Skill disponível · ${id} · ${file}`);
     } catch (error) {
-      log("warn", `Falha na auditoria ou instalação de ${id} · ${error.killed ? "tempo excedido" : error.code ?? "erro"}`);
+      log("warn", `Falha na auditoria ou instalação de ${id} · ${error.killed ? "tempo excedido" : error.code ?? error.message}`);
     }
   }
   return installed;
+}
+
+async function installedSkillFile(cwd, harness, slug) {
+  if (!/^[A-Za-z0-9][\w.-]*$/.test(slug)) return null;
+  for (const root of [".agents", `.${harness}`]) {
+    for (const name of new Set([slug, slug.toLowerCase()])) {
+      const file = `${root}/skills/${name}/SKILL.md`;
+      try {
+        const absolute = path.join(cwd, file);
+        if (!(await fs.stat(absolute)).isFile()) continue;
+        await fs.access(absolute);
+        return file;
+      } catch { /* tente a próxima pasta do harness */ }
+    }
+  }
+  return null;
+}
+
+export async function availableApprovedSkills(installed, cwd, harness) {
+  const available = [];
+  for (const { id, slug } of installed) {
+    const file = await installedSkillFile(cwd, harness, slug);
+    if (file) available.push({ id, slug, file });
+  }
+  return available;
+}
+
+export function approvedSkillsPrompt(skills) {
+  if (!skills.length) return "";
+  return [
+    "=== SKILLS APROVADAS E DISPONÍVEIS NESTE PROJETO ===",
+    "Avalie a relevância para sua fase. Para cada skill relevante, carregue a cópia aprovada pelo recurso nativo do harness ou leia o SKILL.md no caminho indicado e siga as instruções aplicáveis.",
+    ...skills.map(({ id, file }) => `- ${id} · ${file}`),
+  ].join("\n");
 }

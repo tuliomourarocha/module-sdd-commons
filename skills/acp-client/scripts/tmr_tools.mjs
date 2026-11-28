@@ -23,7 +23,10 @@ async function command(bin, args, { cwd, env, onTool, label = [bin, ...args].joi
       }, timeout);
       child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout = (stdout + chunk).slice(-100000); });
       child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr = (stderr + chunk).slice(-2000); });
-      child.once("error", reject);
+      child.once("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
       child.once("close", (code) => {
         clearTimeout(timer);
         if (code === 0) resolve(stdout.trim());
@@ -64,13 +67,24 @@ export async function prepareTools({ harness, cwd, ask, onTool }) {
   const graph = { ...opts, env: graphEnv };
   const index = path.resolve(cwd, process.env.CODEGRAPH_DIR || ".codegraph");
   const indexed = await fs.stat(index).then((entry) => entry.isDirectory()).catch(() => false);
-  if (!indexed) await command("codegraph", ["init", "--yes", "--local-only", cwd], { ...graph, timeout: 180000 });
-  await command("codegraph", ["status", cwd], { ...graph, showOutput: true });
+  try {
+    if (!indexed) await command("codegraph", ["init", "--yes", "--local-only", cwd], { ...graph, timeout: 180000 });
+    await command("codegraph", ["status", cwd], { ...graph, showOutput: true });
+  } catch (error) {
+    console.error(`Índice do CodeGraph indisponível · ${error.message}`);
+  }
 
   const args = ["serve", "--mcp", "--path", cwd];
   return {
     mcpServer: { name: "codegraph", command: "codegraph", args, env: graphMcpEnv },
-    semanticContext: (title) => command("codegraph", ["context", "--path", cwd, "--max-nodes", "12", "--", title], { ...graph, label: "codegraph context · issue" }),
+    async semanticContext(title) {
+      try {
+        return await command("codegraph", ["context", "--path", cwd, "--max-nodes", "12", "--", title], { ...graph, label: "codegraph context · issue" });
+      } catch (error) {
+        console.error(`Contexto do CodeGraph indisponível · ${error.message}`);
+        return "";
+      }
+    },
   };
 }
 

@@ -233,6 +233,7 @@ async function runShipper($: any, directory: string, client: any, trigger: strin
 }
 
 export const ShipperPlugin: Plugin = async ({ $, directory, client }) => {
+  if (process.env.SDD_ACP_MANAGES_SHIPPER === "1") return {};
   return {
     "tool.execute.after": async (input: any, output: any) => {
       const tool: string = input?.tool ?? output?.tool ?? input?.name ?? "";

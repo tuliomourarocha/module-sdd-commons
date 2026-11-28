@@ -1,12 +1,83 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { once } from "node:events";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createInterface } from "node:readline";
 import test from "node:test";
 import { observeRtk } from "../skills/acp-client/scripts/tmr_rtk.mjs";
+import { observeMcp } from "../skills/acp-client/scripts/tmr_mcp.mjs";
 import { SessionUsage, summarizeUsage } from "../skills/acp-client/scripts/tmr_usage.mjs";
-import { applyReviewPrompts, buildReviewHtml } from "../skills/acp-client/scripts/tmr_review.mjs";
+import { applyReviewPrompts, approvedSkillsPrompt, availableApprovedSkills, buildReviewHtml } from "../skills/acp-client/scripts/tmr_review.mjs";
+
+test("confirma o MCP quando recebe a lista de ferramentas da sessão", { timeout: 5000 }, async (t) => {
+  const statuses = [];
+  const server = observeMcp({ name: "codegraph", command: process.execPath, args: ["-e", `
+    require('node:readline').createInterface({input: process.stdin}).on('line', line => {
+      const {id, method} = JSON.parse(line);
+      if (id != null) console.log(JSON.stringify({jsonrpc: '2.0', id, result:
+        method === 'tools/list' ? {tools: [{name: 'codegraph_explore'}]} : {}}));
+    });
+  `], env: [] }, (status) => statuses.push(status));
+  t.after(() => server.close());
+  const child = spawn(server.server.command, server.server.args, { stdio: ["pipe", "pipe", "inherit"] });
+  t.after(() => child.kill());
+  const responses = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
+  const request = async (id, method) => {
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method })}\n`);
+    const response = JSON.parse((await responses.next()).value);
+    server.update();
+    assert.equal(response.id, id);
+    return response;
+  };
+  await request(1, "initialize");
+  assert.deepEqual(statuses, ["connecting"]);
+  const reply = await request("tools", "tools/list");
+  assert.equal(reply.result.tools[0].name, "codegraph_explore");
+  assert.deepEqual(statuses, ["connecting", "connected"]);
+  child.stdin.end();
+});
+
+test("mantém explícito que a sessão terminou sem confirmar o MCP", () => {
+  const statuses = [];
+  const server = observeMcp({ command: "codegraph", args: [] }, (status) => statuses.push(status));
+  server.close();
+  assert.deepEqual(statuses, ["connecting", "unconfirmed"]);
+});
+
+test("registra falha quando o processo do MCP não inicia", { timeout: 5000 }, async () => {
+  const statuses = [];
+  const server = observeMcp({ command: path.join(tmpdir(), "sdd-mcp-bin-inexistente"), args: [] }, (status) => statuses.push(status));
+  try {
+    const child = spawn(server.server.command, server.server.args, { stdio: ["pipe", "ignore", "inherit"] });
+    const [code] = await once(child, "exit");
+    assert.notEqual(code, 0);
+  } finally {
+    server.close();
+  }
+  assert.deepEqual(statuses, ["connecting", "failed"]);
+});
+
+test("só anuncia skills aprovadas com SKILL.md disponível para a fase", async (t) => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "sdd-test-skills-"));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  const common = ".agents/skills/example/SKILL.md";
+  const legacy = ".opencode/skills/legacy/SKILL.md";
+  for (const file of [common, legacy]) {
+    await mkdir(path.dirname(path.join(cwd, file)), { recursive: true });
+    await writeFile(path.join(cwd, file), "---\nname: example\n---\n");
+  }
+  const approved = ["example", "legacy", "missing"].map((slug) => ({ id: `owner/repo/${slug}`, slug }));
+  const opencode = await availableApprovedSkills(approved, cwd, "opencode");
+  assert.deepEqual(opencode.map(({ file }) => file), [common, legacy]);
+  const codex = await availableApprovedSkills(approved, cwd, "codex");
+  assert.deepEqual(codex.map(({ file }) => file), [common]);
+  assert.match(approvedSkillsPrompt(codex), /owner\/repo\/example · \.agents\/skills\/example\/SKILL\.md/);
+  assert.doesNotMatch(approvedSkillsPrompt(codex), /legacy|missing/);
+  await rm(path.join(cwd, common));
+  assert.equal(approvedSkillsPrompt(await availableApprovedSkills(approved, cwd, "codex")), "");
+});
 
 test("parar o agente encerra pergunta pendente e aciona cancelamento da fase", async (t) => {
   const moduleUrl = new URL("../skills/acp-client/scripts/tmr_web_input.mjs", import.meta.url).href;

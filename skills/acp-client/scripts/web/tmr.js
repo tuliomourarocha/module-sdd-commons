@@ -8,7 +8,7 @@ function element(tag, attrs = {}, ...children) {
 
 const names = {
   running: "Em execução", completed: "Concluído", queued: "Na fila", waiting: "Aguardando", failed: "Falhou",
-  cancelled: "Cancelado", cancelling: "Cancelando", pending: "Na fila", in_progress: "Em execução",
+  cancelled: "Cancelado", cancelling: "Cancelando", pending: "Na fila", in_progress: "Em execução", blocked: "Bloqueado",
 };
 const number = new Intl.NumberFormat("pt-BR");
 const usd = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 6 });
@@ -70,7 +70,7 @@ function renderRuns(run) {
   const rows = runs;
   $("process-count").textContent = rows.length;
   $("run-rows").replaceChildren(...rows.map((item) => {
-    const agent = item.stages?.find(({ status }) => ["running", "waiting"].includes(status))?.role ?? item.agent ?? item.harness ?? "ACP";
+    const agent = item.stages?.find(({ status }) => ["running", "waiting"].includes(status))?.role ?? item.blocker?.role ?? item.agent ?? item.harness ?? "ACP";
     const title = element("button", { class: "row-title", type: "button", "aria-pressed": item.id === run?.id }, item.issue?.title ?? "Configurando execução");
     return element("tr", { "data-run": item.id, class: item.id === run?.id ? "current" : "" },
       element("td", {}, element("span", { class: "row-label" }, issueNumber(item)), title),
@@ -114,6 +114,8 @@ function renderDetails(run = {}) {
     $("issue").replaceChildren(
       url ? element("a", { href: url, target: "_blank", rel: "noopener", class: "row-label" }, `⟐  ${issueNumber(run)}`) : element("span", { class: "row-label" }, `⟐  ${issueNumber(run)}`),
       element("h4", {}, issue.title), element("p", { class: "issue-body", title: issue.body }, issue.body ?? ""),
+      ...(run.delivery ? [element("p", { class: "mono" }, `Push confirmado · ${run.delivery.commit.slice(0, 12)} · origin/${run.delivery.branch}`)] : []),
+      ...(run.blocker ? [element("p", { class: "muted", title: run.blocker.error }, `Bloqueio em ${run.blocker.role}: ${run.blocker.error.split("\n")[0]}`)] : []),
       ...(run.status === "running" && run.reviewUrl
         ? [element("a", { href: run.reviewUrl, target: "_blank", rel: "noopener" }, "Abrir revisão no Lavish")] : []),
       element("div", { class: "progress-label" }, "Progresso da execução", element("b", {}, `${progress}%`)),
@@ -128,11 +130,19 @@ function renderDetails(run = {}) {
     `Contexto da fase · ${number.format(run.contextUsed)}${run.contextSize ? ` de ${number.format(run.contextSize)}` : ""}`;
   const costDetail = run.cost == null ? (run.status === "running" ? "Aguardando dados de custo" : "Sem dados de custo") :
     [run.costEstimated ? "Estimativa por tokens" : "Informado pelo harness", run.costPartial ? "total parcial" : null].filter(Boolean).join(" · ");
+  const mcp = run.mcpStatus;
+  const mcpLabels = {
+    queued: "Aguardando sessão ACP",
+    connecting: "Aguardando resposta do servidor",
+    connected: "Conexão verificada",
+    failed: "Falha de conexão",
+    unconfirmed: "Sessão encerrada sem confirmação",
+  };
   $("metrics").replaceChildren(
     metric("♯ Tokens na execução", number.format(run.tokens ?? 0), context),
     metric("◎ Custo acumulado", run.cost == null ? "—" : `US$ ${usd.format(run.cost)}`, costDetail, "accent"),
-    metric("⌘ MCPs", (run.mcpServers ?? []).join(", ") || "—", (run.mcpServers ?? []).length
-      ? "Disponibilizados ao harness · conexão não confirmada" : "Nenhum MCP informado"));
+    metric("⌘ MCP", mcp?.name ?? "—", mcp
+      ? [mcpLabels[mcp.status], mcp.role].filter(Boolean).join(" · ") : "Aguardando configuração"));
   $("agent-count").textContent = stages.length;
   const agentItems = stages.map((stage) => {
     const details = [
@@ -145,6 +155,7 @@ function renderDetails(run = {}) {
   $("agents").replaceChildren(...(agentItems.length ? agentItems : [empty("Nenhum agente nesta execução.")]));
   const activity = [
     ...(run.skills ?? []).map((name) => sideItem("ϟ", name, "Skill", "completed", "Carregada")),
+    ...(run.availableSkills ?? []).map(({ id, file }) => sideItem("ϟ", id, file, "observed", "Disponível")),
     ...(run.hooks ?? []).map((name) => sideItem("▣", name, "Hook", "observed", "Acionado")),
   ];
   $("activity").replaceChildren(...(activity.length ? activity : [empty("Nenhuma skill ou hook registrado nesta execução.")]));
