@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { Rpc, handleNotification } from "./acp_client.mjs";
 import { ensureDeps } from "./ensure_deps.mjs";
 import { loadModelPools, modelPricing, rankModels, chooseVariant, loadDefaults } from "../../../bin/lib/model-picker.js";
-import { mergeAvailableModels, modelDisplayName } from "./tmr_models.mjs";
+import { mergeAvailableModels, modelDisplayName, sessionModels } from "./tmr_models.mjs";
 import * as ui from "./tmr_ui.mjs";
 import * as input from "./tmr_web_input.mjs";
 import * as review from "./tmr_review.mjs";
@@ -124,28 +124,8 @@ const priceOf = (e) =>
 const fmt$ = (v) => (v == null ? "?" : String(v));
 const fmtCtx = (c) => (c ? Math.round(c / 1000) + "k" : "?");
 
-/** Lista de modelos DISPONÍVEIS no harness escolhido — sondada UMA vez por run
- *  e reutilizada em todas as fases (o catálogo do provider pode crescer ao vivo;
- *  sem isso a lista "multiplica" entre fases). */
-function probeAvailableModels(harness) {
-  if (harness === "opencode") {
-    const r = spawnSync("opencode", ["models"], { encoding: "utf8", timeout: 30_000 });
-    if (r.status === 0) {
-      const values = (r.stdout ?? "").split("\n").map((l) => l.trim()).filter((l) => l.includes("/"));
-      if (values.length) return values.map((v) => ({ value: v, name: v }));
-    }
-  }
-  return null; // codex (e fallback): usa o catálogo do model-picker
-}
-
-async function pickModelForRole(harness, role, forcedModel, available) {
-  if (forcedModel) return modelPricing(harness, forcedModel);
-  const platform = AGENT_PRESETS[harness].platform;
-  const pools = await loadModelPools([platform]);
-  const pool = pools[platform] ?? [];
-  let defaults = null;
-  try { defaults = await loadDefaults(SOURCE_ROOT); } catch {}
-
+async function pickModelForRole(platform, role, catalog) {
+  const { pool, available, defaults } = await catalog;
   const roleDefault = platform === "opencode" ? defaults?.opencode?.[role] : defaults?.codex?.[role];
   const ranked = rankModels(pool, platform, role, roleDefault);
   if (!ranked.length && !available?.length) {
@@ -162,7 +142,7 @@ async function pickModelForRole(harness, role, forcedModel, available) {
     return `${rec}${modelDisplayName(e)}  ${priceOf(e)}  ctx ${fmtCtx(e.context)}${varHint ? ` · var ${varHint}` : ""}`;
   });
   const idx = await input.select(
-    `Modelo para o agente ${role.toUpperCase()} — ${ranked_all.length} disponíveis no ${harness} (ordenado por qualidade × custo)`,
+    `Modelo para o agente ${role.toUpperCase()} — ${ranked_all.length} disponíveis no ${platform} (ordenado por qualidade × custo)`,
     options,
     1,
   );
@@ -177,8 +157,8 @@ const MARK_HOOK = /⟐\s*hook ✓\s*—?\s*([\w-]+)/g;
 const CMD_RE = /^(rtk|codegraph|ast-grep|sg|git|npm|npx|gh|node|py(thon3?)?|pytest|supabase|vercel)\b/;
 
 class Metrics {
-  constructor() {
-    this.phases = new Map(ROLES.map((r) => [r, { sessions: [], skills: new Map(), hooks: new Map(), cmds: new Map() }]));
+  constructor(saved = {}) {
+    this.phases = new Map(ROLES.map((r) => [r, { sessions: saved[r] ?? [], skills: new Map(), hooks: new Map(), cmds: new Map() }]));
     this.times = new Map(); // role -> { startedAt, endedAt }
   }
   phase(role) { return this.phases.get(role); }
@@ -203,6 +183,7 @@ class Metrics {
     const first = String(title).trim().split(/\s+/).slice(0, 2).join(" ");
     if (CMD_RE.test(first)) bump(p.cmds, first);
   }
+  usageByRole() { return Object.fromEntries([...this.phases].map(([role, { sessions }]) => [role, sessions])); }
   totals() {
     const sessions = [];
     const skills = new Map(), hooks = new Map(), cmds = new Map();
@@ -220,11 +201,22 @@ const phaseText = new Map();
 const steeringQueue = [];
 const tools = new Map();
 
+async function finishCancelledPrompt(response) {
+  let timer;
+  try {
+    return await Promise.race([
+      response.catch(() => null),
+      new Promise((resolve) => { timer = setTimeout(resolve, 2_000); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ------------------------------------------------------------------- run de fase via ACP
-async function runPhase({ preset, cwd, role, model, rolePrompt, task, prevContext, metrics, renderer, mcpServer }) {
+async function runPhase({ preset, cwd, role, model, selectModel, rolePrompt, task, prevContext, metrics, renderer, mcpServer }) {
   const toolCalls = new Map();
   const uniqueSession = tools.size;
-  const modelValue = model.modelValue;
   const usage = new SessionUsage();
   metrics.phase(role).sessions.push(usage);
   let rtkCalls = 0;
@@ -328,21 +320,26 @@ async function runPhase({ preset, cwd, role, model, rolePrompt, task, prevContex
     const steeringSupported = Boolean(init?._meta?.steering?.supported);
 
     const newParams = { cwd, mcpServers: [mcpServer] };
-    if (modelValue) newParams.model = modelValue;
+    if (model?.modelValue) newParams.model = model.modelValue;
     const info = await rpc.request("session/new", newParams, 120_000).catch((error) => {
       if (error.acpError?.code === -32000 || /auth/i.test(error.message)) fail(`Harness requer autenticação. Execute ${preset.authHint}.`, 3);
       throw error;
     });
     sessionId = info?.sessionId;
     if (!sessionId) throw new Error("O harness não abriu uma sessão ACP.");
-    const modelOption = info.configOptions?.find((option) => option.category === "model" && option.type === "select");
-    if (modelOption && modelValue && modelOption.currentValue !== modelValue) {
-      await rpc.request("session/set_config_option", { sessionId, configId: modelOption.id, value: modelValue }, 30_000);
-    } else if (!modelOption && info.models && modelValue && info.models.currentModelId !== modelValue) {
+    const { option, available, current } = sessionModels(info);
+    const selected = model ?? await selectModel(available);
+    const modelValue = selected.modelValue;
+    let activeModel = current;
+    if (option && modelValue && current !== modelValue) {
+      const config = await rpc.request("session/set_config_option", { sessionId, configId: option.id, value: modelValue }, 30_000);
+      activeModel = sessionModels(config ?? {}).current ?? modelValue;
+    } else if (!option && info.models && modelValue && current !== modelValue) {
       await rpc.request("session/set_model", { sessionId, modelId: modelValue }, 30_000);
+      activeModel = modelValue;
     }
-    const activeModel = modelValue || modelOption?.currentValue || info.models?.currentModelId;
-    const pricing = activeModel && activeModel !== modelValue ? await modelPricing(preset.platform, activeModel) : model;
+    activeModel ??= modelValue;
+    const pricing = activeModel && activeModel !== modelValue ? await modelPricing(preset.platform, activeModel) : selected;
 
     let stopRequested = false;
     let resolveStopped;
@@ -358,9 +355,10 @@ async function runPhase({ preset, cwd, role, model, rolePrompt, task, prevContex
     const steerInFlight = [];
     input.setSteering((t) => {
       if (steeringSupported) {
+        const reportVersion = usage.reportVersion;
         steerInFlight.push(
           rpc.request("session/prompt", { sessionId, prompt: [{ type: "text", text: t }] })
-            .then((r) => usage.addTurn(r?.usage, pricing, { steering: true }))
+            .then((r) => usage.addTurn(r?.usage, pricing, { steering: true, reportVersion }))
             .catch((error) => {
               if (!stopRequested) {
                 steeringQueue.push(t);
@@ -374,29 +372,35 @@ async function runPhase({ preset, cwd, role, model, rolePrompt, task, prevContex
     });
 
     const prompt = [rolePrompt, task, prevContext].filter(Boolean).join("\n\n");
-    const res = await Promise.race([stopped, rpc.request("session/prompt", {
+    const reportVersion = usage.reportVersion;
+    const promptResponse = rpc.request("session/prompt", {
       sessionId,
       prompt: [{ type: "text", text: prompt }],
     }).catch((e) => {
       if (e.acpError?.code === -32003 || /auth/i.test(e.message)) fail(`auth exigida — rode: ${preset.authHint}`, 3);
       throw e;
-    })]);
+    });
+    const res = await Promise.race([stopped, promptResponse]);
     input.setSteering(null);
     if (stopRequested) {
+      // Alguns adaptadores entregam o consumo junto com a confirmação de cancelamento.
+      const cancelled = await finishCancelledPrompt(promptResponse);
+      usage.addTurn(cancelled?.usage, pricing, { reportVersion });
       phaseText.set(role, "");
       return { stopReason: "cancelled", output: "" };
     }
-    usage.addTurn(res?.usage, pricing);
+    usage.addTurn(res?.usage, pricing, { reportVersion });
 
     // steering não-nativo (fila) ou pós-turno: entrega o resto como turno extra
     await Promise.allSettled(steerInFlight);
     const leftover = steeringQueue.splice(0);
     if (leftover.length) {
+      const reportVersion = usage.reportVersion;
       const res2 = await rpc.request("session/prompt", {
         sessionId,
         prompt: [{ type: "text", text: leftover.join("\n\n") }],
       });
-      usage.addTurn(res2?.usage, pricing);
+      usage.addTurn(res2?.usage, pricing, { reportVersion });
     }
 
     const finalText = phaseText.get(role) ?? "";
@@ -429,7 +433,7 @@ async function rolePromptFor(role) {
     const raw = await fs.readFile(file, "utf8");
     const body = raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "");
     const contract = role === "planner"
-      ? `Seu escopo é PLANEJAR — NÃO implemente nem edite arquivos de código (isso é do builder). Se a tarefa estiver clara, NÃO entreviste — produza PRD/PLAN direto; use steering só se houver ambiguidade BLOQUEANTE. Saída: === PRD === (max 1 página) e === PLAN === (subtasks [Front]/[Back]/[Infra], dependências, critérios de aceite). NÃO escreva em .planning/.`
+      ? `Seu escopo é PLANEJAR — NÃO implemente nem edite arquivos de código (isso é do builder). Se a tarefa estiver clara, NÃO entreviste — produza PRD/PLAN direto; use steering só se houver ambiguidade BLOQUEANTE. Saída: === PRD === (max 1 página) e === PLAN === (subtasks [Front]/[Back]/[Infra], dependências, critérios de aceite). Inclua até três linhas SKILL_SEARCH: <termo> com tecnologias ou práticas públicas (1 a 3 palavras em inglês cada), escolhidas pelo título, descrição da issue e contexto técnico. Não inclua nomes privados, URLs ou trechos de código nessas linhas. O console busca as skills e abre a revisão Lavish após o turno. NÃO escreva em .planning/.`
       : role === "builder"
         ? `=== RESUMO === (o que fez, arquivos alterados, decisões, pendências). Implemente direto nos arquivos do repo.`
         : role === "reviewer"
@@ -470,6 +474,40 @@ function makeRenderer(role) {
   };
 }
 
+async function reviewPlanner({ issue, plan, cwd, harness }) {
+  const title = `Revisar plano · #${issue.number} ${issue.title}`;
+  const suggestions = await review.skillSuggestions(REVIEW_FIND_SKILL, issue, plan, cwd);
+  const state = { decisions: new Map(), notes: [] };
+  let finished;
+  try {
+    finished = await review.runLavishReview(
+      review.buildReviewHtml(title, plan, suggestions),
+      (prompts) => review.applyReviewPrompts(state, prompts, suggestions),
+      {
+        log: input.log,
+        onOpen: (url) => input.send({ type: "state", data: { reviewUrl: url } }),
+        reconnect: () => askYN("Reabrir revisão no Lavish?", "s", "Escolha Não para continuar a revisão no console."),
+      },
+    );
+  } catch (error) {
+    input.log("warn", `Revisão Lavish indisponível · ${error.message}`);
+  } finally {
+    input.send({ type: "state", data: { reviewUrl: null } });
+  }
+  if (!finished) {
+    const fallback = { ...suggestions, approved: [...state.decisions]
+      .filter(([, decision]) => decision === "aprovar").map(([index]) => index) };
+    const feedback = await input.review(title, plan, fallback);
+    state.decisions = new Map(feedback.skills.map((index) => [index, "aprovar"]));
+    if (feedback.text) state.notes.push(feedback.text);
+  }
+  const selected = suggestions.remote.filter((_, index) => state.decisions.get(index) === "aprovar");
+  const installed = await review.installApprovedSkills(selected, REVIEW_FIND_SKILL, cwd, harness, input.log);
+  if (state.notes.length) plan += `\n\n=== FEEDBACK DA REVISÃO ===\n${state.notes.join("\n\n")}`;
+  if (installed.length) plan += `\n\n=== SKILLS INSTALADAS COM APROVAÇÃO ===\n${installed.join("\n")}`;
+  return plan;
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const flag = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : null);
@@ -489,11 +527,11 @@ async function main() {
   if (!Object.hasOwn(AGENT_PRESETS, harness)) fail(`Harness desconhecido: ${harness}`, 2);
   input.send({ type: "state", data: { harness } });
   if (!argv.includes("--no-ensure") && process.env.ACP_SKIP_ENSURE !== "1") {
-    ensureDeps({ inherit: false, exclude: ["lavish-axi", ...(harness === "codex" ? ["opencode"] : [])],
+    ensureDeps({ inherit: false, exclude: harness === "codex" ? ["opencode"] : [],
       log: (message) => input.log(/falhou|NÃO instalado|não iniciou|aviso:/i.test(message) ? "warn" : "info", message) });
   }
 
-  const available = forcedModel ? null : probeAvailableModels(harness);
+  let catalog;
   if (!saved) {
     await installArtifacts(cwd, harness);
     await maybeCleanPlanning(cwd);
@@ -516,19 +554,25 @@ async function main() {
   const outputs = saved?.outputs ?? {};
   const models = saved?.models ?? {};
   const statuses = Object.fromEntries(ROLES.map((role) => [role, saved?.statuses?.[role] === "completed" ? "completed" : "queued"]));
-  const checkpoint = () => input.send({ type: "checkpoint", data: { harness, issue, semanticContext, outputs, models, statuses } });
+  const metrics = new Metrics(saved?.usage);
+  const checkpoint = () => input.send({ type: "checkpoint", data: {
+    harness, issue, semanticContext, outputs, models, statuses, usage: metrics.usageByRole(),
+  } });
   checkpoint();
-  const metrics = new Metrics();
   const publish = () => {
     const totals = metrics.totals();
     const session = metrics.phase(input.role())?.sessions.at(-1);
     input.send({ type: "state", data: {
-      issue, stages: ROLES.map((role) => ({ role, status: statuses[role], model: models[role]?.label, duration: metrics.duration(role) })),
+      issue, stages: ROLES.map((role) => ({
+        role, status: statuses[role], model: models[role]?.label, duration: metrics.duration(role),
+        ...summarizeUsage(metrics.phase(role).sessions),
+      })),
       tokens: totals.tokens, cost: totals.cost, costEstimated: totals.costEstimated, costPartial: totals.costPartial,
       contextUsed: session?.contextUsed ?? null, contextSize: session?.contextSize ?? null,
       tools: [...[...tools].filter(([key]) => key.startsWith("setup:")).map(([, tool]) => tool),
         ...[...tools].filter(([key]) => !key.startsWith("setup:")).slice(-20).map(([, tool]) => tool)],
       skills: [...totals.skills.keys()], hooks: [...totals.hooks.keys()], commands: [...totals.cmds.keys()],
+      mcpServers: [integrations.mcpServer.name],
     } });
   };
   const timer = setInterval(publish, 600);
@@ -541,16 +585,30 @@ async function main() {
       statuses[role] = "waiting";
       publish();
       if (!(await askYN(`Iniciar o agente ${role}?`, "s", ROLE_DESC[role]))) return "cancelled";
-      models[role] = await pickModelForRole(harness, role, forcedModel, available);
+      models[role] = forcedModel ? await modelPricing(harness, forcedModel) : null;
+      const selectModel = async (available) => {
+        catalog ??= Promise.all([
+          loadModelPools([harness], available.map(({ value }) => value)),
+          loadDefaults(SOURCE_ROOT),
+        ]).then(([pools, defaults]) => ({ pool: pools[harness] ?? [], available, defaults }));
+        models[role] = await pickModelForRole(harness, role, catalog);
+        statuses[role] = "running";
+        metrics.start(role);
+        publish();
+        return models[role];
+      };
       const rolePrompt = await rolePromptFor(role);
-      const prevContext = Object.entries(outputs).map(([name, output]) => `=== CONTEXTO · ${name.toUpperCase()} ===\n${output}`).join("\n\n");
+      const prevContext = Object.entries(outputs).filter(([name]) => statuses[name] === "completed")
+        .map(([name, output]) => `=== CONTEXTO · ${name.toUpperCase()} ===\n${output}`).join("\n\n");
       const run = (context) => runPhase({
-        preset: AGENT_PRESETS[harness], cwd, role, model: models[role],
+        preset: AGENT_PRESETS[harness], cwd, role, model: models[role], selectModel,
         rolePrompt, task, prevContext: context, metrics, renderer: makeRenderer(role), mcpServer: integrations.mcpServer,
       });
-      statuses[role] = "running";
-      metrics.start(role);
-      publish();
+      if (forcedModel) {
+        statuses[role] = "running";
+        metrics.start(role);
+        publish();
+      }
       const runWithRestart = async (context) => {
         let result = await run(context);
         while (result.stopReason === "cancelled") {
@@ -573,20 +631,18 @@ async function main() {
       if (role === "planner" || role === "supervisor") {
         statuses[role] = "waiting";
         publish();
-        const suggestions = role === "planner" ? review.skillSuggestions(REVIEW_FIND_SKILL, task) : null;
-        const feedback = await input.review(role === "planner" ? "Revisar plano" : "Revisar auditoria", result.output, suggestions);
         if (role === "planner") {
-          const selected = suggestions.remote.filter((_, index) => feedback.skills.includes(index));
-          const installed = review.handleSkillFeedback(selected.map((skill) => `SKILL APROVADA: ${skill.id}`), REVIEW_FIND_SKILL, console.log, cwd);
-          if (feedback.text) outputs.planner += `\n\n=== FEEDBACK DA REVISÃO ===\n${feedback.text}`;
-          if (installed.length) outputs.planner += `\n\n=== SKILLS INSTALADAS COM APROVAÇÃO ===\n${installed.join("\n")}`;
-        } else if (feedback.text) {
-          statuses[role] = "running";
-          publish();
-          const extra = await runWithRestart(`${prevContext}\n\n=== AUDITORIA ANTERIOR ===\n${outputs.supervisor}\n\n=== FEEDBACK DO USUÁRIO ===\n${feedback.text}`);
-          if (!extra) return "cancelled";
-          if (!["end_turn", "max_tokens"].includes(extra.stopReason)) throw new Error(`${role}: ${extra.stopReason}`);
-          outputs[role] = extra.output;
+          outputs.planner = await reviewPlanner({ issue, plan: result.output, cwd, harness });
+        } else {
+          const feedback = await input.review("Revisar auditoria", result.output, null);
+          if (feedback.text) {
+            statuses[role] = "running";
+            publish();
+            const extra = await runWithRestart(`${prevContext}\n\n=== AUDITORIA ANTERIOR ===\n${outputs.supervisor}\n\n=== FEEDBACK DO USUÁRIO ===\n${feedback.text}`);
+            if (!extra) return "cancelled";
+            if (!["end_turn", "max_tokens"].includes(extra.stopReason)) throw new Error(`${role}: ${extra.stopReason}`);
+            outputs[role] = extra.output;
+          }
         }
       }
       metrics.end(role);
@@ -605,6 +661,7 @@ async function main() {
   } finally {
     clearInterval(timer);
     publish();
+    if (!ROLES.every((role) => statuses[role] === "completed")) checkpoint();
   }
 }
 

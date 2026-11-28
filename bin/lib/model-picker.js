@@ -140,7 +140,8 @@ function buildEntry({ id, modelValue, provider, underlying, cache, label, note, 
   const key = underlying ?? modelKey(id);
   const normalizedKey = modelKey(id).replace(/-(free|preview|contributor)$/, "");
   const info = MODEL_INFO[key] ?? MODEL_INFO[modelKey(id)] ?? MODEL_INFO[normalizedKey] ?? {};
-  const meta = cacheModel(cache, provider, key) ?? cacheModel(cache, provider, modelKey(id));
+  const providerId = id.startsWith(`${provider}/`) ? id.slice(provider.length + 1) : id;
+  const meta = cacheModel(cache, provider, providerId) ?? cacheModel(cache, provider, key) ?? cacheModel(cache, provider, modelKey(id));
 
   const input = meta?.cost?.input ?? info.input ?? null;
   const output = meta?.cost?.output ?? info.output ?? null;
@@ -193,8 +194,8 @@ function listOpenCodeModelIds() {
   return lines.length > 0 ? [...new Set(lines)] : null;
 }
 
-async function buildOpenCodePool(cache) {
-  const fromCli = listOpenCodeModelIds();
+async function buildOpenCodePool(cache, availableIds) {
+  const fromCli = availableIds?.length ? availableIds : listOpenCodeModelIds();
   const ids = fromCli ?? [];
   if (ids.length === 0 && cache) {
     for (const provider of ["opencode-go", "opencode"]) {
@@ -250,8 +251,8 @@ async function readCodexConfigModel() {
   }
 }
 
-async function buildCodexPool(cache) {
-  const ids = new Set(CODEX_MODELS);
+async function buildCodexPool(cache, availableIds) {
+  const ids = new Set(availableIds?.length ? availableIds : CODEX_MODELS);
   const configured = (await readCodexConfigModel()) ?? process.env.CODEX_MODEL ?? process.env.OPENAI_MODEL;
   if (configured) ids.add(configured);
 
@@ -277,13 +278,13 @@ async function buildCodexPool(cache) {
   );
 }
 
-export async function loadModelPools(platforms) {
+export async function loadModelPools(platforms, availableIds) {
   const cache = await loadOpenCodeCache();
   const pools = {};
   for (const platform of platforms) {
-    if (platform === "opencode") pools.opencode = await buildOpenCodePool(cache);
+    if (platform === "opencode") pools.opencode = await buildOpenCodePool(cache, availableIds);
     if (platform === "claude") pools.claude = await buildClaudePool(cache);
-    if (platform === "codex") pools.codex = await buildCodexPool(cache);
+    if (platform === "codex") pools.codex = await buildCodexPool(cache, availableIds);
   }
   return pools;
 }

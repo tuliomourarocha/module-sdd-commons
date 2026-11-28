@@ -15,7 +15,7 @@
   --accent-soft: #302025;
   --accent-line: #653548;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font: 14px/1.4 "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font: 15px/1.4 "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -107,6 +107,7 @@ progress::-webkit-progress-bar { background: #303c34; }
 progress::-webkit-progress-value { background: var(--green); }
 .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; padding: 12px 14px; }
 .metric { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.metric:last-child { grid-column: 1 / -1; }
 .metric p { color: var(--muted); font-size: .88rem; }
 .metric b { font-size: clamp(17px, 1.8vw, 25px); display: block; letter-spacing: -.055em; overflow-wrap: anywhere; }
 .side-list { list-style: none; padding: 4px 15px; }
@@ -122,9 +123,9 @@ progress::-webkit-progress-value { background: var(--green); }
 .filters { display: flex; gap: 4px; flex-wrap: wrap; }
 .filters button { font-size: .88rem; padding: 4px 8px; }
 .log-rows { list-style: none; padding: 4px 15px 8px; min-height: 110px; max-height: 455px; overflow: auto; background: #151816; scrollbar-color: var(--line) transparent; }
-.log-rows li { display: grid; grid-template-columns: 64px 47px 110px minmax(0, 1fr); gap: 8px; font: .84rem/1.55 var(--mono); border-bottom: 1px solid #272d29; padding: 6px 1px; }
+.log-rows li { display: grid; grid-template-columns: 76px 55px 110px minmax(0, 1fr); gap: 8px; font: 1rem/1.55 var(--mono); border-bottom: 1px solid #272d29; padding: 6px 1px; }
 .log-rows time, .log-role { color: #bdc6bd; }
-.log-level { width: fit-content; align-self: start; padding: 0 4px; border-radius: 3px; background: #303834; color: #e6eae5; font-size: .76rem; }
+.log-level { width: fit-content; align-self: start; padding: 0 4px; border-radius: 3px; background: #303834; color: #e6eae5; font-size: .85rem; }
 .log-level.tool { color: #f6c5d2; background: #3e2430; }
 .log-level.warn { color: #efd098; background: #382e22; }
 .log-text { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -148,7 +149,7 @@ textarea { resize: vertical; min-height: 85px; }
 @media (max-width: 1050px) {
   .shell { width: calc(100% - 40px); }
   .dashboard { grid-template-columns: minmax(0, 1.5fr) minmax(295px, 1fr); gap: 14px; }
-  .log-rows li { grid-template-columns: 60px 38px 86px minmax(0, 1fr); gap: 4px; }
+  .log-rows li { grid-template-columns: 76px 52px 86px minmax(0, 1fr); gap: 4px; }
   th, td { padding-inline: 7px; }
 }
 @media (max-width: 800px) {
@@ -168,7 +169,7 @@ textarea { resize: vertical; min-height: 85px; }
   .protocol { top: 10px; right: 11px; }
   .hero-copy { padding-top: 56px; }
   #wave { width: 90%; }
-  .log-rows li { grid-template-columns: 58px 38px minmax(0, 1fr); }
+  .log-rows li { grid-template-columns: 76px 52px minmax(0, 1fr); }
   .log-text { grid-column: 1 / -1; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }

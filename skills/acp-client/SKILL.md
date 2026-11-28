@@ -25,15 +25,17 @@ de `.planning/` e indique a issue do GitHub. O console verifica `gh auth status`
 antes de ler a issue. Aprove as fases planner, builder, reviewer, shipper e
 supervisor e escolha um modelo por fase, salvo quando `--model` estiver definido.
 
-A página reúne permissões ACP, mensagens ao agente, revisão do plano e da
-auditoria, seleção de skills, logs e métricas. Skills remotas selecionadas
-passam por auditoria antes da instalação. O feedback do plano segue para o
-builder e o da auditoria pode iniciar mais um turno do supervisor. Harnesses com
-steering nativo recebem mensagens durante o turno. Os demais recebem a mensagem
-em um turno extra.
+A página reúne permissões ACP, mensagens ao agente, logs e métricas por fase.
+Ao fim do planner, o console abre um HTML temporário no Lavish Editor com o plano
+e sugestões de skills.sh baseadas na issue. Enfileire decisões e observações e
+use **Send & End** para concluir. Skills remotas aprovadas passam pela auditoria
+pública antes da instalação. O feedback do plano segue para o builder. No
+console, o feedback da auditoria pode iniciar mais um turno do supervisor.
+Harnesses com steering nativo recebem mensagens durante o turno. Os demais
+recebem a mensagem em um turno extra.
 
 O modo de uma subtask, `sdd-acp client`, continua disponível para macros e
-automações. As opções de Lavish abaixo são para esse modo.
+automações. A opção `--ui lavish` desse modo abre um console de steering durante o turno.
 
 ## Bootstrap de dependências (automático a cada run)
 

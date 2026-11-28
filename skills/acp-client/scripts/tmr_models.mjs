@@ -19,7 +19,20 @@ export function mergeAvailableModels(ranked, available) {
   return result;
 }
 
-/** O identificador só complementa o nome quando eles forem diferentes. */
+export function sessionModels(info) {
+  const option = info.configOptions?.find(({ category, type }) => category === "model" && type === "select");
+  const values = option?.options?.flatMap((item) => item.options ?? [item]) ?? [];
+  const byId = new Map();
+  for (const { value, name } of [...values, ...(info.models?.availableModels ?? [])
+    .map(({ modelId, name }) => ({ value: modelId, name }))]) {
+    if (typeof value === "string" && value && !byId.has(value)) byId.set(value, { value, name });
+  }
+  return { option, available: [...byId.values()], current: option?.currentValue ?? info.models?.currentModelId };
+}
+
 export function modelDisplayName(entry) {
-  return entry.label === entry.modelValue ? entry.modelValue : `${entry.label}  [${entry.modelValue}]`;
+  if (entry.label === entry.modelValue) return entry.modelValue;
+  const separator = entry.modelValue.indexOf("/");
+  if (separator !== -1 && entry.label === entry.modelValue.slice(separator + 1)) return entry.modelValue;
+  return `${entry.label}  [${entry.modelValue}]`;
 }

@@ -15,7 +15,7 @@ Uso:
   find_skill.py --audit <id>                    # auditoria de segurança de 1 skill remota
   find_skill.py "<q>" --remote --json           # saída máquina para macros
 Saída: "<caminho do SKILL.md>  <nome> — <descrição>" (local) e
-  "[REMOTE] <url>  <nome> — <fonte> · N installs · instalar: npx skills add <fonte>".
+  "[REMOTE] <url>  <nome> — <fonte> · N installs · instalar: npx skills add <fonte> --skill <slug>".
 Exit 0 = encontrou; 1 = nada encontrado.
 """
 import argparse
@@ -164,7 +164,7 @@ def main():
         for e in local:
             print(f"{e['path']}  {e['name']} — {short(e['desc'])}")
         for r in remote:
-            print(f"[REMOTE] {r['url']}  {r['name']} — {r['source']} · {r['installs']} installs · instalar: npx skills add {r['source']}")
+            print(f"[REMOTE] {r['url']}  {r['name']} — {r['source']} · {r['installs']} installs · instalar: {r['install']}")
     if not local and not remote:
         print(f"Nenhuma skill encontrada para: {' '.join(args.query)}", file=sys.stderr)
         return 1
@@ -183,22 +183,37 @@ def search_skills_sh(q, limit=8):
         req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-    except Exception as exc:  # rede, 401, shape inesperado → degrada para local
+        skills = data["skills"]
+        if not isinstance(skills, list):
+            raise ValueError("resposta inválida do skills.sh")
+    except Exception as exc:
         print(f"warning: skills.sh indisponível ({exc}); seguindo apenas com skills locais.", file=sys.stderr)
         return [], str(exc)
     out = []
-    for s in data.get("skills", []):
-        sid = s.get("id") or f"{s.get('source','?')}/{s.get('skillId','?')}"
+    for s in skills:
+        if not isinstance(s, dict):
+            continue
+        source = s.get("source")
+        slug = s.get("skillId") or s.get("id")
+        if not isinstance(source, str) or not re.fullmatch(r"[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*", source):
+            continue
+        if not isinstance(slug, str):
+            continue
+        slug = slug.removeprefix(f"{source}/")
+        if not re.fullmatch(r"[A-Za-z0-9][\w.-]*", slug):
+            continue
+        sid = f"{source}/{slug}"
+        installs = s.get("installs")
         out.append({
             "id": sid,
-            "name": s.get("name") or s.get("skillId") or sid,
-            "source": s.get("source") or sid,
-            "installs": int(s.get("installs") or 0),
-            "url": f"https://www.skills.sh/{sid}",
-            "install": f"npx skills add {s.get('source') or sid}",
+            "slug": slug,
+            "name": s.get("name") or slug,
+            "source": source,
+            "installs": installs if isinstance(installs, int) else 0,
+            "url": f"https://skills.sh/{urllib.request.quote(sid)}",
+            "install": f"npx skills add {source} --skill {slug}",
         })
-    out.sort(key=lambda x: -x["installs"])
-    return out, None
+    return out[:limit], None
 
 
 def audit_skill(skill_id, as_json=False):

@@ -5,17 +5,24 @@ export class SessionUsage {
   reportedCost = null;
   estimatedCost = null;
   missingCost = false;
+  reportVersion = 0;
 
   update({ cost, used, size }) {
     if (isCount(used)) this.contextUsed = used;
     if (isCount(size) && size > 0) this.contextSize = size;
     // O ACP publica snapshots cumulativos dentro de cada sessão.
-    if (cost?.currency === "USD" && isCount(cost.amount)) this.reportedCost = cost.amount;
+    if (cost?.currency === "USD" && isCount(cost.amount)) {
+      this.reportedCost = cost.amount;
+      this.reportVersion++;
+      this.estimatedCost = null;
+      this.missingCost = false;
+    }
   }
 
-  addTurn(usage, model, { steering = false } = {}) {
+  addTurn(usage, model, { steering = false, reportVersion = this.reportVersion } = {}) {
+    const reported = reportVersion !== this.reportVersion;
     if (!usage) {
-      if (!steering) this.missingCost = true;
+      if (!steering && !reported) this.missingCost = true;
       return;
     }
     const { inputTokens, outputTokens, totalTokens, cachedReadTokens = 0, cachedWriteTokens = 0, thoughtTokens = 0 } = usage;
@@ -25,6 +32,7 @@ export class SessionUsage {
     const write = cachedWriteTokens ?? 0;
     const knownTokens = input + output + read + write;
     this.tokens += isCount(totalTokens) ? totalTokens : knownTokens;
+    if (reported) return;
     if (!isCount(inputTokens) || !isCount(outputTokens) || !isCount(model?.input) || !isCount(model?.output)) {
       if (totalTokens !== 0) this.missingCost = true;
       return;
@@ -46,12 +54,11 @@ export function summarizeUsage(sessions) {
   let partial = false;
   for (const session of sessions) {
     tokens += session.tokens;
-    const amount = session.reportedCost ?? session.estimatedCost;
+    const amount = session.reportedCost == null && session.estimatedCost == null
+      ? null : (session.reportedCost ?? 0) + (session.estimatedCost ?? 0);
     if (amount != null) cost = (cost ?? 0) + amount;
-    if (session.reportedCost == null) {
-      estimated ||= session.estimatedCost != null;
-      partial ||= session.missingCost;
-    }
+    estimated ||= session.estimatedCost != null;
+    partial ||= session.missingCost;
   }
   return { tokens, cost, costEstimated: estimated, costPartial: cost != null && partial };
 }

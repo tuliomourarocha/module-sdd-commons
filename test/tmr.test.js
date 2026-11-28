@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { observeRtk } from "../skills/acp-client/scripts/tmr_rtk.mjs";
 import { SessionUsage, summarizeUsage } from "../skills/acp-client/scripts/tmr_usage.mjs";
+import { applyReviewPrompts, buildReviewHtml } from "../skills/acp-client/scripts/tmr_review.mjs";
 
 test("parar o agente encerra pergunta pendente e aciona cancelamento da fase", async (t) => {
   const moduleUrl = new URL("../skills/acp-client/scripts/tmr_web_input.mjs", import.meta.url).href;
@@ -50,6 +51,43 @@ test("acumula custo por sessão com cache e substitui a estimativa pelo snapshot
     tokens: 6_000, cost: 0.01892, costEstimated: true, costPartial: true,
   });
   assert.equal(codex.contextUsed, 16_000);
+});
+
+test("soma turnos posteriores sem repetir o custo incluído em snapshots", () => {
+  const planner = new SessionUsage();
+  planner.update({ cost: { amount: 0.04, currency: "USD" } });
+  const builder = new SessionUsage();
+  const model = { input: 2, output: 8 };
+  const turn = { inputTokens: 1_000, outputTokens: 500, totalTokens: 1_500 };
+  builder.update({ cost: { amount: 0.006, currency: "USD" } });
+  builder.addTurn(turn, model, { reportVersion: 0 });
+  builder.addTurn(turn, model, { reportVersion: 1 });
+  builder.addTurn(null, model, { reportVersion: 1 });
+
+  const restored = JSON.parse(JSON.stringify([planner, builder]));
+  const total = summarizeUsage(restored);
+  assert.equal(total.tokens, 3_000);
+  assert.ok(Math.abs(total.cost - 0.052) < 1e-12);
+  assert.equal(total.costEstimated, true);
+  assert.equal(total.costPartial, true);
+
+  builder.update({ cost: { amount: 0.013, currency: "USD" } });
+  assert.deepEqual(summarizeUsage([builder]), { tokens: 3_000, cost: 0.013, costEstimated: false, costPartial: false });
+});
+
+test("preserva o texto final do Lavish e considera a última decisão enviada para cada skill", () => {
+  const suggestions = { local: [], remote: [{ name: "<script>React</script>", url: "https://skills.sh/org/repo/react" }] };
+  const state = { notes: [], decisions: new Map() };
+  applyReviewPrompts(state, [
+    { tag: "tmr-plan-review", prompt: '{"decisions":[["skill-0","aprovar"],["skill-1","aprovar"]],"feedback":"Usar React"}' },
+    { tag: "tmr-plan-review", prompt: '{"decisions":[["skill-0","rejeitar"]]}' },
+    { tag: "annotation", text: "Trecho selecionado", prompt: "Cobrir também a navegação por teclado." },
+  ], suggestions);
+  assert.deepEqual([...state.decisions], [[0, "rejeitar"]]);
+  assert.deepEqual(state.notes, ["Usar React", "Cobrir também a navegação por teclado."]);
+  const html = buildReviewHtml("Plano", "<img src=x>", suggestions);
+  assert.ok(html.includes("&lt;img src=x&gt;"));
+  assert.ok(html.includes("&lt;script&gt;React&lt;/script&gt;"));
 });
 
 test("registra cada consulta do RTK e preserva a resposta do hook nativo", { skip: process.platform === "win32" }, async (t) => {

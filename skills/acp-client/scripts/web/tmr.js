@@ -114,6 +114,8 @@ function renderDetails(run = {}) {
     $("issue").replaceChildren(
       url ? element("a", { href: url, target: "_blank", rel: "noopener", class: "row-label" }, `⟐  ${issueNumber(run)}`) : element("span", { class: "row-label" }, `⟐  ${issueNumber(run)}`),
       element("h4", {}, issue.title), element("p", { class: "issue-body", title: issue.body }, issue.body ?? ""),
+      ...(run.status === "running" && run.reviewUrl
+        ? [element("a", { href: run.reviewUrl, target: "_blank", rel: "noopener" }, "Abrir revisão no Lavish")] : []),
       element("div", { class: "progress-label" }, "Progresso da execução", element("b", {}, `${progress}%`)),
       element("progress", { value: progress, max: 100, "aria-label": "Progresso da execução" }));
   } else {
@@ -127,10 +129,20 @@ function renderDetails(run = {}) {
   const costDetail = run.cost == null ? (run.status === "running" ? "Aguardando dados de custo" : "Sem dados de custo") :
     [run.costEstimated ? "Estimativa por tokens" : "Informado pelo harness", run.costPartial ? "total parcial" : null].filter(Boolean).join(" · ");
   $("metrics").replaceChildren(
-    metric("♯ Tokens na sessão", number.format(run.tokens ?? 0), context),
-    metric("◎ Custo acumulado", run.cost == null ? "—" : `US$ ${usd.format(run.cost)}`, costDetail, "accent"));
+    metric("♯ Tokens na execução", number.format(run.tokens ?? 0), context),
+    metric("◎ Custo acumulado", run.cost == null ? "—" : `US$ ${usd.format(run.cost)}`, costDetail, "accent"),
+    metric("⌘ MCPs", (run.mcpServers ?? []).join(", ") || "—", (run.mcpServers ?? []).length
+      ? "Disponibilizados ao harness · conexão não confirmada" : "Nenhum MCP informado"));
   $("agent-count").textContent = stages.length;
-  $("agents").replaceChildren(...(stages.length ? stages.map((stage) => sideItem("♧", stage.role, stage.model, stage.status)) : [empty("Nenhum agente nesta execução.")]));
+  const agentItems = stages.map((stage) => {
+    const details = [
+      stage.model,
+      stage.tokens > 0 ? `${number.format(stage.tokens)} tokens` : null,
+      stage.cost == null ? null : `US$ ${usd.format(stage.cost)}${stage.costEstimated ? " estimados" : ""}${stage.costPartial ? " · parcial" : ""}`,
+    ].filter(Boolean).join(" · ");
+    return sideItem("♧", stage.role, details, stage.status);
+  });
+  $("agents").replaceChildren(...(agentItems.length ? agentItems : [empty("Nenhum agente nesta execução.")]));
   const activity = [
     ...(run.skills ?? []).map((name) => sideItem("ϟ", name, "Skill", "completed", "Carregada")),
     ...(run.hooks ?? []).map((name) => sideItem("▣", name, "Hook", "observed", "Acionado")),
@@ -219,6 +231,8 @@ function showPrompt(run, step) {
     if (local.length) body.push(element("p", { class: "muted" }, `Skills locais · ${local.map(({ name }) => name).join(", ")}`));
     const remote = step.suggestions?.remote ?? [];
     const checks = remote.map(() => element("input", { type: "checkbox" }));
+    for (const index of step.suggestions?.approved ?? []) checks[index].checked = true;
+    if (step.suggestions?.warning) body.push(element("p", { class: "muted" }, `Consulta ao skills.sh com falhas. ${step.suggestions.warning}`));
     if (remote.length) {
       body.push(element("p", {}, "Selecione skills para auditar e instalar."));
       remote.forEach((skill, index) => body.push(element("label", { class: "setting" }, checks[index], ` ${skill.name} · ${skill.source}`)));
