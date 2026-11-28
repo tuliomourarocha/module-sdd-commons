@@ -43,8 +43,14 @@ test("cliente Claude aplica --model na criação e retomada e orienta login ACP"
     assert.deepEqual(process.argv.slice(2), ["-y", "@agentclientprotocol/claude-agent-acp"]);
     const model = { id: "model", category: "model", type: "select", currentValue: "sonnet" };
     let current = "sonnet";
+    let promptId;
     require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
-      const { id, method, params } = JSON.parse(line);
+      const { id, method, params, result } = JSON.parse(line);
+      if (id === 999 && !method) {
+        assert.deepEqual(result, { outcome: { outcome: "selected", optionId: process.env.SDD_EXPECT_PERMISSION } });
+        console.log(JSON.stringify({ jsonrpc: "2.0", id: promptId, result: { stopReason: "end_turn" } }));
+        return;
+      }
       if (id == null) return;
       const reply = (data) => console.log(JSON.stringify({ jsonrpc: "2.0", id, ...data }));
       if (method === "initialize") {
@@ -64,7 +70,13 @@ test("cliente Claude aplica --model na criação e retomada e orienta login ACP"
         reply({ result: { configOptions: [{ ...model, currentValue: current }] } });
       } else if (method === "session/prompt") {
         assert.equal(current, "opus");
-        reply({ result: { stopReason: "end_turn" } });
+        if (process.env.SDD_EXPECT_PERMISSION) {
+          promptId = id;
+          console.log(JSON.stringify({ jsonrpc: "2.0", id: 999, method: "session/request_permission", params: {
+            toolCall: { kind: "execute", title: "Comando" },
+            options: [{ kind: "allow_once", optionId: "allow" }, { kind: "reject_once", optionId: "reject" }],
+          } }));
+        } else reply({ result: { stopReason: "end_turn" } });
       } else {
         assert.fail(method);
       }
@@ -85,4 +97,9 @@ test("cliente Claude aplica --model na criação e retomada e orienta login ACP"
   const unauthenticated = run([], { SDD_TEST_AUTH_REQUIRED: "1" });
   assert.equal(unauthenticated.status, 3);
   assert.match(unauthenticated.stderr, /claude-agent-acp --cli auth login/);
+  for (const [args, expected] of [[[], "allow"], [["--permission", "safe"], "reject"]]) {
+    const result = run(args, { SDD_EXPECT_PERMISSION: expected });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout.trim().split("\n").at(-1)).stopReason, "end_turn");
+  }
 });

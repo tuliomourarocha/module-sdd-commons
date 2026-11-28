@@ -98,7 +98,7 @@ node skills/acp-client/scripts/acp_client.mjs \
 
 1. **Uma subtask = um run** (prompt autocontido com o trecho do `PLAN.md` + arquivos-alvo). Não reutilize sessão entre subtasks diferentes; `--session` é para continuar a MESMA subtask.
 2. Rode com `--json` e parseie a linha `{"type":"result"}`; eventos de `tool_call`/`permission` ficam disponíveis para auditoria no transcript (hook do supervisor).
-3. **Permissões:** em run não-interativo o default `safe` nega edit/delete/move — para o builder executar de verdade use `--permission ask` num run em TTY, `allow-all` (explícito, sob sua responsabilidade) ou deixe o AGENTE editar direto nos arquivos do repo dele e traga o diff.
+3. **Permissões:** Claude usa `allow-all` por padrão no cliente e no orquestrador: solicitações ACP são aprovadas automaticamente. No cliente, `--permission safe` ou `--permission ask` altera esse padrão. Outros agentes e comandos personalizados usam `safe` por padrão; para permitir edições use `--permission ask` em TTY ou `--permission allow-all`.
 4. **Interação do usuário no meio do processo:** em run interativo use `--ui lavish` (browser) ou TTY (terminal). Em run de macro não-interativo, o usuário NÃO intercepta — programe o ponto de interação como um run separado com `--ui lavish`.
 5. **Fallback:** agente ausente/instável → implemente com o critério do próprio macro e registre a pendência no resumo (nunca trave o gate).
 6. `--print-logs`: para debug do OpenCode rode `opencode --print-logs acp` (via `--command opencode --arg --print-logs --arg acp`) — stdout carrega só protocolo; logs vão a stderr.

@@ -263,13 +263,13 @@ async function runPhase({ preset, cwd, role, model, selectModel, rolePrompt, tas
       const m = req.method;
       if (m === "session/request_permission") {
         const options = req.params?.options ?? [];
-        const allow = options.find((o) => o.kind === "allow_once");
+        const allow = options.find((o) => o.kind === "allow_once") ?? options.find((o) => o.kind === "allow_always");
         const reject = options.find((o) => o.kind === "reject_once");
         const tool = req.params?.toolCall ?? {};
         const kind = tool.kind ?? "ACP";
         const title = tool.title ?? "Ferramenta ACP";
         const details = [title, ...(tool.locations ?? []).map(({ path }) => path)];
-        const approved = allow && (kind === "read" || await askYN(`Permitir ferramenta · ${kind}?`, "n", details.join("\n")));
+        const approved = allow && (preset.platform === "claude" || kind === "read" || await askYN(`Permitir ferramenta · ${kind}?`, "n", details.join("\n")));
         const chosen = approved ? allow : reject;
         renderer.emit({ type: "permission", kind, title, choice: approved ? "permitida" : "recusada" });
         return { outcome: chosen ? { outcome: "selected", optionId: chosen.optionId } : { outcome: "cancelled" } };

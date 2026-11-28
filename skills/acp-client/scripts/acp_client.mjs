@@ -27,9 +27,9 @@
  *   --session <id>             retomar sessão existente (session/load)
  *   --model <id>              modelo da sessão (ex.: sonnet para Claude Code)
  *   --permission safe|allow-all|ask
- *                              safe (default): allow "read"; edit/delete/move
+ *                              safe (default para outros agentes): allow "read"; edit/delete/move
  *                              dependem de TTY (y/n) ou são rejeitados.
- *                              allow-all: aceita todo allow_*; ask: pergunta sempre.
+ *                              allow-all (default Claude): aceita todo allow_*; ask: pergunta sempre.
  *   --ui lavish                console HTML (Lavish) para interação ao vivo
  *   --json                     saída máquina (uma linha JSON por evento)
  *   --no-ensure                pula o bootstrap de dependências
@@ -58,7 +58,7 @@ function parseArgs(argv) {
     session: null,
     model: null,
     mode: null,
-    permission: "safe",
+    permission: null,
     ui: null,
     json: false,
     noEnsure: false,
@@ -115,6 +115,7 @@ function parseArgs(argv) {
     }
   }
   // steering: TTY (terminal) ou --ui lavish; nunca em stdin pipeado sem TTY
+  opts.permission ??= !opts.command && opts.agent === "claude" ? "allow-all" : "safe";
   opts.steer = opts.ui ?? (process.stdin.isTTY ? "terminal" : null);
   if (!opts.command && !AGENT_PRESETS[opts.agent]) fail("sem agente", 2);
   return opts;
@@ -314,7 +315,7 @@ async function handleAgentRequest(req, ctx) {
       choice: option?.kind ?? "none",
     });
     if (!picked) throw new Error("nenhuma opção de permissão disponível");
-    return { optionId: picked };
+    return { outcome: { outcome: "selected", optionId: picked } };
   }
   if (m === "fs/read_text_file") {
     const { path: p, line, limit } = req.params ?? {};
