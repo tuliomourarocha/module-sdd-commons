@@ -1,4 +1,12 @@
-.opencode/
-
-# CodeGraph (índice semântico gerado)
-.codegraph/
+# Artefatos locais da squad e do ACP
+/.opencode/
+/.claude/
+/.codex/
+/.agents/
+/.planning/
+/.codegraph/
+/.rtk/
+/.mcp.json
+/opencode.json
+/skills-lock.json
+/RTK.md
