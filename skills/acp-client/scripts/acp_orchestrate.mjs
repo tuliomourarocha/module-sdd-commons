@@ -16,7 +16,7 @@ import { serveTmr } from "./tmr_web.mjs";
 import { editDetails, observeFiles, prepareTools, toolOutput } from "./tmr_tools.mjs";
 import { observeMcp } from "./tmr_mcp.mjs";
 import { deliveryStart, runDelivery } from "./tmr_delivery.mjs";
-import { phaseProblem, recoveryOwner, settleStage } from "./tmr_recovery.mjs";
+import { phaseProblem, reviewFailure, settleStage } from "./tmr_recovery.mjs";
 import { observeRtk } from "./tmr_rtk.mjs";
 import { SessionUsage, summarizeUsage } from "./tmr_usage.mjs";
 
@@ -40,7 +40,7 @@ const ROLE_DESC = {
   planner: "planeja produto e arquitetura — produz PRD + PLAN em memória",
   builder: "implementa o plano — código, testes e verificação local",
   reviewer: "revisa arquitetura e risco — parecer APPROVED ou CHANGES_REQUESTED",
-  shipper: "autoriza o hook de entrega a criar o commit, publicar em origin, abrir o PR e sincronizar a issue",
+  shipper: "prepara o commit da alteração aprovada e aciona o hook de entrega",
   supervisor: "auditoria final — hooks, métricas, rtk gain, riscos e pendências",
 };
 
@@ -446,9 +446,9 @@ async function rolePromptFor(role) {
       : role === "builder"
         ? `=== RESUMO === (o que fez, arquivos alterados, decisões, pendências). Implemente direto nos arquivos do repo.`
         : role === "reviewer"
-          ? `=== PARECER === (arquitetura/risco/bloqueios; verdict APPROVED ou CHANGES_REQUESTED).`
+          ? `Valide a implementação por inspeção. Liste no === PARECER === os arquivos, linhas e correções necessárias para o builder. Termine com APPROVED ou CHANGES_REQUESTED em uma linha própria. Use BLOQUEIO para impedimentos operacionais que impossibilitem a revisão.`
           : role === "shipper"
-            ? `No ACP, o orquestrador executa e verifica o hook de entrega no seu gate. Sua tarefa é examinar se a entrega está pronta e informar impedimentos; use apenas inspeção para esta fase. Saída: === SHIP === com pendências concretas, se houver.`
+            ? `Seu escopo é o commit do código já aprovado. Informe os impedimentos de entrega por inspeção. O orquestrador executa o commit e publica pelo hook. Saída: === SHIP === com pendências concretas, se houver.`
             : `Você é o supervisor: auditoria FINAL da execução. Leia .planning/STATE.md e .planning/HANDOFF.md (se existirem), verifique o que foi entregue no repo, rode 'rtk gain' para métricas de compressão e produza o parecer de auditoria. Saída: === SUPERVISOR === (entregas, hooks/marcadores observados, métricas, riscos, pendências).`;
     return `Você é o macro ${role.toUpperCase()} da squad SDD, executando via ACP em um harness externo. Siga o seu papel:\n\n${body.slice(0, 12_000)}\n\nCONTRATO DE SAÍDA (texto, no fim da resposta): ${contract}` +
       `\n\nFERRAMENTAS DA SQUAD: comece a exploração de código e impacto pelo MCP codegraph (codegraph_explore). Nos comandos shell, use o hook nativo do RTK para reescrita automática; os hooks determinísticos da squad (⟐ hook ✓) rodam nas edições. Se algo impedir a conclusão da fase, escreva uma linha BLOQUEIO: <causa concreta e evidência>.`;
@@ -638,14 +638,15 @@ async function main() {
     return null;
   };
 
-  const callRecoveryAgent = async (role, context, instructions) => {
+  const callRecoveryAgent = async (role, context, instructions, beforeRun) => {
     const status = statuses[role];
     const previousRole = input.role();
     input.setRole(role);
     statuses[role] = "waiting";
     publish();
     try {
-      if (!await askYN(`Acionar ${role} para o desbloqueio?`, "s", instructions)) return null;
+      if (!await askYN(`Acionar ${role}?`, "s", instructions)) return null;
+      beforeRun?.();
       return await runAgent(role, context, instructions);
     } finally {
       statuses[role] = status;
@@ -654,30 +655,21 @@ async function main() {
     }
   };
 
-  async function recover(role, error) {
+  async function repairCode(role, error) {
     const context = `${contextFor()}\n\n=== BLOQUEIO EM ${role.toUpperCase()} ===\n${error}`;
-    const diagnostic = role === "supervisor" ? "reviewer" : "supervisor";
-    const diagnosis = await callRecoveryAgent(diagnostic, context,
-      "Somente diagnóstico. Investigue o bloqueio, indique a correção mínima e termine com RESPONSÁVEL: planner, builder, reviewer, shipper, supervisor ou humano (escolha um). Use humano para credenciais, acessos ou decisões que dependem dele.");
-    if (!diagnosis) return null;
-    const failed = phaseProblem(diagnosis);
-    const owner = failed ? "humano" : recoveryOwner(diagnosis.output);
-    input.log("info", `${diagnostic} encaminhou o bloqueio de ${role} a ${owner}`);
-    if (owner === "humano") return { notes: failed ?? diagnosis.output };
-    const repair = await callRecoveryAgent(owner, `${context}\n\n=== DIAGNÓSTICO · ${diagnostic} ===\n${diagnosis.output}`,
-      "Corrija somente o bloqueio encaminhado dentro do escopo do seu papel. O orquestrador cuida do commit, push e PR no gate do shipper. Registre a evidência da correção ou informe BLOQUEIO: <ação necessária>.");
-    if (!repair) return { notes: diagnosis.output };
+    input.log("info", `Bloqueio de código em ${role} encaminhado ao builder`);
+    const repair = await callRecoveryAgent("builder", context,
+      "Corrija os problemas de código apontados no bloqueio. Registre a evidência da correção para o reviewer, ou informe BLOQUEIO: <ação necessária>. O commit fica a cargo do gate do shipper.", () => {
+        if (role === "shipper") {
+          statuses.reviewer = "queued";
+          checkpoint();
+        }
+      });
+    if (!repair) return null;
     const problem = phaseProblem(repair);
-    const notes = `${diagnostic} → ${owner}\n${diagnosis.output}\n\n${repair.output}`.slice(-8000);
+    const notes = `${role} → builder\n${repair.output}`.slice(-8000);
     if (problem) return { notes: `${notes}\n${problem}` };
-    recoveryNotes.push(notes);
-    checkpoint();
-    if (owner === "builder" && role === "shipper") {
-      const reviewed = await callRecoveryAgent("reviewer", contextFor(), "Revise a correção do builder para liberar a entrega.");
-      const reviewProblem = reviewed ? phaseProblem(reviewed, { requireVerdict: true }) : "Correção aguarda revisão.";
-      if (reviewProblem) return { notes: `${notes}\n${reviewProblem}`, retryRecovery: !!reviewed };
-      outputs.reviewer = reviewed.output;
-    }
+    recoveryNotes.push(`${error.slice(-4000)}\n\n${notes}`);
     return { ready: true, notes };
   }
 
@@ -693,11 +685,25 @@ async function main() {
         resumeContext: blocker?.role === role ? blocker.error : "",
         async run(previous) {
           const context = [contextFor(), previous && `=== RETOMADA ===\n${previous}`].filter(Boolean).join("\n\n");
+          if (role === "shipper" && statuses.reviewer !== "completed") {
+            const reviewed = await callRecoveryAgent("reviewer", context, "Valide a correção do builder antes da entrega.");
+            if (!reviewed) return null;
+            const failure = reviewFailure(reviewed);
+            if (failure) return failure;
+            outputs.reviewer = reviewed.output;
+            statuses.reviewer = "completed";
+            checkpoint();
+          }
           if (role !== "shipper" || !shipperReady) {
             const result = await runAgent(role, context);
             if (!result) return null;
-            const error = phaseProblem(result, { requireVerdict: role === "reviewer" });
-            if (error) return { error };
+            if (role === "reviewer") {
+              const failure = reviewFailure(result);
+              if (failure) return failure;
+            } else {
+              const error = phaseProblem(result);
+              if (error) return { error };
+            }
             outputs[role] = result.output;
           }
 
@@ -708,8 +714,8 @@ async function main() {
             const published = await runDelivery({ root: SOURCE_ROOT, cwd, issue, delivery, checkpoint,
               outputs: { ...outputs, builder: [outputs.builder, ...recoveryNotes.slice(-6)].filter(Boolean).join("\n\n") },
               report: (level, line) => { input.log(level, line); metrics.scanToolOutput(role, line); } });
-            delivery.verified = published.verified;
             if (published.error) return published;
+            delivery.verified = published.verified;
             outputs.shipper += `\n\nCommit ${published.verified.commit} confirmado em origin/${published.verified.branch}\n${published.details}`;
           } else if (role === "planner") {
             statuses[role] = "waiting";
@@ -732,7 +738,12 @@ async function main() {
           }
           return { completed: true };
         },
-        recover: (error) => recover(role, error),
+        async recover(error, failure) {
+          if (!failure.repairCode) return null;
+          const repair = await repairCode(role, error);
+          checkpoint();
+          return repair;
+        },
         wait: (error) => askYN("Verificar o bloqueio novamente?", "s", `${error}\n\nEscolha Não para pausar e retomar depois.`),
         onBlocked(error) {
           statuses[role] = "blocked";

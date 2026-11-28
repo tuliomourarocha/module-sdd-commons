@@ -617,7 +617,7 @@ def do_ci_check(repo: Path, dry_run: bool) -> tuple[bool | None, str]:
     return None, f"CI check não disponível: {out[:500]}"
 
 
-def check_delivery_ci(repo: Path, pr_url: str) -> tuple[bool | None, str]:
+def check_delivery_ci(repo: Path, pr_url: str) -> tuple[bool | None, str, bool]:
     """Consulta o PR publicado, usando os estados estruturados do gh."""
     command = ["gh", "pr", "checks", pr_url]
     code, out, err = run([*command, "--json", "name,bucket"], cwd=repo, timeout=30)
@@ -627,17 +627,27 @@ def check_delivery_ci(repo: Path, pr_url: str) -> tuple[bool | None, str]:
         checks = None
     if not isinstance(checks, list):
         if "no checks reported" in err.lower():
-            return None, "o PR ainda não tem checks reportados"
-        return False, f"consulta ao CI falhou (exit {code}): {err or out}"
+            return None, "o PR ainda não tem checks reportados", False
+        return False, f"consulta ao CI falhou (exit {code}): {err or out}", False
     if not checks:
-        return None, "o PR ainda não tem checks reportados"
-    if any(check.get("bucket") in ("fail", "cancel") for check in checks):
-        return False, out
-    if any(check.get("bucket") == "pending" for check in checks):
+        return None, "o PR ainda não tem checks reportados", False
+    buckets = {check.get("bucket") for check in checks}
+    if "fail" in buckets or "cancel" in buckets:
+        return False, out, "fail" in buckets
+    if "pending" in buckets:
         timeout = int(os.environ.get("CI_WATCH_TIMEOUT", "600"))
         code, out, err = run([*command, "--watch", "--fail-fast"], cwd=repo, timeout=timeout)
-        return code == 0, out or err
-    return all(check.get("bucket") in ("pass", "skipping") for check in checks), out
+        if code == 0:
+            return True, out or err, False
+        # Distingue checks reprovados de timeout, cancelamento ou erro do gh.
+        _, final_out, _ = run([*command, "--json", "name,bucket"], cwd=repo, timeout=30)
+        try:
+            final_checks = json.loads(final_out)
+        except ValueError:
+            final_checks = None
+        failed = isinstance(final_checks, list) and any(check.get("bucket") == "fail" for check in final_checks)
+        return False, final_out if failed else out or err, failed
+    return buckets <= {"pass", "skipping"}, out, False
 
 # ── GitHub Issues — sync real via gh CLI (determinístico, sem LLM) ────────────
 GITHUB_HANDOFF_START = "<!-- GITHUB_REPORT:START -->"
@@ -1086,7 +1096,9 @@ def main():
         state_pr_url = pr_url
 
     if delivery and pr_url:
-        ci_pass, ci_out = check_delivery_ci(repo, pr_url)
+        ci_pass, ci_out, checks_failed = check_delivery_ci(repo, pr_url)
+        if checks_failed:
+            print("SDD_DELIVERY_CHECKS_FAILED", flush=True)
     else:
         ci_pass, ci_out = (None, "aguardando PR") if delivery else do_ci_check(repo, args.dry_run)
     ci_label = "pass" if ci_pass else "fail" if ci_pass is False else "unknown"

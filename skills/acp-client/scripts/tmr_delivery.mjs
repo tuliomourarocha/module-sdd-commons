@@ -36,6 +36,7 @@ export async function runDelivery({ root, cwd, issue, delivery, outputs, report,
   const current = () => git(cwd, ["branch", "--show-current"]);
   const lines = [];
   let verified;
+  let checksFailed = false;
   const onLine = (raw) => {
     const line = redact(raw);
     if (line.startsWith("SDD_DELIVERY_BRANCH ")) {
@@ -46,6 +47,10 @@ export async function runDelivery({ root, cwd, issue, delivery, outputs, report,
     if (line.startsWith("SDD_DELIVERY_VERIFIED ")) {
       try { verified = JSON.parse(line.slice("SDD_DELIVERY_VERIFIED ".length)); } catch { /* sem confirmação */ }
       if (verified) report("info", `Commit ${verified.commit} confirmado em origin/${verified.branch}`);
+      return;
+    }
+    if (line === "SDD_DELIVERY_CHECKS_FAILED") {
+      checksFailed = true;
       return;
     }
     if (!line.trim()) return;
@@ -62,7 +67,8 @@ export async function runDelivery({ root, cwd, issue, delivery, outputs, report,
   }, { cwd, env, onLine });
   const details = lines.slice(-32).join("\n").slice(-8000);
   if (exitCode !== 0 || !verified || verified.branch !== current() || verified.commit !== git(cwd, ["rev-parse", "--verify", "HEAD"])) {
-    return { error: `Hook shipper terminou com código ${exitCode ?? "indisponível"}.\n${details}`, verified };
+    return { error: `Hook shipper terminou com código ${exitCode ?? "indisponível"}.\n${details}`, verified,
+      repairCode: checksFailed };
   }
   return { verified, details };
 }

@@ -7,8 +7,7 @@ temperature: 0.05
 steps: 12
 permission:
   edit:
-    ".planning/**": deny
-    "*": ask
+    "*": deny
   bash:
     "git diff*": allow
     "git log*": allow
@@ -70,6 +69,8 @@ Recebe `context: {PLAN.md, resumo de implementação, git diff}` injetado pelo h
 
 ### 3. Reportar
 Gere **parecer de arquitetura em memória** (NÃO escreva nenhum arquivo em `.planning/**` — `permission: deny`) com lista `arquivo:linha — severidade — descrição — princípio violado`. Se zero HIGH/MED: "✅ Aprovado — arquitetura aderente". **NUNCA crie** `REVIEW.md`/`SUMMARY.md`/`VALIDATION.md`.
+
+Emita `CHANGES_REQUESTED` quando o parecer exigir correção e encaminhe os achados ao builder pelo orquestrador. Revalide o código corrigido antes de emitir `APPROVED`.
 
 ## Outputs (memória)
 - Parecer de arquitetura em memória (texto estruturado)

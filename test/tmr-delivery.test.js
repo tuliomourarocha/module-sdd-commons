@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { deliveryStart, runDelivery } from "../skills/acp-client/scripts/tmr_delivery.mjs";
-import { phaseProblem, recoveryOwner, settleStage } from "../skills/acp-client/scripts/tmr_recovery.mjs";
+import { phaseProblem, reviewFailure, settleStage } from "../skills/acp-client/scripts/tmr_recovery.mjs";
 
 const hook = fileURLToPath(new URL("../hooks/shipper.py", import.meta.url));
 
@@ -19,12 +19,19 @@ test("o gate do ACP rejeita o hook que saiu com zero sem comprovar commit e push
   git("remote", "add", "origin", "git@github.com:example/project.git");
   await mkdir(path.join(cwd, "hooks"));
   await writeFile(path.join(cwd, "hooks", "shipper.py"), 'print("Nada para enviar")\n');
-  const result = await runDelivery({
+  const options = {
     root: cwd, cwd, issue: { number: 1, title: "Teste", url: "https://github.com/example/project/issues/1" },
     delivery: deliveryStart(cwd), outputs: {}, report: () => {}, checkpoint: () => {},
-  });
+  };
+  const result = await runDelivery(options);
   assert.equal(result.verified, undefined);
   assert.match(result.error, /código 0.*\nNada para enviar/);
+  assert.equal(result.repairCode, false);
+
+  await writeFile(path.join(cwd, "hooks", "shipper.py"), 'print("SDD_DELIVERY_CHECKS_FAILED")\nraise SystemExit(2)\n');
+  const failedChecks = await runDelivery(options);
+  assert.equal(failedChecks.repairCode, true);
+  assert.match(failedChecks.error, /código 2/);
 });
 
 test("a entrega preserva o commit após rejeição do push e confirma a branch em origin", { skip: process.platform === "win32", timeout: 15000 }, async (t) => {
@@ -93,6 +100,7 @@ esac
   const rejectedCI = ship(baseline, "--resume-branch", branch);
   assert.equal(rejectedCI.status, 2, rejectedCI.stdout + rejectedCI.stderr);
   assert.match(rejectedCI.stdout, /SDD_DELIVERY_VERIFIED/);
+  assert.match(rejectedCI.stdout, /SDD_DELIVERY_CHECKS_FAILED/);
   assert.match(rejectedCI.stdout, /CI check \[fail\]/);
   assert.doesNotMatch(rejectedCI.stdout, /GITHUB_SYNC_OK/);
   assert.match(await readFile(path.join(planning, "STATE.md"), "utf8"), /Gate:\*\* `blocked`/);
@@ -110,18 +118,19 @@ esac
   assert.equal(git("rev-parse", "develop"), baseline);
 });
 
-test("repete a fase após o agente responsável devolver a correção", async () => {
+test("volta ao builder após rejeição e exige novo parecer para avançar", async () => {
   const requests = [];
   const blocks = [];
   const result = await settleStage({
     run(context) {
       requests.push(context);
-      return requests.length === 1 ? { error: "pre-receive hook recusou o push" } : { completed: true };
+      const output = requests.length === 1 ? "app.js:3 separação de camadas\n\n**Veredito: CHANGES_REQUESTED**" : "APPROVED";
+      return reviewFailure({ stopReason: "end_turn", output }) ?? { completed: true };
     },
-    recover(error) {
-      assert.match(error, /pre-receive/);
-      const owner = recoveryOwner("Corrija a validação quebrada.\nRESPONSÁVEL: Builder");
-      return { ready: owner === "builder", notes: "builder corrigiu a validação" };
+    recover(error, failure) {
+      assert.match(error, /app\.js:3/);
+      assert.equal(failure.repairCode, true);
+      return { ready: true, notes: "builder corrigiu a validação" };
     },
     wait: () => assert.fail("correção disponível"),
     onBlocked: (error) => blocks.push(error),
@@ -142,5 +151,7 @@ test("mantém o bloqueio após tentativas e pausa somente por decisão humana", 
   assert.equal(retries, 2);
   assert.deepEqual(result, { blocked: "origin inacessível" });
   assert.equal(phaseProblem({ stopReason: "end_turn", output: "**BLOQUEIO:** chave SSH indisponível" }), "chave SSH indisponível");
-  assert.match(phaseProblem({ stopReason: "end_turn", output: "veredito CHANGES_REQUESTED" }, { requireVerdict: true }), /CHANGES_REQUESTED/);
+  assert.deepEqual(reviewFailure({ stopReason: "end_turn", output: "BLOQUEIO: credencial indisponível" }),
+    { error: "credencial indisponível" });
+  assert.match(reviewFailure({ stopReason: "end_turn", output: "Ainda não posso emitir APPROVED." }).error, /sem veredito/);
 });
