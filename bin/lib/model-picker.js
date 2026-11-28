@@ -221,7 +221,7 @@ async function buildOpenCodePool(cache, availableIds) {
   return pool;
 }
 
-async function buildClaudePool(cache) {
+async function buildClaudePool(cache, availableIds = []) {
   const pool = CLAUDE_ALIASES.map((alias) =>
     buildEntry({
       id: alias.id,
@@ -234,8 +234,12 @@ async function buildClaudePool(cache) {
     }),
   );
   const configured = process.env.ANTHROPIC_MODEL;
-  if (configured && !pool.some((entry) => entry.modelValue === configured)) {
-    pool.push(buildEntry({ id: configured, modelValue: configured, provider: "anthropic", cache, note: "configurado no ambiente" }));
+  for (const modelValue of new Set([...availableIds, configured].filter(Boolean))) {
+    if (!pool.some((entry) => entry.modelValue === modelValue)) {
+      const id = modelValue.replace(/\[.*\]$/, "");
+      const alias = CLAUDE_ALIASES.find((item) => item.id === id);
+      pool.push(buildEntry({ id, modelValue, provider: "anthropic", underlying: alias?.underlying, cache }));
+    }
   }
   return pool;
 }
@@ -283,7 +287,7 @@ export async function loadModelPools(platforms, availableIds) {
   const pools = {};
   for (const platform of platforms) {
     if (platform === "opencode") pools.opencode = await buildOpenCodePool(cache, availableIds);
-    if (platform === "claude") pools.claude = await buildClaudePool(cache);
+    if (platform === "claude") pools.claude = await buildClaudePool(cache, availableIds);
     if (platform === "codex") pools.codex = await buildCodexPool(cache, availableIds);
   }
   return pools;
@@ -291,9 +295,10 @@ export async function loadModelPools(platforms, availableIds) {
 
 export async function modelPricing(platform, modelValue) {
   const id = modelValue.replace(/\[.*\]$/, "");
-  const provider = platform === "codex" ? "openai" : id.split("/")[0];
+  const provider = { codex: "openai", claude: "anthropic" }[platform] ?? id.split("/")[0];
+  const alias = platform === "claude" ? CLAUDE_ALIASES.find((item) => item.id === id) : undefined;
   const cache = await loadOpenCodeCache();
-  return buildEntry({ id, modelValue, provider, cache });
+  return buildEntry({ id, modelValue, provider, underlying: alias?.underlying, cache });
 }
 
 // ── Ranking por papel ──────────────────────────────────────────────────────

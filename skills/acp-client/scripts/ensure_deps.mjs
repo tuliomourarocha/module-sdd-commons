@@ -8,6 +8,7 @@
  *   - rtk          → brew install rtk-ai/tap/rtk | curl installer (verifica rtk gain
  *                    p/ descartar o "Rust Type Kit" homônimo)
  *   - opencode     → curl -fsSL https://opencode.ai/install | bash (o AGENT do ACP)
+ *   - claude-agent-acp → npm install -g @agentclientprotocol/claude-agent-acp
  *
  * Uso:
  *   node ensure_deps.mjs                 # garante tudo (idempotente)
@@ -95,6 +96,13 @@ const DEPS = [
     },
     fallbackHint: "curl -fsSL https://opencode.ai/install | bash",
     required: true, // o agente default do ACP
+  },
+  {
+    id: "claude-agent-acp",
+    check: () => installed("claude-agent-acp"),
+    install: (log, o) => run(npm() ? ["npm", "install", "-g", "@agentclientprotocol/claude-agent-acp"] : null, log, o),
+    fallbackHint: "npx -y @agentclientprotocol/claude-agent-acp (on-demand)",
+    required: false,
   },
 ];
 

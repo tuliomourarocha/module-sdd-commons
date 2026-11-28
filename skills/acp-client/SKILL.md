@@ -1,15 +1,16 @@
 ---
 name: acp-client
 description: >-
-  Client ACP v1 da squad: roda OpenCode (`opencode acp`) ou Codex
-  (`@agentclientprotocol/codex-acp`) como agentes externos controlados pela
+  Client ACP v1 da squad: roda OpenCode (`opencode acp`), Codex
+  (`@agentclientprotocol/codex-acp`) ou Claude Code
+  (`@agentclientprotocol/claude-agent-acp`) como agentes externos controlados pela
   squad via JSON-RPC sobre stdio. Streaming de mensagens/tools/plano, gate de
   permissões com policy, e campo de interação do usuário no MEIO do processo
   (terminal TTY ou console HTML via Lavish). Use quando builder/planner
   delegarem execução a um harness externo ou precisarem de sessão retomável.
 ---
 
-# ACP Client — OpenCode e Codex como agentes da squad
+# ACP Client — OpenCode, Codex e Claude Code como agentes da squad
 
 O macro é o **client**; o harness externo é o **agent**. Toda a execução (mensagens, tool calls, plano, permissões) é externalizada para o processo que chama — observável, gate-kept e interceptável no meio do turno.
 
@@ -17,7 +18,7 @@ O macro é o **client**; o harness externo é o **agent**. Toda a execução (me
 
 Use `sdd-acp` para abrir o console HTML local na escolha do harness.
 No clone da squad, a entrada equivalente é `node bin/sdd-acp.js`.
-O console aceita `--cwd <repo>`, `--agent opencode|codex`, `--model <id>`,
+O console aceita `--cwd <repo>`, `--agent opencode|codex|claude`, `--model <id>`,
 `--port <n>`, `--no-open` e `--no-ensure`.
 
 Na página, escolha o harness, decida sobre a instalação de artefatos e a limpeza
@@ -52,7 +53,8 @@ Antes de qualquer chamada, o client roda `ensure_deps.mjs` (idempotente, saída 
 | `lavish-axi` | `lavish-axi --version` | `npm install -g lavish-axi` (fallback: `npx -y lavish-axi`) |
 | `codegraph` | `codegraph --version` | `npm install -g @colbymchenry/codegraph` |
 | `rtk` | `rtk --version` **+ `rtk gain`** (descarta o Rust Type Kit homônimo) | `brew install rtk-ai/tap/rtk` (sem brew: installer oficial via curl) |
-| `opencode` | `opencode --version` (required) | `curl -fsSL https://opencode.ai/install \| bash` |
+| `opencode` | `opencode --version` (obrigatório para OpenCode) | `curl -fsSL https://opencode.ai/install \| bash` |
+| `claude-agent-acp` | `claude-agent-acp --version` | `npm install -g @agentclientprotocol/claude-agent-acp` (fallback via `npx`) |
 
 - Opt-out: `--no-ensure` ou env `ACP_SKIP_ENSURE=1` (CI, rede bloqueada).
 - Diagnóstico sem run: `node skills/acp-client/scripts/acp_client.mjs --doctor [--json]`.
@@ -62,13 +64,14 @@ Antes de qualquer chamada, o client roda `ensure_deps.mjs` (idempotente, saída 
 
 - `--agent opencode` → rode `opencode auth login` uma vez (credenciais do provider já configuradas).
 - `--agent codex` → rode `codex login` uma vez (ou `CODEX_PATH` para binário próprio).
+- `--agent claude` → com Node.js 22 ou superior, rode `npx -y @agentclientprotocol/claude-agent-acp --cli auth login` uma vez.
 - Se falhar com `auth_required` (exit 3), o client imprime o hint exato — autentique e repita. ZERO chamadas sem auth.
 
 ## Uso (script único, zero dependências, Node >= 18)
 
 ```bash
 node skills/acp-client/scripts/acp_client.mjs \
-  --agent opencode \        # opencode (nativo) | codex (adaptador) | --command <bin> --arg <a>
+  --agent opencode \        # opencode | codex | claude | --command <bin> --arg <a>
   --cwd "<repo-alvo>" \
   [--session <sessionId>]   # retomar sessão (session/load)
   [--model "provider/model"] \

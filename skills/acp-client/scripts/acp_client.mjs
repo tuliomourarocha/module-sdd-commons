@@ -6,6 +6,7 @@
  * externos rodam como ACP AGENTS em subprocessos:
  *   - opencode → `opencode acp` (nativo)
  *   - codex    → `npx -y @agentclientprotocol/codex-acp` (adaptador oficial)
+ *   - claude   → `npx -y @agentclientprotocol/claude-agent-acp`
  *
  * Uso:
  *   acp_client.mjs --agent opencode --cwd <dir> "implemente a subtask X"
@@ -21,10 +22,10 @@
  *     do agente + campo de conversa do Lavish como entrada do usuário.
  *
  * Flags principais:
- *   --agent opencode|codex     qual harness iniciar (default: opencode)
+ *   --agent opencode|codex|claude   qual harness iniciar (default: opencode)
  *   --cwd <dir>                diretório da sessão (default: cwd do processo)
  *   --session <id>             retomar sessão existente (session/load)
- *   --model <provider/model>   hint de modelo no session/new
+ *   --model <id>              modelo da sessão (ex.: sonnet para Claude Code)
  *   --permission safe|allow-all|ask
  *                              safe (default): allow "read"; edit/delete/move
  *                              dependem de TTY (y/n) ou são rejeitados.
@@ -44,15 +45,8 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { ensureDeps } from "./ensure_deps.mjs";
-
-const AGENT_PRESETS = {
-  opencode: { command: "opencode", args: ["acp"], authHint: "opencode auth login" },
-  codex: {
-    command: "npx",
-    args: ["-y", "@agentclientprotocol/codex-acp"],
-    authHint: "codex login (ou CODEX_PATH=/path/to/codex para usar seu binário)",
-  },
-};
+import { AGENT_PRESETS, authRequired, depsExcludedFor } from "./acp_agents.mjs";
+import { sessionModels, setSessionModel } from "./tmr_models.mjs";
 
 // ---------------------------------------------------------------- CLI parsing
 function parseArgs(argv) {
@@ -82,7 +76,7 @@ function parseArgs(argv) {
     switch (a) {
       case "--agent": {
         const v = arg();
-        if (!AGENT_PRESETS[v]) fail(`agente desconhecido: ${v} (use ${Object.keys(AGENT_PRESETS).join("|")} ou --command)`, 2);
+        if (!Object.hasOwn(AGENT_PRESETS, v)) fail(`agente desconhecido: ${v} (use ${Object.keys(AGENT_PRESETS).join("|")} ou --command)`, 2);
         opts.agent = v;
         break;
       }
@@ -484,7 +478,7 @@ export function parsePollResponse(raw) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
 
-  // bootstrap de dependências: lavish-axi + codegraph + rtk + opencode
+  // bootstrap de dependências comuns e do harness selecionado
   // (idempotente, instala o que falta; --no-ensure ou ACP_SKIP_ENSURE=1 pula)
   if (opts.doctor) {
     const results = ensureDeps({ doctor: true });
@@ -492,7 +486,7 @@ async function main() {
     process.exit(results.some((r) => r.required && !r.version) ? 4 : 0);
   }
   if (!opts.noEnsure && !process.env.ACP_SKIP_ENSURE) {
-    ensureDeps({ log: (s) => rendererJsonLog(opts, s) });
+    ensureDeps({ exclude: depsExcludedFor(opts.agent), log: (s) => rendererJsonLog(opts, s) });
   }
 
   if (!withinRoots(opts.cwd, [path.resolve(opts.cwd)])) fail("--cwd inválido", 2);
@@ -566,7 +560,7 @@ async function main() {
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true, readDirectory: true }, terminal: false },
     }, 60_000);
   } catch (err) {
-    if (err.acpError?.code === -32003 || /auth/i.test(err.message)) {
+    if (authRequired(err)) {
       console.error(`acp_client: agente pediu autenticação (${err.message}).`);
       console.error(`acp_client: rode antes: ${preset.authHint}`);
       process.exit(3);
@@ -578,19 +572,27 @@ async function main() {
   // 2) session/new ou session/load
   let sessionId;
   try {
+    let info;
     if (opts.session) {
-      const loaded = await rpc.request("session/load", { sessionId: opts.session, cwd: opts.cwd, mcpServers: [] }, 120_000);
-      sessionId = loaded?.sessionId ?? opts.session;
+      info = await rpc.request("session/load", { sessionId: opts.session, cwd: opts.cwd, mcpServers: [] }, 120_000);
+      sessionId = info?.sessionId ?? opts.session;
       renderer.emit({ type: "status", message: `sessão retomada: ${sessionId}` });
     } else {
       const params = { cwd: opts.cwd, mcpServers: [] };
       if (opts.mode) params.mode = opts.mode;
-      if (opts.model) params.model = opts.model;
-      const info = await rpc.request("session/new", params, 120_000);
+      if (opts.model && preset.platform !== "claude") params.model = opts.model;
+      info = await rpc.request("session/new", params, 120_000);
       sessionId = info?.sessionId;
       renderer.emit({ type: "status", message: `sessão criada: ${sessionId}` });
     }
+    if (!sessionId) throw new Error("O harness não abriu uma sessão ACP.");
+    if (opts.model && preset.platform === "claude") {
+      const modelState = sessionModels(info ?? {});
+      if (!modelState.option && !modelState.legacy) throw new Error("O harness não expôs a seleção de modelo ACP.");
+      await setSessionModel(rpc, sessionId, modelState, opts.model);
+    }
   } catch (err) {
+    if (authRequired(err)) fail(`autenticação exigida. rode: ${preset.authHint}`, 3);
     fail(`session/new|load falhou: ${err.message}`, 4);
   }
   ui?.setSession(sessionId);
@@ -615,7 +617,7 @@ async function main() {
       });
       stopReason = res?.stopReason ?? "end_turn";
     } catch (err) {
-      if (err.acpError?.code === -32003 || /auth/i.test(err.message)) {
+      if (authRequired(err)) {
         console.error(`acp_client: autenticação exigida. rode: ${preset.authHint}`);
         process.exit(3);
       }

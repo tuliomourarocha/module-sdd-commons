@@ -27,7 +27,24 @@ export function sessionModels(info) {
     .map(({ modelId, name }) => ({ value: modelId, name }))]) {
     if (typeof value === "string" && value && !byId.has(value)) byId.set(value, { value, name });
   }
-  return { option, available: [...byId.values()], current: option?.currentValue ?? info.models?.currentModelId };
+  return {
+    option, available: [...byId.values()],
+    current: option?.currentValue ?? info.models?.currentModelId,
+    legacy: Boolean(info.models),
+  };
+}
+
+export async function setSessionModel(rpc, sessionId, { option, current, legacy }, modelValue) {
+  if (!modelValue || modelValue === current) return current;
+  if (option) {
+    const config = await rpc.request("session/set_config_option", { sessionId, configId: option.id, value: modelValue }, 30_000);
+    return sessionModels(config ?? {}).current ?? modelValue;
+  }
+  if (legacy) {
+    await rpc.request("session/set_model", { sessionId, modelId: modelValue }, 30_000);
+    return modelValue;
+  }
+  return current ?? modelValue;
 }
 
 export function modelDisplayName(entry) {

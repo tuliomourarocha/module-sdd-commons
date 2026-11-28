@@ -4,7 +4,7 @@ Repositório central para armazenamento, versionamento e gerenciamento de artefa
 ## Instalação
 
 A instalação baixa **apenas a pilha ACP** (rtk, codegraph/ast-grep, lavish-axi,
-adaptador codex-acp e o próprio opencode). Os **artefatos da squad** (agents,
+adaptadores ACP do Codex e do Claude Code e o próprio OpenCode). Os **artefatos da squad** (agents,
 skills, commands, hooks, plugins) e os **MCPs** são instalados no momento da
 execução, pelo wizard TMR, para o harness que você escolher lá.
 
@@ -16,11 +16,16 @@ npx --yes github:tuliomourarocha/module-sdd-commons#main --codex --with-artifact
 
 | Modo | O que instala |
 | --- | --- |
-| **default (ACP-only)** | Pilha ACP: rtk + codegraph/ast-grep + lavish + adaptador codex-acp + opencode |
+| **default (ACP-only)** | Pilha ACP com RTK, CodeGraph/ast-grep, Lavish, OpenCode e os adaptadores do Codex e do Claude Code |
 | `--with-artifacts` + plataforma | Tudo acima **+ artefatos da squad** no alvo (agents/skills/commands/hooks/plugins) — caminho legado; o normal é deixar o TMR instalar no run |
 
 Quem instala os artefatos em runtime é o `sdd-acp` (passo 2 do wizard), via
 `--artifacts-only` — que também registra o MCP codegraph no harness escolhido.
+O instalador adiciona ao `.gitignore` do projeto as regras para cópias dos
+harnesses, estado do ACP, skills instaladas e arquivos gerados de configuração.
+Se uma instalação antiga já colocou esses arquivos no índice, use
+`git rm --cached` nos caminhos gerados específicos para mantê-los no disco e
+registrar a retirada no próximo commit.
 Os artefatos ficam no projeto ("depois pode manter"); rodar o wizard de novo
 oferece atualização.
 
@@ -42,9 +47,11 @@ e roda localmente no projeto que vai executar a squad.
 ```bash
 sdd-acp                       # abre o console no navegador padrão
 sdd-acp --cwd /caminho/projeto # usa outro repositório
+sdd-acp --agent claude        # abre o console com Claude Code selecionado
 sdd-acp --no-open --port 4387  # imprime o link para abrir manualmente
 sdd-acp doctor                # diagnóstico das dependências
 sdd-acp client --agent opencode --cwd <repo> --json "<subtask>"   # uma subtask ACP
+sdd-acp client --agent claude --model sonnet --json "<subtask>"   # uma subtask com Claude Code
 ```
 
 No clone deste repositório, também dá para rodar `node bin/sdd-acp.js`.
@@ -55,8 +62,8 @@ sessão. O histórico recente fica em memória e pode ser exportado pela página
 
 1. Clique em **Nova execução**. O TMR entra na `develop` e executa
    `git pull --ff-only origin develop` antes de abrir a escolha do harness.
-   Ao retomar uma execução, o TMR preserva a branch atual. Escolha OpenCode
-   ou Codex e decida se deseja instalar ou atualizar os artefatos da squad.
+   Ao retomar uma execução, o TMR preserva a branch atual. Escolha OpenCode,
+   Codex ou Claude Code e decida se deseja instalar ou atualizar os artefatos da squad.
    Se houver estado em `.planning/`, a página lista os arquivos antes de
    pedir confirmação para limpar.
 2. Informe a issue por link, `owner/repo#N` ou `#N` no repositório atual. O TMR
@@ -80,10 +87,19 @@ do harness usa seu hook nativo do RTK.
 ### Bootstrap automático
 
 O console verifica as dependências no início da execução e pode baixar
-`codegraph`, `rtk` e `opencode` quando necessários. Use `--no-ensure` para pular
-essa etapa. `lavish-axi` atende ao modo independente `sdd-acp client --ui lavish`. O instalador da squad também os baixa
-(`--no-rtk`/`--no-codegraph`/`--no-lavish`/`--no-acp` para pular). Configure `gh auth login` e autentique
-o harness escolhido com `opencode auth login` ou `codex login` antes da primeira execução.
+`codegraph`, `rtk` e as dependências do harness escolhido. Use `--no-ensure` para pular
+essa etapa. `lavish-axi` atende ao modo independente `sdd-acp client --ui lavish`.
+Configure `gh auth login` para usar o console e autentique o harness escolhido
+antes da primeira execução.
+
+- OpenCode usa `opencode auth login`.
+- Codex usa `codex login`.
+- Claude Code usa `npx -y @agentclientprotocol/claude-agent-acp --cli auth login` com Node.js 22 ou superior.
+
+Em projetos com artefatos da squad para Claude Code instalados anteriormente,
+aceite a atualização no console para evitar que o hook de auditoria do Claude
+rode durante as fases já orquestradas pelo TMR.
+
 | Claude Code | `rtk init --global` | Hook nativo `PreToolUse` + patch no `settings.json` |
 | Codex | `rtk init --global --codex` | Hook `PreToolUse` (`updatedInput`) + `RTK.md` em `~/.codex` |
 
@@ -245,7 +261,7 @@ O `harness` (V2) orquestra 3 fluxos com 4 macros + hooks (`planner`, `builder`, 
 - **Squad como ACP client (dois modos):** o console local `sdd-acp` orquestra o ciclo com decisões humanas no navegador. `sdd-acp client` executa uma subtask e mantém o streaming JSON para automações.
 - **Plano em HTML interativo:** o `planner` apresenta o plano (decisões com escolha clicável, riscos, skills sugeridas) aberto no Lavish Editor (`npx -y lavish-axi`) e itera por long-poll até a aprovação do usuário — revisão pelo browser, não pelo terminal (skill `plan-review`).
 - **Skills remotas (skills.sh):** `find_skill.py "<termos>" --remote` sugere candidatos do catálogo público da skills.sh; instalação `npx skills add <source>` **somente** com aprovação explícita do usuário, após auditoria (`find_skill.py --audit <id>`).
-- **Bootstrap de dependências:** todo run ACP garante e instala o que faltar (`ensure_deps.mjs`) — lavish-axi, codegraph, rtk e opencode (método oficial de cada um; `--doctor` diagnostica, `--no-ensure` pula).
+- **Bootstrap de dependências:** o ACP verifica Lavish, CodeGraph, RTK e as dependências do harness escolhido (`--doctor` diagnostica e `--no-ensure` pula).
 
 ### Arquitetura
 

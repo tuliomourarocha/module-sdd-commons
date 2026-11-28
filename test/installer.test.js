@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,8 +10,9 @@ import { fileURLToPath } from "node:url";
 const run = promisify(execFile);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-test("instala adaptadores com os provedores esperados", async () => {
+test("instala adaptadores com os provedores esperados", async (t) => {
   const target = await mkdtemp(path.join(tmpdir(), "sdd-harness-test-"));
+  t.after(() => rm(target, { recursive: true, force: true }));
   await run(
     process.execPath,
     ["bin/sdd-harness.js", "--all", "--target", target, "--no-model-picker", "--no-rtk", "--no-codegraph"],
@@ -70,4 +71,34 @@ test("instala adaptadores com os provedores esperados", async () => {
   assert.equal((await stat(path.join(target, ".opencode", "hooks", "supervisor.py"))).isFile(), true);
   assert.equal((await stat(path.join(target, ".claude", "settings.json"))).isFile(), true);
   assert.equal((await stat(path.join(target, ".claude", "hooks", "guard_rails.py"))).isFile(), true);
+});
+
+test("artifacts-only ignora saídas locais sem alterar hooks ou config da raiz", async (t) => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "sdd-artifacts-test-"));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  await run("git", ["init"], { cwd });
+  await mkdir(path.join(cwd, "hooks"));
+  await writeFile(path.join(cwd, "hooks", "shipper.py"), "# hook do projeto\n");
+  await writeFile(path.join(cwd, "opencode.json"), '{"formatter":false}\n');
+  await writeFile(path.join(cwd, ".gitignore"), "dist/");
+  const install = () => run(process.execPath, [
+    "bin/sdd-harness.js", "--opencode", "--target", cwd, "--artifacts-only",
+  ], { cwd: projectRoot });
+
+  await install();
+  const ignore = await readFile(path.join(cwd, ".gitignore"), "utf8");
+  await install();
+  assert.equal(await readFile(path.join(cwd, ".gitignore"), "utf8"), ignore);
+  assert.match(ignore, /^dist\/\n/);
+  const ignored = [
+    ".opencode/hooks/shipper.py", ".claude/settings.json", ".codex/config.toml",
+    ".agents/skills/example/SKILL.md", ".planning/HOOKS.log", ".codegraph/index.db",
+    ".rtk/filters.toml", ".mcp.json", "opencode.json", "skills-lock.json", "RTK.md",
+  ];
+  const { stdout } = await run("git", ["check-ignore", "--", ...ignored], { cwd });
+  assert.deepEqual(stdout.trim().split("\n"), ignored);
+  assert.equal(await readFile(path.join(cwd, "opencode.json"), "utf8"), '{"formatter":false}\n');
+  assert.equal(await readFile(path.join(cwd, "hooks", "shipper.py"), "utf8"), "# hook do projeto\n");
+  const config = JSON.parse(await readFile(path.join(cwd, ".opencode", "opencode.json"), "utf8"));
+  assert.equal(config.mcp.codegraph.type, "local");
 });

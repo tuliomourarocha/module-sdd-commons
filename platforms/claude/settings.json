@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/supervisor.py --run --repo \"$CLAUDE_PROJECT_DIR\" --repo-slug tuliomourarocha/module-sdd-commons 2>&1 | head -100; echo \"[supervisor hook] done\"; exit 0",
+            "command": "if [ \"${SDD_ACP_MANAGES_SHIPPER:-}\" = 1 ]; then exit 0; fi; python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/supervisor.py --run --repo \"$CLAUDE_PROJECT_DIR\" --repo-slug tuliomourarocha/module-sdd-commons 2>&1 | head -100; echo \"[supervisor hook] done\"; exit 0",
             "timeout": 90000,
             "description": "🤖 Supervisor — métricas performance/alucinações/tokens + Issue GitHub"
           }

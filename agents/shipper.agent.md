@@ -76,7 +76,8 @@ Recebe `context: {PRD.md, PLAN.md, resumo, parecer}` **em memória** injetado pe
 
 ### 1. Delegar ao hook primeiro (determinístico)
 ```bash
-python3 hooks/shipper.py --run --repo . --repo-slug tuliomourarocha/module-sdd-commons --context-file /tmp/context.json
+for hook in .opencode/hooks/shipper.py .claude/hooks/shipper.py .codex/hooks/shipper.py hooks/shipper.py; do [ ! -f "$hook" ] || break; done
+python3 "$hook" --run --repo . --repo-slug tuliomourarocha/module-sdd-commons --context-file /tmp/context.json
 # ou sem context-file se já houver HANDOFF minimal
 ```
 - Se `hooks/shipper.py` já rodou via `plugins/shipper.ts` (ver log `shipper` hook), pule para passo 2.

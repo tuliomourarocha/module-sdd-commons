@@ -12,6 +12,23 @@ const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 const platforms = new Set(["opencode", "claude", "codex"]);
 const claudeRoleModels = { ...CLAUDE_DEFAULT_MODELS };
 const codexRoleModels = { ...CODEX_DEFAULT_MODELS };
+const artifactIgnores = [
+  "/.opencode/", "/.claude/", "/.codex/", "/.agents/", "/.planning/",
+  "/.codegraph/", "/.rtk/", "/.mcp.json", "/opencode.json", "/skills-lock.json", "/RTK.md",
+];
+
+async function ignoreArtifacts(target, dryRun) {
+  if (dryRun) return;
+  const file = path.join(target, ".gitignore");
+  const content = await exists(file) ? await readFile(file, "utf8") : "";
+  const rules = new Set(content.split(/\r?\n/));
+  const missing = artifactIgnores.filter((rule) => !rules.has(rule));
+  if (missing.length) {
+    await mkdir(target, { recursive: true });
+    const separator = content && !content.endsWith("\n") ? "\n" : "";
+    await writeFile(file, `${content}${separator}# Artefatos locais da squad e do ACP\n${missing.join("\n")}\n`);
+  }
+}
 
 // ── RTK (economia de tokens) ─────────────────────────────────────────────────
 // rtk — https://github.com/rtk-ai/rtk — proxy de comandos que comprime a saída
@@ -489,16 +506,9 @@ async function bindCodegraphToHarness(platform, { target, dryRun }) {
     return true;
   }
 
-  // opencode: CLI nativa escreve no opencode.json do projeto; fallback merge JSON
+  // Registra o MCP no arquivo local do OpenCode.
   if (platform === "opencode") {
-    if (shOut("command -v opencode")) {
-      if (shRun(`cd ${JSON.stringify(target)} && opencode mcp add codegraph --env CODEGRAPH_TELEMETRY=0 -- codegraph serve --mcp`) === 0) {
-        console.log('  ✓ MCP "codegraph" registrado no OpenCode do projeto ("opencode mcp list" para conferir)');
-        return true;
-      }
-      console.log("  opencode mcp add falhou — tentando merge manual no opencode.json");
-    }
-    const configPath = path.join(target, "opencode.json");
+    const configPath = path.join(target, ".opencode", "opencode.json");
     let config = {};
     if (await exists(configPath)) {
       try { config = JSON.parse(await readFile(configPath, "utf8")); } catch {
@@ -508,7 +518,7 @@ async function bindCodegraphToHarness(platform, { target, dryRun }) {
     } else {
       config = { $schema: "https://opencode.ai/config.json" };
     }
-    const servers = config.mcp?.servers ?? (config.mcp = { servers: {} }).servers;
+    const servers = config.mcp ??= {};
     if (servers.codegraph?.type === "local") {
       console.log("  MCP \"codegraph\" já registrado no opencode.json");
     } else {
@@ -581,23 +591,13 @@ async function bindCodegraphToHarness(platform, { target, dryRun }) {
   return false;
 }
 
-// Índice semântico do projeto + .gitignore (estado gerado, nunca versionado)
+// Índice semântico do projeto
 async function initCodegraphIndex(target, dryRun) {
   if (dryRun) {
     console.log(`  [dry-run] CODEGRAPH_TELEMETRY=0 codegraph init ${target}`);
     return;
   }
-  const gitignorePath = path.join(target, ".gitignore");
-  if (await exists(gitignorePath)) {
-    const content = await readFile(gitignorePath, "utf8");
-    if (!/^\.codegraph\/?$/m.test(content)) {
-      await writeFile(gitignorePath, `${content.replace(/\s*$/, "")}\n\n# CodeGraph (índice semântico gerado)\n.codegraph/\n`);
-      console.log("  ✓ .codegraph/ adicionado ao .gitignore (índice é estado gerado)");
-    }
-  } else {
-    await writeFile(gitignorePath, "# CodeGraph (índice semântico gerado)\n.codegraph/\n");
-    console.log("  ✓ .gitignore criado com .codegraph/");
-  }
+  await ignoreArtifacts(target, dryRun);
   if (shOut("command -v codegraph")) {
     console.log(`construindo o índice semântico do projeto (codegraph init, telemetria desligada)...`);
     if (shRun(`CODEGRAPH_TELEMETRY=0 codegraph init ${JSON.stringify(target)}`) !== 0) {
@@ -666,20 +666,14 @@ async function installOpenCode(target, dryRun, modelSelections) {
   if (await exists(path.join(sourceRoot, "plugins"))) {
     await copyDirectory(path.join(sourceRoot, "plugins"), path.join(root, "plugins"), dryRun);
   }
-  // hooks python: copiados para .opencode/hooks/ e também hooks/ na raiz do target para fallback
+  // Hooks Python instalados em .opencode/hooks/.
   if (await exists(path.join(sourceRoot, "hooks"))) {
     await copyDirectory(path.join(sourceRoot, "hooks"), path.join(root, "hooks"), dryRun);
-    // também espelha em <target>/hooks para compat com Claude/Codex e fallback do plugin
-    await copyDirectory(path.join(sourceRoot, "hooks"), path.join(target, "hooks"), dryRun);
     if (!dryRun) {
-      // garantir permissão de execução nos scripts python
-        for (const script of ["guard_rails.py", "shipper.py", "ci_watch.py", "ci_orchestrator.py", "supervisor.py"]) {
-          const p1 = path.join(root, "hooks", script);
-          const p2 = path.join(target, "hooks", script);
-          for (const p of [p1, p2]) {
-            if (await exists(p)) await chmod(p, 0o755).catch(() => {});
-          }
-        }
+      for (const script of ["guard_rails.py", "shipper.py", "ci_watch.py", "ci_orchestrator.py", "supervisor.py"]) {
+        const file = path.join(root, "hooks", script);
+        if (await exists(file)) await chmod(file, 0o755).catch(() => {});
+      }
     }
   }
   // garante .opencode/package.json com @opencode-ai/plugin para plugins TS tipados
@@ -701,7 +695,7 @@ async function installOpenCode(target, dryRun, modelSelections) {
     const targetOpencodeJson = path.join(target, "opencode.json");
     const dotOpencodeJson = path.join(root, "opencode.json");
     if (!(await exists(targetOpencodeJson)) && !(await exists(dotOpencodeJson))) {
-      await writeFile(targetOpencodeJson, await readFile(path.join(sourceRoot, "platforms", "opencode", "opencode.json")));
+      await writeFile(dotOpencodeJson, await readFile(path.join(sourceRoot, "platforms", "opencode", "opencode.json")));
     }
   }
   return root;
@@ -771,7 +765,7 @@ async function main() {
   const { selected, target, dryRun, rtk, codegraph, modelPicker, artifactsOnly } = parseArgs(process.argv.slice(2));
 
   // ── Modo ACP-only (default, sem plataforma): baixa SÓ a pilha ACP ──────────
-  // rtk + codegraph/ast-grep + lavish + opencode + adaptador codex-acp.
+  // rtk + codegraph/ast-grep + lavish + opencode + adaptadores Claude e Codex.
   // Os artefatos da squad e os MCPs são instalados pelo TMR no momento da
   // execução (wizard sdd-acp), para o harness escolhido.
   if (selected.length === 0 && !rtk.only) {
@@ -795,6 +789,7 @@ async function main() {
   //    re-baixar dependências (ensure_deps já garantiu rtk/codegraph/lavish).
   if (artifactsOnly) {
     if (selected.length === 0) throw new Error("--artifacts-only exige plataforma: --opencode, --claude ou --codex.");
+    await ignoreArtifacts(target, dryRun);
     console.log(`Modo artifacts-only: instalando artefatos + MCP para ${selected.join(", ")} em ${target}`);
     for (const platform of selected) {
       const output = await ({ opencode: installOpenCode, claude: installClaude, codex: installCodex }[platform])(
@@ -815,6 +810,7 @@ async function main() {
   if (rtk.only) {
     console.log("--rtk-only: pulando instalação de artefatos (agents/commands/skills/hooks)");
   } else {
+    await ignoreArtifacts(target, dryRun);
     const interactive = modelPicker && Boolean(process.stdin.isTTY && process.stdout.isTTY);
     if (!modelPicker) console.log("Modelos: padrão da squad (--no-model-picker)");
     else if (!interactive && !dryRun) console.log("Modelos: padrão da squad (sem TTY para escolha interativa)");

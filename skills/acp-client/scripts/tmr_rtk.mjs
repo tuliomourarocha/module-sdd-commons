@@ -42,7 +42,7 @@ export function observeRtk(report, warn) {
     writeFileSync(path.join(dir, "rtk"), [
       "#!/bin/sh",
       'case "$1:$2" in',
-      `  hook:codex|hook:opencode) exec ${audit} "$@" ;;`,
+      `  hook:claude|hook:codex|hook:opencode) exec ${audit} "$@" ;;`,
       "esac",
       `exec ${quote(rtk)} "$@"`,
       "",
@@ -66,23 +66,23 @@ export function observeRtk(report, warn) {
 }
 
 function forwardHook([rtk, logFile, ...args]) {
-  const codex = args[1] === "codex";
-  const stdin = codex ? readFileSync(0) : undefined;
+  const readsStdin = args[1] !== "opencode" && !args.includes("--help");
+  const stdin = readsStdin ? readFileSync(0) : undefined;
   const result = spawnSync(rtk, args, { input: stdin, encoding: "utf8", timeout: 4000, maxBuffer: 2 * 1024 * 1024 });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   process.exitCode = result.status ?? 1;
 
-  if (!codex && (args.length < 3 || (args.length === 3 && args[2] === "--help"))) return;
+  if (args.includes("--help") || (!readsStdin && args.length < 3)) return;
   let command = args.at(-1);
   try {
-    if (codex) command = JSON.parse(stdin).tool_input?.command;
+    if (readsStdin) command = JSON.parse(stdin).tool_input?.command;
     if (typeof command !== "string" || !command.trim()) return;
     let status = "falhou";
     if (result.status === 0) {
       try {
         const answer = JSON.parse(result.stdout?.trim() || "{}");
-        const rewritten = codex ? answer.hookSpecificOutput?.updatedInput?.command : answer.command;
+        const rewritten = readsStdin ? answer.hookSpecificOutput?.updatedInput?.command : answer.command;
         status = rewritten && rewritten !== command ? "reescrito" : "sem reescrita";
       } catch {}
     }

@@ -6,9 +6,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Rpc, handleNotification } from "./acp_client.mjs";
+import { AGENT_PRESETS, authRequired, depsExcludedFor } from "./acp_agents.mjs";
 import { ensureDeps } from "./ensure_deps.mjs";
 import { loadModelPools, modelPricing, rankModels, chooseVariant, loadDefaults } from "../../../bin/lib/model-picker.js";
-import { mergeAvailableModels, modelDisplayName, sessionModels } from "./tmr_models.mjs";
+import { mergeAvailableModels, modelDisplayName, sessionModels, setSessionModel } from "./tmr_models.mjs";
 import * as ui from "./tmr_ui.mjs";
 import * as input from "./tmr_web_input.mjs";
 import * as review from "./tmr_review.mjs";
@@ -24,16 +25,6 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 // scripts → acp-client → skills → raiz do pacote/repo
 const SOURCE_ROOT = path.resolve(SCRIPT_DIR, "../../..");
 const REVIEW_FIND_SKILL = path.join(SOURCE_ROOT, "skills", "find-skills", "scripts", "find_skill.py");
-
-const AGENT_PRESETS = {
-  opencode: { command: "opencode", args: ["acp"], authHint: "opencode auth login", platform: "opencode" },
-  codex: {
-    command: "npx",
-    args: ["-y", "@agentclientprotocol/codex-acp"],
-    authHint: "codex login",
-    platform: "codex",
-  },
-};
 
 const ROLES = ["planner", "builder", "reviewer", "shipper", "supervisor"];
 const ROLE_DESC = {
@@ -129,7 +120,7 @@ const fmtCtx = (c) => (c ? Math.round(c / 1000) + "k" : "?");
 
 async function pickModelForRole(platform, role, catalog) {
   const { pool, available, defaults } = await catalog;
-  const roleDefault = platform === "opencode" ? defaults?.opencode?.[role] : defaults?.codex?.[role];
+  const roleDefault = defaults?.[platform]?.[role];
   const ranked = rankModels(pool, platform, role, roleDefault);
   if (!ranked.length && !available?.length) {
     console.error(`(sem modelos no pool de ${platform} — usando default do papel)`);
@@ -320,33 +311,28 @@ async function runPhase({ preset, cwd, role, model, selectModel, rolePrompt, tas
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false },
     }, 60_000).catch((e) => {
-      if (e.acpError?.code === -32003 || /auth/i.test(e.message)) fail(`harness pediu auth — rode: ${preset.authHint}`, 3);
+      if (authRequired(e)) fail(`harness pediu auth — rode: ${preset.authHint}`, 3);
       fail(`initialize falhou: ${e.message}`, 4);
     });
     const steeringSupported = Boolean(init?._meta?.steering?.supported);
 
     mcp = observeMcp(mcpServer, reportMcp);
     const newParams = { cwd, mcpServers: [mcp.server] };
-    if (model?.modelValue) newParams.model = model.modelValue;
+    if (model?.modelValue && preset.platform !== "claude") newParams.model = model.modelValue;
     const info = await rpc.request("session/new", newParams, 120_000).catch((error) => {
-      if (error.acpError?.code === -32000 || /auth/i.test(error.message)) fail(`Harness requer autenticação. Execute ${preset.authHint}.`, 3);
+      if (authRequired(error)) fail(`Harness requer autenticação. Execute ${preset.authHint}.`, 3);
       throw error;
     });
     sessionId = info?.sessionId;
     if (!sessionId) throw new Error("O harness não abriu uma sessão ACP.");
     mcp.update();
-    const { option, available, current } = sessionModels(info);
-    const selected = model ?? await selectModel(available);
+    const modelState = sessionModels(info);
+    const selected = model ?? await selectModel(modelState.available);
     const modelValue = selected.modelValue;
-    let activeModel = current;
-    if (option && modelValue && current !== modelValue) {
-      const config = await rpc.request("session/set_config_option", { sessionId, configId: option.id, value: modelValue }, 30_000);
-      activeModel = sessionModels(config ?? {}).current ?? modelValue;
-    } else if (!option && info.models && modelValue && current !== modelValue) {
-      await rpc.request("session/set_model", { sessionId, modelId: modelValue }, 30_000);
-      activeModel = modelValue;
+    if (preset.platform === "claude" && modelValue && !modelState.option && !modelState.legacy) {
+      throw new Error("O harness não expôs a seleção de modelo ACP.");
     }
-    activeModel ??= modelValue;
+    const activeModel = await setSessionModel(rpc, sessionId, modelState, modelValue);
     const pricing = activeModel && activeModel !== modelValue ? await modelPricing(preset.platform, activeModel) : selected;
 
     let stopRequested = false;
@@ -385,7 +371,7 @@ async function runPhase({ preset, cwd, role, model, selectModel, rolePrompt, tas
       sessionId,
       prompt: [{ type: "text", text: prompt }],
     }).catch((e) => {
-      if (e.acpError?.code === -32003 || /auth/i.test(e.message)) fail(`auth exigida — rode: ${preset.authHint}`, 3);
+      if (authRequired(e)) fail(`auth exigida — rode: ${preset.authHint}`, 3);
       throw e;
     });
     const res = await Promise.race([stopped, promptResponse]);
@@ -535,13 +521,14 @@ async function main() {
   const delivery = saved?.delivery ?? deliveryStart(cwd);
   let harness = saved?.harness ?? flag("--agent");
   if (!harness) {
-    const options = ["OpenCode · ACP nativo", "Codex · adaptador oficial"];
-    harness = ["opencode", "codex"][await input.select("Escolha o harness", options, 1)];
+    const agents = Object.keys(AGENT_PRESETS);
+    const options = agents.map((agent) => AGENT_PRESETS[agent].label);
+    harness = agents[await input.select("Escolha o harness", options, 1)];
   }
   if (!Object.hasOwn(AGENT_PRESETS, harness)) fail(`Harness desconhecido: ${harness}`, 2);
   input.send({ type: "state", data: { harness } });
   if (!argv.includes("--no-ensure") && process.env.ACP_SKIP_ENSURE !== "1") {
-    ensureDeps({ inherit: false, exclude: harness === "codex" ? ["opencode"] : [],
+    ensureDeps({ inherit: false, exclude: depsExcludedFor(harness),
       log: (message) => input.log(/falhou|NÃO instalado|não iniciou|aviso:/i.test(message) ? "warn" : "info", message) });
   }
 

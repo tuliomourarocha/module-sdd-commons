@@ -15,6 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as ui from "../skills/acp-client/scripts/tmr_ui.mjs";
+import { AGENT_PRESETS } from "../skills/acp-client/scripts/acp_agents.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const candidates = [
@@ -32,7 +33,7 @@ const fail = (msg, code = 2) => {
 const usage = () => {
   ui.banner("ACP — Squad Orchestrator");
   console.log(`  ${ui.paint.bold("Uso")}`);
-  console.log(`    ${ui.paint.green("sdd-acp")} ${ui.paint.dim("[--cwd dir] [--agent opencode|codex] [--model p/m] [--port n] [--no-open]")}   ${ui.paint.gray("console web local")}`);
+  console.log(`    ${ui.paint.green("sdd-acp")} ${ui.paint.dim(`[--cwd dir] [--agent ${Object.keys(AGENT_PRESETS).join("|")}] [--model id] [--port n] [--no-open]`)}   ${ui.paint.gray("console web local")}`);
   console.log(`    ${ui.paint.green("sdd-acp doctor")}      ${ui.paint.gray("diagnóstico das dependências ACP")}`);
   console.log(`    ${ui.paint.green("sdd-acp client <args>")} ${ui.paint.gray("run de UMA subtask via acp_client.mjs")}`);
   console.log(`    ${ui.paint.green("sdd-acp help")}         ${ui.paint.gray("esta ajuda")}`);

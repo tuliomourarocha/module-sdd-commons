@@ -173,6 +173,7 @@ test("registra cada consulta do RTK e preserva a resposta do hook nativo", { ski
     '  opencode:pwd) echo \'{}\' ;;',
     '  opencode:false) echo "erro" >&2; exit 3 ;;',
     '  codex:) cat >/dev/null ;;',
+    '  claude:) cat >/dev/null; echo \'{"hookSpecificOutput":{"updatedInput":{"command":"rtk git log"}}}\' ;;',
     'esac',
     "",
   ].join("\n"), { mode: 0o700 });
@@ -192,6 +193,9 @@ test("registra cada consulta do RTK e preserva a resposta do hook nativo", { ski
     assert.equal(hook("opencode", ["pwd"]).stdout.trim(), "{}");
     assert.equal(hook("opencode", ["false"]).status, 3);
     assert.equal(hook("codex", [], '{"tool_input":{"command":"printf ok"}}').stdout, "");
+    assert.deepEqual(JSON.parse(hook("claude", [], '{"tool_input":{"command":"git log"}}').stdout), {
+      hookSpecificOutput: { updatedInput: { command: "rtk git log" } },
+    });
   } finally {
     audit.close();
   }
@@ -200,5 +204,6 @@ test("registra cada consulta do RTK e preserva a resposta do hook nativo", { ski
     { status: "sem reescrita", command: "pwd" },
     { status: "falhou", command: "false" },
     { status: "sem reescrita", command: "printf ok" },
+    { status: "reescrito", command: "git log" },
   ]);
 });

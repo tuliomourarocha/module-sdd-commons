@@ -206,7 +206,8 @@ export async function installApprovedSkills(skills, findSkillPy, cwd, harness, l
       }
       log("info", `Auditoria aprovada para ${id} · ${reports.map(({ provider }) => provider).join(", ")}`);
       log("info", `Instalando ${id} para ${harness}…`);
-      await exec("npx", ["-y", "skills", "add", source, "--skill", slug, "--agent", harness, "--yes"], {
+      const agent = harness === "claude" ? "claude-code" : harness;
+      await exec("npx", ["-y", "skills", "add", source, "--skill", slug, "--agent", agent, "--yes"], {
         cwd, timeout: 300_000,
       });
       const file = await installedSkillFile(cwd, harness, slug);

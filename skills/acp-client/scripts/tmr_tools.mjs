@@ -42,26 +42,38 @@ async function command(bin, args, { cwd, env, onTool, label = [bin, ...args].joi
   }
 }
 
-function rtkSetup(harness, cwd) {
-  const args = ["init", "--show", harness === "codex" ? "--codex" : "--opencode"];
-  const config = spawnSync("rtk", args, { cwd, encoding: "utf8", timeout: 5000 });
-  const hook = harness === "codex"
-    ? /\[ok\] (?:Local|Global) hook:/
-    : /\[ok\] OpenCode: plugin installed/;
+const rtkIntegration = {
+  opencode: {
+    show: ["--opencode"], hook: /\[ok\] OpenCode: plugin installed/,
+    install: ["--global", "--opencode", "--no-patch"],
+    hint: "O RTK instalará seu plugin na configuração do usuário do OpenCode.",
+  },
+  codex: {
+    show: ["--codex"], hook: /\[ok\] (?:Local|Global) hook:/,
+    install: ["--codex", "--no-patch"],
+    hint: "O RTK instalará o hook do Codex neste projeto. O Codex pode solicitar a revisão do hook.",
+  },
+  claude: {
+    show: [], hook: /\[ok\] settings\.json: RTK hooks configured/,
+    install: ["--global", "--auto-patch"],
+    hint: "O RTK registrará o hook PreToolUse na configuração do usuário do Claude Code.",
+  },
+};
+
+function rtkSetup({ show, hook }, cwd) {
+  const config = spawnSync("rtk", ["init", "--show", ...show], { cwd, encoding: "utf8", timeout: 5000 });
   return config.status === 0 && hook.test(config.stdout);
 }
 
 export async function prepareTools({ harness, cwd, ask, onTool }) {
   const opts = { cwd, onTool };
+  const integration = rtkIntegration[harness];
   if (process.env.RTK_DISABLED === "1") throw new Error("RTK está desativado por RTK_DISABLED=1. Habilite-o antes de executar.");
   await command("rtk", ["hook", harness, "--help"], opts);
-  if (!rtkSetup(harness, cwd)) {
-    const flags = harness === "opencode" ? ["--global", "--opencode"] : ["--codex"];
-    if (!await ask(`Vincular o RTK ao ${harness}?`, "s", harness === "opencode"
-      ? "O RTK instalará seu plugin na configuração do usuário do OpenCode."
-      : "O RTK instalará o hook do Codex neste projeto. O Codex pode solicitar a revisão do hook.")) return null;
-    await command("rtk", ["init", ...flags, "--hook-only", "--no-patch", "--no-trust-filters"], { ...opts, showOutput: true });
-    if (!rtkSetup(harness, cwd)) throw new Error(`O vínculo nativo do RTK com ${harness} não foi encontrado após a configuração.`);
+  if (!rtkSetup(integration, cwd)) {
+    if (!await ask(`Vincular o RTK ao ${harness}?`, "s", integration.hint)) return null;
+    await command("rtk", ["init", ...integration.install, "--hook-only", "--no-trust-filters"], { ...opts, showOutput: true });
+    if (!rtkSetup(integration, cwd)) throw new Error(`O vínculo nativo do RTK com ${harness} não foi encontrado após a configuração.`);
   }
 
   const graph = { ...opts, env: graphEnv };
