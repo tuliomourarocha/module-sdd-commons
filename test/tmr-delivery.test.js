@@ -5,10 +5,48 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { deliveryStart, runDelivery } from "../skills/acp-client/scripts/tmr_delivery.mjs";
+import { deliveryStart, prepareDevelopmentBase, runDelivery } from "../skills/acp-client/scripts/tmr_delivery.mjs";
 import { phaseProblem, reviewFailure, settleStage } from "../skills/acp-client/scripts/tmr_recovery.mjs";
 
 const hook = fileURLToPath(new URL("../hooks/shipper.py", import.meta.url));
+
+test("um ciclo novo parte da develop atualizada e para se ela divergir", async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "sdd-acp-develop-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const source = path.join(dir, "source");
+  const remote = path.join(dir, "origin.git");
+  const project = path.join(dir, "project");
+  const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const commit = (cwd, message) => git(cwd, "-c", "user.name=Tester", "-c", "user.email=tester@example.com", "commit", "--allow-empty", "-m", message);
+
+  git(dir, "init", "-b", "main", source);
+  commit(source, "initial");
+  git(source, "switch", "-c", "develop");
+  commit(source, "develop inicial");
+  git(dir, "clone", "--bare", source, remote);
+  git(dir, "clone", "--single-branch", "--branch", "main", remote, project);
+
+  await prepareDevelopmentBase(project);
+  assert.equal(git(project, "branch", "--show-current"), "develop");
+  assert.equal(deliveryStart(project).from, git(source, "rev-parse", "HEAD"));
+
+  git(project, "switch", "-c", "fix/entrega-anterior");
+  commit(project, "entrega anterior");
+  const previous = git(project, "rev-parse", "HEAD");
+  commit(source, "atualização remota");
+  git(source, "push", remote, "develop");
+  await prepareDevelopmentBase(project);
+  assert.equal(git(project, "branch", "--show-current"), "develop");
+  assert.equal(deliveryStart(project).from, git(source, "rev-parse", "HEAD"));
+  assert.equal(git(project, "rev-parse", "fix/entrega-anterior"), previous);
+
+  commit(project, "alteração local");
+  const local = deliveryStart(project).from;
+  commit(source, "alteração remota divergente");
+  git(source, "push", remote, "develop");
+  await assert.rejects(prepareDevelopmentBase(project), /git pull --ff-only origin develop falhou/);
+  assert.equal(deliveryStart(project).from, local);
+});
 
 test("o gate do ACP rejeita o hook que saiu com zero sem comprovar commit e push", async (t) => {
   const cwd = await mkdtemp(path.join(tmpdir(), "sdd-acp-gate-"));

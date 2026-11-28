@@ -15,7 +15,7 @@ import * as review from "./tmr_review.mjs";
 import { serveTmr } from "./tmr_web.mjs";
 import { editDetails, observeFiles, prepareTools, toolOutput } from "./tmr_tools.mjs";
 import { observeMcp } from "./tmr_mcp.mjs";
-import { deliveryStart, runDelivery } from "./tmr_delivery.mjs";
+import { deliveryStart, prepareDevelopmentBase, runDelivery } from "./tmr_delivery.mjs";
 import { phaseProblem, reviewFailure, settleStage } from "./tmr_recovery.mjs";
 import { observeRtk } from "./tmr_rtk.mjs";
 import { SessionUsage, summarizeUsage } from "./tmr_usage.mjs";
@@ -524,9 +524,15 @@ async function main() {
 
   let saved = await input.receiveResume();
   if (saved && !(await askYN("Retomar a execução anterior?", "s", `Issue: ${saved.issue?.title ?? "—"}\nO contexto está disponível enquanto este servidor permanecer aberto.`))) {
-    input.send({ type: "clear_checkpoint" });
     saved = null;
   }
+  if (!saved) {
+    input.log("info", "Preparando develop · git pull --ff-only origin develop");
+    await prepareDevelopmentBase(cwd);
+    input.send({ type: "clear_checkpoint" });
+    input.log("info", "Develop atualizada. Iniciando novo ciclo ACP.");
+  }
+  const delivery = saved?.delivery ?? deliveryStart(cwd);
   let harness = saved?.harness ?? flag("--agent");
   if (!harness) {
     const options = ["OpenCode · ACP nativo", "Codex · adaptador oficial"];
@@ -564,7 +570,6 @@ async function main() {
   let availableSkills = await review.availableApprovedSkills(installedSkills, cwd, harness);
   let mcpStatus = { name: integrations.mcpServer.name, status: "queued" };
   const models = saved?.models ?? {};
-  const delivery = saved?.delivery ?? deliveryStart(cwd);
   const recoveryNotes = saved?.recoveryNotes ?? [];
   let blocker = saved?.blocker ?? null;
   const statuses = Object.fromEntries(ROLES.map((role) => [role, saved?.statuses?.[role] === "completed" ? "completed" : "queued"]));

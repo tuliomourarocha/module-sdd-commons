@@ -1,10 +1,35 @@
-import { spawn, spawnSync } from "node:child_process";
+import { execFile, spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+const redact = (line) => line.replace(/((?:https?|ssh):\/\/)[^\s/]+@/gi, "$1[credenciais]@");
 
 function git(cwd, args) {
   const result = spawnSync("git", args, { cwd, encoding: "utf8", timeout: 5000 });
   return result.status === 0 ? result.stdout.trim() : "";
+}
+
+export async function prepareDevelopmentBase(cwd) {
+  const options = { cwd, timeout: 60_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } };
+  const update = async (...args) => {
+    try {
+      await execFileAsync("git", args, options);
+    } catch (error) {
+      const detail = error.stderr?.trim() || error.message;
+      throw new Error(`git ${args.join(" ")} falhou.\n${redact(detail)}`, { cause: error });
+    }
+  };
+
+  if (git(cwd, ["show-ref", "--verify", "--hash", "refs/heads/develop"])) {
+    await update("switch", "--no-guess", "develop");
+  } else {
+    const remoteBranch = "refs/remotes/origin/develop";
+    await update("fetch", "origin", `refs/heads/develop:${remoteBranch}`);
+    await update("switch", "-c", "develop", remoteBranch);
+  }
+  await update("pull", "--ff-only", "origin", "develop");
 }
 
 export function deliveryStart(cwd) {
@@ -21,8 +46,6 @@ function runHook(file, args, context, { cwd, env, onLine }) {
     child.once("close", (code) => resolve(code));
   });
 }
-
-const redact = (line) => line.replace(/((?:https?|ssh):\/\/)[^\s/]+@/gi, "$1[credenciais]@");
 
 export async function runDelivery({ root, cwd, issue, delivery, outputs, report, checkpoint }) {
   const repoSlug = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/\d+$/.exec(issue.url)?.[1];

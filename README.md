@@ -37,8 +37,7 @@ pelo LLM) e vincula ao harness escolhido com `rtk init`:
 ## Rodar a squad via ACP — **TMR** (`sdd-acp`)
 
 O `sdd-acp` abre o **Console TMR** no navegador. A página usa HTML e JavaScript
-e roda localmente no projeto que vai executar a squad. Ao abrir, o console começa
-pela escolha do harness.
+e roda localmente no projeto que vai executar a squad.
 
 ```bash
 sdd-acp                       # abre o console no navegador padrão
@@ -54,9 +53,12 @@ sessão. O histórico recente fica em memória e pode ser exportado pela página
 
 ### Fluxo no navegador
 
-1. Clique em **Nova execução**, escolha OpenCode ou Codex e decida se deseja
-   instalar ou atualizar os artefatos da squad. Se houver estado em `.planning/`,
-   a página lista os arquivos antes de pedir confirmação para limpar.
+1. Clique em **Nova execução**. O TMR entra na `develop` e executa
+   `git pull --ff-only origin develop` antes de abrir a escolha do harness.
+   Ao retomar uma execução, o TMR preserva a branch atual. Escolha OpenCode
+   ou Codex e decida se deseja instalar ou atualizar os artefatos da squad.
+   Se houver estado em `.planning/`, a página lista os arquivos antes de
+   pedir confirmação para limpar.
 2. Informe a issue por link, `owner/repo#N` ou `#N` no repositório atual. O TMR
    verifica a autenticação do `gh` antes de carregar a issue.
 3. Aprove cada fase e escolha o modelo em ordem de custo-benefício. O ciclo inclui
